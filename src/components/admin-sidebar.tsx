@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "next-auth/react";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -10,7 +11,9 @@ import {
   Users,
   Settings,
   Store,
+  LogOut,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -62,9 +65,20 @@ export function AdminSidebar() {
         </nav>
       </div>
 
-      <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
-        <p className="font-medium text-foreground">Sistema de Gestão v1.0</p>
-        <p>Desenvolvimento Clean & Objetivo</p>
+      <div className="space-y-3">
+        <Button
+          variant="ghost"
+          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-3"
+          onClick={() => signOut({ callbackUrl: "/login" })}
+        >
+          <LogOut className="w-4 h-4" />
+          Sair do Sistema
+        </Button>
+
+        <div className="p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">Sistema de Gestão v1.0</p>
+          <p>Desenvolvimento Clean & Objetivo</p>
+        </div>
       </div>
     </aside>
   );
