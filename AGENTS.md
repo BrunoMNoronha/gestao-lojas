@@ -7,3 +7,86 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+# 🤖 Guia para Agentes de IA - Sistema de Gestão de Lojas (ERP / PDV)
+
+Este repositório contém um sistema de gestão comercial e frente de caixa (PDV) genérico, objetivo, *clean* e profissional, voltado para lojas físicas, distribuidores, agropecuárias e mercados.
+
+## 🛠️ Tech Stack & Ferramentas
+- **Framework:** Next.js 16 (App Router)
+- **Linguagem:** TypeScript
+- **Gerenciador de Pacotes:** `pnpm` (OBRIGATÓRIO: NUNCA use `npm` ou `yarn`)
+- **Estilização:** Tailwind CSS v4 + Shadcn UI
+- **Banco de Dados & ORM:** PostgreSQL + Prisma ORM
+- **Autenticação:** Auth.js v5 (`next-auth`)
+- **Formatação:** Prettier + `prettier-plugin-tailwindcss`
+
+---
+
+## ⚡ Comandos Essenciais
+
+```bash
+# Servidor de Desenvolvimento
+pnpm dev
+
+# Build de Produção & Validação de Tipos
+pnpm build
+
+# Gerar Prisma Client
+pnpm prisma generate
+
+# Aplicar alterações no Banco de Dados
+pnpm prisma db push
+
+# Adicionar novos componentes Shadcn UI
+npx shadcn@latest add <componente>
+```
+
+---
+
+## 📂 Estrutura do Projeto
+
+```
+gestao-lojas/
+├── prisma/
+│   └── schema.prisma          # Schema do banco de dados (User, Product, StoreSettings, etc.)
+├── src/
+│   ├── actions/               # Server Actions (mutações e consultas do servidor)
+│   ├── app/
+│   │   ├── (auth)/            # Rotas de autenticação (login, etc.)
+│   │   ├── admin/             # Módulo administrativo (dashboard, produtos, configurações)
+│   │   │   ├── configuracoes/ # Tela de parametrização da loja
+│   │   │   └── page.tsx       # Dashboard principal
+│   │   ├── layout.tsx         # Root Layout
+│   │   └── page.tsx           # Página inicial
+│   ├── components/
+│   │   ├── ui/                # Componentes Shadcn UI (button, card, input, table...)
+│   │   ├── admin-sidebar.tsx  # Navegação lateral do painel admin
+│   │   └── store-settings-form.tsx # Formulário de parametrização da loja
+│   └── lib/
+│       ├── prisma.ts          # Singleton do Prisma Client
+│       └── utils.ts           # Utilitários (cn, formatadores, etc.)
+```
+
+---
+
+## 📏 Convenções de Código para Agentes
+
+1. **Gerenciador de Pacotes:** Use **exclusivamente `pnpm`**.
+2. **Server vs Client Components:**
+   - Mantenha componentes como **Server Components** por padrão.
+   - Adicione `"use client"` apenas onde houver estado interativo (`useState`, `useEffect`, manipuladores de eventos).
+3. **Mutações de Dados:**
+   - Utilize **Next.js Server Actions** (`"use server"`) na pasta `src/actions/`.
+   - Sempre utilize `revalidatePath()` após mutações no banco para atualizar o cache do Next.js.
+4. **Tratamento de Erros e Fallbacks:**
+   - Adicione blocos `try/catch` nas Server Actions e forneça fallbacks amigáveis caso o banco ou serviço falhe.
+   - Nunca quebre a renderização de páginas no servidor por falta de conexão inicial com o banco.
+5. **Estilização:**
+   - Utilize Tailwind CSS com classes semânticas e o componente `cn()` de `@/lib/utils` para mesclar classes.
+
+---
+
+## 📌 Links Úteis
+- **Repositório GitHub:** [BrunoMNoronha/gestao-lojas](https://github.com/BrunoMNoronha/gestao-lojas)
+- **Roadmap de Issues:** [GitHub Issues #1 a #7](https://github.com/BrunoMNoronha/gestao-lojas/issues)
