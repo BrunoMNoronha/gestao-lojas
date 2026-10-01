@@ -9,6 +9,7 @@ import {
   Package,
   Boxes,
   Users,
+  Truck,
   Settings,
   Store,
   LogOut,
@@ -21,6 +22,7 @@ const navItems = [
   { label: "Produtos", href: "/admin/produtos", icon: Package },
   { label: "Estoque", href: "/admin/estoque", icon: Boxes },
   { label: "Clientes", href: "/admin/clientes", icon: Users },
+  { label: "Fornecedores", href: "/admin/fornecedores", icon: Truck },
   { label: "Configurações da Loja", href: "/admin/configuracoes", icon: Settings },
 ];
 

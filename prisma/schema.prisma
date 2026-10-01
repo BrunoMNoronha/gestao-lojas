@@ -139,3 +139,15 @@ model StoreSettings {
   updatedAt          DateTime @updatedAt
 }
 
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  document  String?  @unique
+  phone     String?
+  email     String?
+  address   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
