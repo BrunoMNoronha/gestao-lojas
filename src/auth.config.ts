@@ -13,6 +13,10 @@ export const authConfig = {
       const isLoggedIn = !!auth?.user;
       const { pathname } = nextUrl;
 
+      // Catálogo público (#17): aberto a visitantes; lê só campos públicos (src/lib/catalog.ts)
+      if (pathname === "/catalogo" || pathname.startsWith("/catalogo/")) {
+        return true;
+      }
       if (pathname === "/") {
         return isLoggedIn ? true : Response.redirect(new URL("/login", nextUrl));
       }

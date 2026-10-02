@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
+import { normalizeWhatsappNumber } from "@/lib/catalog-shared";
 
 export interface StoreSettingsData {
   companyName: string;
@@ -21,6 +22,9 @@ export interface StoreSettingsData {
   facebook?: string;
   website?: string;
   receiptFooterNote?: string;
+  // Catálogo público: WhatsApp só com dígitos (com DDI) e chave liga/desliga
+  whatsappNumber?: string;
+  catalogEnabled?: boolean;
 }
 
 export async function getStoreSettings(): Promise<StoreSettingsData> {
@@ -50,6 +54,8 @@ export async function getStoreSettings(): Promise<StoreSettingsData> {
         facebook: "",
         website: "",
         receiptFooterNote: "Obrigado pela preferência! Volte sempre.",
+        whatsappNumber: "",
+        catalogEnabled: false,
       };
     }
 
@@ -70,6 +76,8 @@ export async function getStoreSettings(): Promise<StoreSettingsData> {
       facebook: settings.facebook ?? "",
       website: settings.website ?? "",
       receiptFooterNote: settings.receiptFooterNote ?? "",
+      whatsappNumber: settings.whatsappNumber ?? "",
+      catalogEnabled: settings.catalogEnabled,
     };
   } catch (error) {
     console.error("Erro ao buscar configurações da loja:", error);
@@ -84,6 +92,15 @@ export async function updateStoreSettings(data: StoreSettingsData) {
   try {
     const authz = await authorize("settings.manage");
     if (!authz.ok) return { success: false, error: authz.error };
+
+    const whatsappNumber = normalizeWhatsappNumber(data.whatsappNumber);
+    if (whatsappNumber === null) {
+      return {
+        success: false,
+        error: "Número do WhatsApp inválido. Informe DDD e número, ex.: (11) 99999-8888.",
+      };
+    }
+    const catalogEnabled = data.catalogEnabled === true;
 
     const updated = await prisma.storeSettings.upsert({
       where: { id: "default" },
@@ -104,6 +121,8 @@ export async function updateStoreSettings(data: StoreSettingsData) {
         facebook: data.facebook || null,
         website: data.website || null,
         receiptFooterNote: data.receiptFooterNote || null,
+        whatsappNumber: whatsappNumber || null,
+        catalogEnabled,
       },
       create: {
         id: "default",
@@ -123,10 +142,13 @@ export async function updateStoreSettings(data: StoreSettingsData) {
         facebook: data.facebook || null,
         website: data.website || null,
         receiptFooterNote: data.receiptFooterNote || null,
+        whatsappNumber: whatsappNumber || null,
+        catalogEnabled,
       },
     });
 
     revalidatePath("/admin/configuracoes");
+    revalidatePath("/catalogo", "layout");
     return { success: true, data: updated };
   } catch (error) {
     console.error("Erro ao atualizar configurações da loja:", error);

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
+import { isHttpUrl } from "@/lib/catalog-shared";
 
 export type UnitType = "UN" | "KG" | "LT" | "CX" | "M";
 
@@ -19,6 +20,10 @@ export interface ProductItem {
   minStock: number;
   categoryId: string | null;
   categoryName?: string | null;
+  // Catálogo público (/catalogo)
+  showInCatalog: boolean;
+  description: string | null;
+  imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -35,9 +40,44 @@ export interface ProductInput {
   currentStock?: number;
   minStock?: number;
   categoryId?: string | null;
+  showInCatalog?: boolean;
+  description?: string | null;
+  imageUrl?: string | null;
 }
 
-export async function getProducts(searchQuery?: string, categoryId?: string): Promise<ProductItem[]> {
+const MAX_DESCRIPTION_LENGTH = 2000;
+const MAX_IMAGE_URL_LENGTH = 2048;
+
+type CatalogFields =
+  | { ok: true; showInCatalog: boolean; description: string | null; imageUrl: string | null }
+  | { ok: false; error: string };
+
+// Campos de vitrine do produto: descrição e imagem opcionais (imagem só por URL http/https)
+function parseCatalogFields(data: ProductInput): CatalogFields {
+  const description = data.description?.trim() || null;
+  if (description && description.length > MAX_DESCRIPTION_LENGTH) {
+    return {
+      ok: false,
+      error: `A descrição pode ter no máximo ${MAX_DESCRIPTION_LENGTH} caracteres.`,
+    };
+  }
+  const imageUrl = data.imageUrl?.trim() || null;
+  if (imageUrl && (imageUrl.length > MAX_IMAGE_URL_LENGTH || !isHttpUrl(imageUrl))) {
+    return { ok: false, error: "A URL da imagem deve começar com http:// ou https://." };
+  }
+  return { ok: true, showInCatalog: data.showInCatalog === true, description, imageUrl };
+}
+
+function revalidateProductPaths() {
+  revalidatePath("/admin/produtos");
+  revalidatePath("/admin/estoque");
+  revalidatePath("/catalogo", "layout");
+}
+
+export async function getProducts(
+  searchQuery?: string,
+  categoryId?: string,
+): Promise<ProductItem[]> {
   try {
     const authz = await authorize("catalog.view");
     if (!authz.ok) return [];
@@ -79,6 +119,9 @@ export async function getProducts(searchQuery?: string, categoryId?: string): Pr
       minStock: Number(p.minStock),
       categoryId: p.categoryId,
       categoryName: p.category?.name ?? null,
+      showInCatalog: p.showInCatalog,
+      description: p.description,
+      imageUrl: p.imageUrl,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
     }));
@@ -97,6 +140,9 @@ export async function createProduct(data: ProductInput) {
     if (!name) {
       return { success: false, error: "O nome do produto é obrigatório." };
     }
+
+    const catalog = parseCatalogFields(data);
+    if (!catalog.ok) return { success: false, error: catalog.error };
 
     const sku = data.sku?.trim() || null;
     const barcode = data.barcode?.trim() || null;
@@ -147,6 +193,9 @@ export async function createProduct(data: ProductInput) {
           currentStock: initialStock,
           minStock: data.minStock ?? 0,
           categoryId: data.categoryId || null,
+          showInCatalog: catalog.showInCatalog,
+          description: catalog.description,
+          imageUrl: catalog.imageUrl,
         },
       });
 
@@ -165,8 +214,7 @@ export async function createProduct(data: ProductInput) {
       return product;
     });
 
-    revalidatePath("/admin/produtos");
-    revalidatePath("/admin/estoque");
+    revalidateProductPaths();
     // Só o id: objetos Decimal do Prisma não podem ser enviados ao cliente
     return { success: true, data: { id: newProduct.id } };
   } catch (error) {
@@ -184,6 +232,9 @@ export async function updateProduct(id: string, data: ProductInput) {
     if (!name) {
       return { success: false, error: "O nome do produto é obrigatório." };
     }
+
+    const catalog = parseCatalogFields(data);
+    if (!catalog.ok) return { success: false, error: catalog.error };
 
     const sku = data.sku?.trim() || null;
     const barcode = data.barcode?.trim() || null;
@@ -224,11 +275,13 @@ export async function updateProduct(id: string, data: ProductInput) {
         // currentStock não é alterado aqui: use registerStockEntry/adjustStock (src/actions/stock.ts)
         minStock: data.minStock ?? 0,
         categoryId: data.categoryId || null,
+        showInCatalog: catalog.showInCatalog,
+        description: catalog.description,
+        imageUrl: catalog.imageUrl,
       },
     });
 
-    revalidatePath("/admin/produtos");
-    revalidatePath("/admin/estoque");
+    revalidateProductPaths();
     return { success: true, data: { id: updatedProduct.id } };
   } catch (error) {
     console.error("Erro ao atualizar produto:", error);
@@ -245,8 +298,7 @@ export async function deleteProduct(id: string) {
       where: { id },
     });
 
-    revalidatePath("/admin/produtos");
-    revalidatePath("/admin/estoque");
+    revalidateProductPaths();
     return { success: true };
   } catch (error) {
     console.error("Erro ao excluir produto:", error);
