@@ -13,12 +13,16 @@ import {
   Settings,
   Store,
   LogOut,
+  Wallet,
+  HandCoins,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Frente de Caixa (PDV)", href: "/admin/pdv", icon: ShoppingCart },
+  { label: "Caixa", href: "/admin/caixa", icon: Wallet },
+  { label: "Contas a Receber", href: "/admin/contas-a-receber", icon: HandCoins },
   { label: "Produtos", href: "/admin/produtos", icon: Package },
   { label: "Estoque", href: "/admin/estoque", icon: Boxes },
   { label: "Clientes", href: "/admin/clientes", icon: Users },

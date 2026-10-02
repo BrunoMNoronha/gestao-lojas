@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
 import { PaymentMethod, MovementType, Prisma, Unit } from "@prisma/client";
+import { lockOpenCashRegister } from "@/lib/cash-register";
 
 // O cliente informa apenas O QUE está sendo vendido. Preços, subtotais, total e troco
 // são sempre recalculados no servidor a partir do banco (fonte da verdade).
@@ -90,6 +91,12 @@ export async function createSale(data: CreateSaleInput) {
 
     // 3. Persistência atômica: venda, itens, baixa de estoque e movimentações
     const sale = await prisma.$transaction(async (tx) => {
+      // Toda venda pertence ao turno de caixa aberto do operador
+      const cashRegister = await lockOpenCashRegister(tx, userId);
+      if (!cashRegister) {
+        throw new SaleValidationError("Abra o caixa antes de registrar vendas.");
+      }
+
       if (customerId) {
         const customer = await tx.customer.findUnique({
           where: { id: customerId },
@@ -159,6 +166,7 @@ export async function createSale(data: CreateSaleInput) {
           paymentMethod: data.paymentMethod,
           userId,
           customerId,
+          cashRegisterId: cashRegister.id,
           items: {
             create: items.map((item) => ({
               productId: item.product.id,
@@ -189,12 +197,21 @@ export async function createSale(data: CreateSaleInput) {
         })),
       });
 
+      // Venda no Fiado gera o título em Contas a Receber
+      if (data.paymentMethod === PaymentMethod.ON_ACCOUNT && customerId) {
+        await tx.receivable.create({
+          data: { saleId: newSale.id, customerId, amount: total },
+        });
+      }
+
       return newSale;
     });
 
     revalidatePath("/admin/pdv");
     revalidatePath("/admin/produtos");
     revalidatePath("/admin/estoque");
+    revalidatePath("/admin/caixa");
+    revalidatePath("/admin/contas-a-receber");
 
     const total = Number(sale.total);
     const amountPaid =
