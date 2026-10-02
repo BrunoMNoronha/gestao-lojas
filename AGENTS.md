@@ -87,9 +87,14 @@ gestao-lojas/
    - Nunca quebre a renderização de páginas no servidor por falta de conexão inicial com o banco.
 5. **Estilização:**
    - Utilize Tailwind CSS com classes semânticas e o componente `cn()` de `@/lib/utils` para mesclar classes.
+6. **Autorização (obrigatório):**
+   - A matriz de acesso por perfil (ADMIN / MANAGER / SELLER) fica em `src/lib/permissions.ts`, e o mapa de rotas e menu em `src/lib/routes.ts`.
+   - Toda Server Action exportada começa com `const authz = await authorize("<permissão>")` (`src/lib/authz.ts`) e retorna erro ou vazio quando `!authz.ok`. Confira com `pnpm check:actions`.
+   - Toda página de `/admin` chama `await requirePageAccess("<permissão>")`. Nova rota no menu = nova entrada em `APP_ROUTES`.
+   - O `src/proxy.ts` só redireciona quem não está logado; nunca dependa dele para permissão.
 
 ---
 
 ## 📌 Links Úteis
 - **Repositório GitHub:** [BrunoMNoronha/gestao-lojas](https://github.com/BrunoMNoronha/gestao-lojas)
-- **Roadmap de Issues:** [GitHub Issues #1 a #7](https://github.com/BrunoMNoronha/gestao-lojas/issues)
+- **Roadmap de Issues:** [GitHub Issues](https://github.com/BrunoMNoronha/gestao-lojas/issues)

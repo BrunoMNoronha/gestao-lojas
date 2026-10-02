@@ -3,14 +3,16 @@ import { getReceivables, getReceivablesSummary } from "@/actions/receivables";
 import { getCurrentCashRegister } from "@/actions/cash-register";
 import { connection } from "next/server";
 import { ReceivablesManager } from "@/components/receivables-manager";
+import { requirePageAccess } from "@/lib/authz";
 
 export const metadata = {
-  title: "Contas a Receber | Gestão de Lojas",
+  title: "Contas a Receber",
 };
 
 export default async function ContasAReceberPage() {
   // Títulos mudam a cada venda no Fiado e a cada recebimento: renderiza a cada requisição
   await connection();
+  await requirePageAccess("receivables.view");
 
   let data: Awaited<ReturnType<typeof loadReceivablesData>> | null = null;
   try {

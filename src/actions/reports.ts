@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
+import { authorize } from "@/lib/authz";
 import { PaymentMethod, Prisma } from "@prisma/client";
 import { getReceivablesSummary, type ReceivablesSummary } from "@/actions/receivables";
 import type { PaymentMethodValue } from "@/lib/payments";
@@ -152,8 +152,8 @@ async function topProducts(range: DateRange): Promise<TopProduct[]> {
 
 export async function getDashboardMetrics(): Promise<DashboardMetrics | null> {
   try {
-    const session = await auth();
-    if (!session?.user?.id) return null;
+    const authz = await authorize("dashboard.view");
+    if (!authz.ok) return null;
 
     const periods = getStorePeriods();
     const inRange = (r: DateRange): Prisma.SaleWhereInput => ({
@@ -198,9 +198,9 @@ export async function getSalesReport(
   filters: SalesReportFilters,
 ): Promise<{ success: boolean; data?: SalesReport; error?: string }> {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return { success: false, error: "Sessão expirada. Faça login novamente." };
+    const authz = await authorize("reports.view");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
     }
 
     const fromDay = parseDayKey(filters?.from);

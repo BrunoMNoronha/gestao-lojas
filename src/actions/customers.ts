@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 
 export interface CustomerItem {
@@ -28,6 +29,9 @@ export interface CustomerInput {
 
 export async function getCustomers(searchQuery?: string): Promise<CustomerItem[]> {
   try {
+    const authz = await authorize("customers.view");
+    if (!authz.ok) return [];
+
     const whereClause: any = {};
 
     if (searchQuery && searchQuery.trim() !== "") {
@@ -69,6 +73,9 @@ export async function getCustomers(searchQuery?: string): Promise<CustomerItem[]
 
 export async function createCustomer(data: CustomerInput) {
   try {
+    const authz = await authorize("customers.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const name = data.name?.trim();
     if (!name) {
       return { success: false, error: "O nome do cliente é obrigatório." };
@@ -108,6 +115,9 @@ export async function createCustomer(data: CustomerInput) {
 
 export async function updateCustomer(id: string, data: CustomerInput) {
   try {
+    const authz = await authorize("customers.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const name = data.name?.trim();
     if (!name) {
       return { success: false, error: "O nome do cliente é obrigatório." };
@@ -151,6 +161,9 @@ export async function updateCustomer(id: string, data: CustomerInput) {
 
 export async function deleteCustomer(id: string) {
   try {
+    const authz = await authorize("customers.delete");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const salesCount = await prisma.sale.count({
       where: { customerId: id },
     });

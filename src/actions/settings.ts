@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 
 export interface StoreSettingsData {
@@ -24,6 +25,9 @@ export interface StoreSettingsData {
 
 export async function getStoreSettings(): Promise<StoreSettingsData> {
   try {
+    const authz = await authorize();
+    if (!authz.ok) return { companyName: "Minha Loja Distribuidora", tradeName: "Minha Loja" };
+
     const settings = await prisma.storeSettings.findUnique({
       where: { id: "default" },
     });
@@ -78,6 +82,9 @@ export async function getStoreSettings(): Promise<StoreSettingsData> {
 
 export async function updateStoreSettings(data: StoreSettingsData) {
   try {
+    const authz = await authorize("settings.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const updated = await prisma.storeSettings.upsert({
       where: { id: "default" },
       update: {

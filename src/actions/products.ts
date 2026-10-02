@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
+import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
 
@@ -39,6 +39,9 @@ export interface ProductInput {
 
 export async function getProducts(searchQuery?: string, categoryId?: string): Promise<ProductItem[]> {
   try {
+    const authz = await authorize("catalog.view");
+    if (!authz.ok) return [];
+
     const whereClause: any = {};
 
     if (searchQuery && searchQuery.trim() !== "") {
@@ -87,6 +90,9 @@ export async function getProducts(searchQuery?: string, categoryId?: string): Pr
 
 export async function createProduct(data: ProductInput) {
   try {
+    const authz = await authorize("catalog.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const name = data.name?.trim();
     if (!name) {
       return { success: false, error: "O nome do produto é obrigatório." };
@@ -126,8 +132,7 @@ export async function createProduct(data: ProductInput) {
       };
     }
 
-    const session = await auth();
-    const userId = session?.user?.id ?? null;
+    const userId = authz.user.id;
 
     // O estoque inicial gera a primeira movimentação, mantendo o histórico completo
     const newProduct = await prisma.$transaction(async (tx) => {
@@ -172,6 +177,9 @@ export async function createProduct(data: ProductInput) {
 
 export async function updateProduct(id: string, data: ProductInput) {
   try {
+    const authz = await authorize("catalog.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const name = data.name?.trim();
     if (!name) {
       return { success: false, error: "O nome do produto é obrigatório." };
@@ -230,6 +238,9 @@ export async function updateProduct(id: string, data: ProductInput) {
 
 export async function deleteProduct(id: string) {
   try {
+    const authz = await authorize("catalog.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     await prisma.product.delete({
       where: { id },
     });

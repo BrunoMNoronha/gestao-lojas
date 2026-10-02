@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
+import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
 import type { UnitType } from "@/actions/products";
@@ -91,8 +91,8 @@ export async function getStockMovements(
   filters: StockMovementFilters = {},
 ): Promise<StockMovementPage> {
   try {
-    const session = await auth();
-    if (!session?.user?.id) return { items: [], total: 0 };
+    const authz = await authorize("stock.view");
+    if (!authz.ok) return { items: [], total: 0 };
 
     const where: Prisma.StockMovementWhereInput = {};
     if (filters.productId) where.productId = filters.productId;
@@ -153,8 +153,8 @@ export async function getStockMovements(
 
 export async function getLowStockProducts(): Promise<LowStockItem[]> {
   try {
-    const session = await auth();
-    if (!session?.user?.id) return [];
+    const authz = await authorize("stock.view");
+    if (!authz.ok) return [];
 
     // Mesma regra de isStockLow (src/lib/stock.ts): saldo atual <= estoque mínimo
     const products = await prisma.product.findMany({
@@ -180,11 +180,11 @@ export async function getLowStockProducts(): Promise<LowStockItem[]> {
 
 export async function registerStockEntry(data: StockEntryInput) {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return { success: false, error: "Sessão expirada. Faça login novamente." };
+    const authz = await authorize("stock.manage");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
     }
+    const userId = authz.user.id;
 
     if (typeof data?.productId !== "string" || !data.productId) {
       return { success: false, error: "Selecione o produto da entrada." };
@@ -276,11 +276,11 @@ export async function registerStockEntry(data: StockEntryInput) {
 
 export async function adjustStock(data: StockAdjustmentInput) {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return { success: false, error: "Sessão expirada. Faça login novamente." };
+    const authz = await authorize("stock.manage");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
     }
+    const userId = authz.user.id;
 
     if (typeof data?.productId !== "string" || !data.productId) {
       return { success: false, error: "Selecione o produto a ajustar." };

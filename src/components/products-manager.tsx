@@ -34,11 +34,14 @@ import { isStockLow } from "@/lib/stock";
 interface ProductsManagerProps {
   initialProducts: ProductItem[];
   initialCategories: CategoryData[];
+  // Cadastro, edição e exclusão restritos por perfil (catalog.manage)
+  canManage: boolean;
 }
 
 export function ProductsManager({
   initialProducts,
   initialCategories,
+  canManage,
 }: ProductsManagerProps) {
   const router = useRouter();
 
@@ -101,6 +104,7 @@ export function ProductsManager({
           </p>
         </div>
 
+        {canManage && (
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -119,6 +123,7 @@ export function ProductsManager({
             Novo Produto
           </Button>
         </div>
+        )}
       </div>
 
       {/* Filters & Search */}
@@ -163,7 +168,7 @@ export function ProductsManager({
                   ? "Tente ajustar os filtros de busca para encontrar o produto desejado."
                   : "Cadastre seu primeiro produto para começar a gerenciar o estoque."}
               </p>
-              {!searchQuery && selectedCategory === "ALL" && (
+              {canManage && !searchQuery && selectedCategory === "ALL" && (
                 <Button onClick={handleOpenNewProduct} className="mt-4">
                   <Plus className="w-4 h-4 mr-1.5" /> Cadastrar Produto
                 </Button>
@@ -181,7 +186,7 @@ export function ProductsManager({
                   <TableHead className="text-center">Un.</TableHead>
                   <TableHead className="text-right">Estoque</TableHead>
                   <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-center">Ações</TableHead>
+                  {canManage && <TableHead className="text-center">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -249,6 +254,7 @@ export function ProductsManager({
                         )}
                       </TableCell>
 
+                      {canManage && (
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-1">
                           <Button
@@ -269,6 +275,7 @@ export function ProductsManager({
                           </Button>
                         </div>
                       </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}

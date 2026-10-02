@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 
 export interface SupplierItem {
@@ -25,6 +26,9 @@ export interface SupplierInput {
 
 export async function getSuppliers(searchQuery?: string): Promise<SupplierItem[]> {
   try {
+    const authz = await authorize("suppliers.manage");
+    if (!authz.ok) return [];
+
     const whereClause: any = {};
 
     if (searchQuery && searchQuery.trim() !== "") {
@@ -60,6 +64,9 @@ export async function getSuppliers(searchQuery?: string): Promise<SupplierItem[]
 
 export async function createSupplier(data: SupplierInput) {
   try {
+    const authz = await authorize("suppliers.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const name = data.name?.trim();
     if (!name) {
       return { success: false, error: "O nome/razão social do fornecedor é obrigatório." };
@@ -99,6 +106,9 @@ export async function createSupplier(data: SupplierInput) {
 
 export async function updateSupplier(id: string, data: SupplierInput) {
   try {
+    const authz = await authorize("suppliers.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const name = data.name?.trim();
     if (!name) {
       return { success: false, error: "O nome/razão social do fornecedor é obrigatório." };
@@ -142,6 +152,9 @@ export async function updateSupplier(id: string, data: SupplierInput) {
 
 export async function deleteSupplier(id: string) {
   try {
+    const authz = await authorize("suppliers.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     await prisma.supplier.delete({
       where: { id },
     });

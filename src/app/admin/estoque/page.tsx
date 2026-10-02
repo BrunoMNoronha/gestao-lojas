@@ -3,14 +3,17 @@ import { getSuppliers } from "@/actions/suppliers";
 import { getLowStockProducts, getStockMovements } from "@/actions/stock";
 import { connection } from "next/server";
 import { StockManager } from "@/components/stock-manager";
+import { requirePageAccess } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 
 export const metadata = {
-  title: "Controle de Estoque | Gestão de Lojas",
+  title: "Controle de Estoque",
 };
 
 export default async function EstoquePage() {
   // Saldos e movimentações mudam a cada venda: renderiza a cada requisição
   await connection();
+  const user = await requirePageAccess("stock.view");
 
   let data: Awaited<ReturnType<typeof loadStockData>> | null = null;
   try {
@@ -39,6 +42,7 @@ export default async function EstoquePage() {
       suppliers={data.suppliers}
       lowStock={data.lowStock}
       initialMovements={data.movements}
+      canManage={can(user.role, "stock.manage")}
     />
   );
 }

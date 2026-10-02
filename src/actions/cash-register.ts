@@ -1,7 +1,8 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
+import { authorize } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { CashMovementType, CashRegisterStatus, Prisma } from "@prisma/client";
 import {
@@ -121,9 +122,9 @@ function toHistoryItem(r: {
 // Sem try/catch de propósito: em falha do banco a página deve mostrar o fallback de erro,
 // e não o formulário de abertura como se não houvesse caixa aberto.
 export async function getCurrentCashRegister(): Promise<CurrentCashRegister | null> {
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) return null;
+  const authz = await authorize("cash.own");
+  if (!authz.ok) return null;
+  const userId = authz.user.id;
 
   const register = await prisma.cashRegister.findUnique({
     where: { openUserId: userId },
@@ -142,11 +143,11 @@ export async function getCurrentCashRegister(): Promise<CurrentCashRegister | nu
 
 export async function openCashRegister(data: { openingAmount: number }) {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return { success: false, error: "Sessão expirada. Faça login novamente." };
+    const authz = await authorize("cash.own");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
     }
+    const userId = authz.user.id;
 
     const openingAmount = parseMoney(data?.openingAmount, { allowZero: true });
     if (!openingAmount) {
@@ -183,11 +184,11 @@ export async function registerCashMovement(data: {
   reason: string;
 }) {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return { success: false, error: "Sessão expirada. Faça login novamente." };
+    const authz = await authorize("cash.own");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
     }
+    const userId = authz.user.id;
 
     if (!Object.values(CashMovementType).includes(data?.type as CashMovementType)) {
       return { success: false, error: "Tipo de movimentação inválido." };
@@ -243,11 +244,11 @@ export async function registerCashMovement(data: {
 
 export async function closeCashRegister(data: { countedAmount: number; note?: string | null }) {
   try {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return { success: false, error: "Sessão expirada. Faça login novamente." };
+    const authz = await authorize("cash.own");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
     }
+    const userId = authz.user.id;
 
     const countedAmount = parseMoney(data?.countedAmount, { allowZero: true });
     if (!countedAmount) {
@@ -312,11 +313,13 @@ export async function getCashRegisterHistory(
   filters: CashRegisterHistoryFilters = {},
 ): Promise<{ items: CashRegisterHistoryItem[]; total: number }> {
   try {
-    const session = await auth();
-    if (!session?.user?.id) return { items: [], total: 0 };
+    const authz = await authorize("cash.own");
+    if (!authz.ok) return { items: [], total: 0 };
 
     const where: Prisma.CashRegisterWhereInput = { status: CashRegisterStatus.CLOSED };
-    if (filters.userId) where.userId = filters.userId;
+    // Sem cash.viewOthers (vendedor), o histórico fica restrito aos próprios turnos
+    if (!can(authz.user.role, "cash.viewOthers")) where.userId = authz.user.id;
+    else if (filters.userId) where.userId = filters.userId;
     const from = parseDate(filters.from);
     const to = parseDate(filters.to);
     if (from || to) {
@@ -352,8 +355,8 @@ export async function getCashRegisterHistory(
 
 export async function getCashRegisterDetail(id: string): Promise<CashRegisterDetail | null> {
   try {
-    const session = await auth();
-    if (!session?.user?.id || typeof id !== "string" || !id) return null;
+    const authz = await authorize("cash.own");
+    if (!authz.ok || typeof id !== "string" || !id) return null;
 
     const register = await prisma.cashRegister.findUnique({
       where: { id },
@@ -377,6 +380,9 @@ export async function getCashRegisterDetail(id: string): Promise<CashRegisterDet
       },
     });
     if (!register) return null;
+    if (!can(authz.user.role, "cash.viewOthers") && register.userId !== authz.user.id) {
+      return null;
+    }
 
     const { summary } = await computeCashSummary(prisma, register.id);
 
@@ -409,8 +415,12 @@ export async function getCashRegisterDetail(id: string): Promise<CashRegisterDet
 
 export async function getCashOperators(): Promise<CashOperator[]> {
   try {
-    const session = await auth();
-    if (!session?.user?.id) return [];
+    const authz = await authorize("cash.own");
+    if (!authz.ok) return [];
+
+    if (!can(authz.user.role, "cash.viewOthers")) {
+      return [{ id: authz.user.id, name: authz.user.name }];
+    }
 
     return await prisma.user.findMany({
       select: { id: true, name: true },
