@@ -22,11 +22,15 @@ import {
 } from "@/actions/products";
 import { OptionSelect } from "@/components/option-select";
 import { Label } from "@/components/ui/label";
+import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
+import { toast } from "sonner";
 
 interface ProductDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   productToEdit?: ProductItem | null;
+  // Novo produto já com o código de barras lido pela câmera
+  initialBarcode?: string;
   categories: CategoryData[];
   onSuccess: () => void;
 }
@@ -35,6 +39,7 @@ export function ProductDialog({
   open,
   onOpenChange,
   productToEdit,
+  initialBarcode,
   categories,
   onSuccess,
 }: ProductDialogProps) {
@@ -71,7 +76,7 @@ export function ProductDialog({
       setFormData({
         name: "",
         sku: "",
-        barcode: "",
+        barcode: initialBarcode ?? "",
         costPrice: 0,
         salePrice: 0,
         unit: "UN",
@@ -81,7 +86,7 @@ export function ProductDialog({
       });
     }
     setError(null);
-  }, [productToEdit, open]);
+  }, [productToEdit, initialBarcode, open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,12 +158,23 @@ export function ProductDialog({
               >
                 Código de Barras (EAN)
               </Label>
-              <Input
-                id="product-codigo-de-barras-ean"
-                placeholder="7891234567890"
-                value={formData.barcode || ""}
-                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="product-codigo-de-barras-ean"
+                  placeholder="7891234567890"
+                  value={formData.barcode || ""}
+                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                />
+                <ScanBarcodeButton
+                  size="icon-sm"
+                  className="size-8"
+                  label="Ler código de barras pela câmera"
+                  onDetected={(code) => {
+                    setFormData((prev) => ({ ...prev, barcode: code }));
+                    toast.success(`Código ${code} lido.`);
+                  }}
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <Label

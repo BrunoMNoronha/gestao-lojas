@@ -10,12 +10,13 @@
     "check:actions": "node scripts/check-actions-auth.mjs",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && node scripts/copy-zxing-wasm.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
     "@base-ui/react": "^1.8.0",
     "@prisma/client": "^6.4.0",
+    "barcode-detector": "^3.2.2",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",

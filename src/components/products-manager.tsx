@@ -36,6 +36,7 @@ import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { isStockLow } from "@/lib/stock";
+import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
 
 interface ProductsManagerProps {
   initialProducts: ProductItem[];
@@ -58,6 +59,7 @@ export function ProductsManager({
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<ProductItem | null>(null);
+  const [newProductBarcode, setNewProductBarcode] = useState<string | undefined>();
 
   const filteredProducts = initialProducts.filter((p) => {
     const matchesSearch =
@@ -71,12 +73,33 @@ export function ProductsManager({
     return matchesSearch && matchesCategory;
   });
 
-  const handleOpenNewProduct = () => {
+  const handleOpenNewProduct = (barcode?: string) => {
     setProductToEdit(null);
+    setNewProductBarcode(barcode);
     setProductDialogOpen(true);
   };
 
+  // Consulta pela câmera: filtra a lista pelo código; sem produto, oferece o cadastro (catalog.manage)
+  const handleScannedCode = (code: string) => {
+    setSearchQuery(code);
+    setSelectedCategory("ALL");
+    const q = code.toLowerCase();
+    const found = initialProducts.some(
+      (p) => p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q,
+    );
+    if (found) {
+      toast.success(`Produto encontrado para o código ${code}.`);
+    } else if (canManage) {
+      toast.error(`Nenhum produto com o código ${code}.`, {
+        action: { label: "Cadastrar", onClick: () => handleOpenNewProduct(code) },
+      });
+    } else {
+      toast.error(`Nenhum produto com o código ${code}.`);
+    }
+  };
+
   const handleOpenEditProduct = (product: ProductItem) => {
+    setNewProductBarcode(undefined);
     setProductToEdit(product);
     setProductDialogOpen(true);
   };
@@ -116,7 +139,7 @@ export function ProductsManager({
                 <FolderKanban />
                 Categorias
               </Button>
-              <Button onClick={handleOpenNewProduct}>
+              <Button onClick={() => handleOpenNewProduct()}>
                 <Plus />
                 Novo Produto
               </Button>
@@ -128,14 +151,24 @@ export function ProductsManager({
       {/* Filters & Search */}
       <Card>
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
-            <Input
-              aria-label="Buscar produto"
-              placeholder="Buscar por nome, código de barras ou SKU..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+          <div className="flex flex-1 gap-2">
+            <div className="relative flex-1">
+              <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+              <Input
+                aria-label="Buscar produto"
+                placeholder="Buscar por nome, código de barras ou SKU..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <ScanBarcodeButton
+              size="icon-sm"
+              className="size-8"
+              label="Consultar código pela câmera"
+              title="Consultar produto"
+              description="Aponte a câmera para o código de barras para encontrar o produto."
+              onDetected={handleScannedCode}
             />
           </div>
 
@@ -173,7 +206,7 @@ export function ProductsManager({
                 canManage &&
                 !searchQuery &&
                 selectedCategory === "ALL" && (
-                  <Button onClick={handleOpenNewProduct}>
+                  <Button onClick={() => handleOpenNewProduct()}>
                     <Plus /> Cadastrar Produto
                   </Button>
                 )
@@ -288,6 +321,7 @@ export function ProductsManager({
         open={productDialogOpen}
         onOpenChange={setProductDialogOpen}
         productToEdit={productToEdit}
+        initialBarcode={newProductBarcode}
         categories={initialCategories}
         onSuccess={handleRefreshData}
       />

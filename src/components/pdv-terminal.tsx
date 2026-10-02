@@ -39,6 +39,8 @@ import { ReceiptModal, CompletedSale } from "@/components/receipt-modal";
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 import { IconButton } from "@/components/icon-button";
+import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
+import { toast } from "sonner";
 
 interface CartItem {
   productId: string;
@@ -200,19 +202,19 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
       })
     : customers;
 
-  // Add product to cart (respects available stock)
+  // Add product to cart (respects available stock). Retorna a mensagem de erro, ou null se adicionou.
   const addToCart = useCallback(
-    (product: ProductItem) => {
+    (product: ProductItem, { focusSearch = true }: { focusSearch?: boolean } = {}) => {
       const existing = cart.find((item) => item.productId === product.id);
       const nextQty = (existing?.quantity ?? 0) + 1;
+      let error: string | null = null;
 
       if (nextQty > product.currentStock) {
-        setNotice(
-          `Estoque insuficiente para "${product.name}" (disponível: ${formatQuantity(
-            product.currentStock,
-            product.unit,
-          )} ${product.unit}).`,
-        );
+        error = `Estoque insuficiente para "${product.name}" (disponível: ${formatQuantity(
+          product.currentStock,
+          product.unit,
+        )} ${product.unit}).`;
+        setNotice(error);
       } else {
         setNotice(null);
         setCart((prev) => {
@@ -241,26 +243,52 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
 
       setSearchQuery("");
       setShowSuggestions(false);
-      searchInputRef.current?.focus();
+      if (focusSearch) searchInputRef.current?.focus();
+      return error;
     },
     [cart],
   );
 
+  // Regra do Enter (e da leitura pela câmera): código de barras ou SKU exato; senão, o único
+  // produto cujo nome, código ou SKU contenha o termo
+  const resolveProduct = (query: string): ProductItem | "none" | "many" => {
+    const q = query.trim().toLowerCase();
+    const exact = products.find(
+      (p) => p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q,
+    );
+    if (exact) return exact;
+    const matches = products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.barcode?.toLowerCase().includes(q) ||
+        p.sku?.toLowerCase().includes(q),
+    );
+    if (matches.length === 1) return matches[0];
+    return matches.length === 0 ? "none" : "many";
+  };
+
+  // Leitura pela câmera (modo contínuo): cada código lido adiciona um item
+  const handleScannedCode = (code: string) => {
+    const result = resolveProduct(code);
+    if (result === "none") {
+      toast.error(`Nenhum produto encontrado para o código ${code}.`);
+    } else if (result === "many") {
+      toast.warning(`Mais de um produto corresponde a ${code}. Use a busca para escolher.`);
+    } else {
+      const error = addToCart(result, { focusSearch: false });
+      if (error) toast.error(error);
+      else toast.success(`${result.name} adicionado (${code}).`);
+    }
+  };
+
   // Handle barcode/enter from search
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && searchQuery.trim()) {
-      // Exact match by barcode or SKU
-      const exactMatch = products.find(
-        (p) =>
-          p.barcode?.toLowerCase() === searchQuery.trim().toLowerCase() ||
-          p.sku?.toLowerCase() === searchQuery.trim().toLowerCase(),
-      );
-      if (exactMatch) {
-        addToCart(exactMatch);
-      } else if (filteredProducts.length === 1) {
-        addToCart(filteredProducts[0]);
-      } else if (filteredProducts.length === 0) {
+      const result = resolveProduct(searchQuery);
+      if (result === "none") {
         setNotice(`Nenhum produto encontrado para "${searchQuery.trim()}".`);
+      } else if (result !== "many") {
+        addToCart(result);
       }
     }
   };
@@ -444,52 +472,61 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
       {/* LEFT: Product Search + Cart */}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         {/* Search Bar */}
-        <div className="relative">
-          <Search className="text-muted-foreground absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2" />
-          <Input
-            ref={searchInputRef}
-            aria-label="Buscar produto"
-            placeholder="Buscar produto por nome, código de barras ou SKU... (F2 · Enter para adicionar)"
-            value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value);
-              setShowSuggestions(true);
-            }}
-            onFocus={() => setShowSuggestions(true)}
-            onKeyDown={handleSearchKeyDown}
-            className="h-12 pl-10 text-base"
-          />
+        <div className="flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="text-muted-foreground absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2" />
+            <Input
+              ref={searchInputRef}
+              aria-label="Buscar produto"
+              placeholder="Buscar produto por nome, código de barras ou SKU... (F2 · Enter para adicionar)"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onKeyDown={handleSearchKeyDown}
+              className="h-12 pl-10 text-base"
+            />
 
-          {/* Suggestions Dropdown */}
-          {showSuggestions && filteredProducts.length > 0 && (
-            <div className="bg-popover absolute top-full right-0 left-0 z-50 mt-1 max-h-72 overflow-y-auto rounded-lg border shadow-xl">
-              {filteredProducts.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="hover:bg-muted/70 flex w-full items-center justify-between border-b px-4 py-3 text-left text-sm transition-colors last:border-0"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    addToCart(p);
-                  }}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{p.name}</div>
-                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                      {p.barcode && <span>EAN: {p.barcode}</span>}
-                      {p.sku && <span>SKU: {p.sku}</span>}
-                      <span className={cn(p.currentStock <= 0 && "text-destructive font-medium")}>
-                        Estoque: {formatQuantity(p.currentStock, p.unit)} {p.unit}
-                      </span>
+            {/* Suggestions Dropdown */}
+            {showSuggestions && filteredProducts.length > 0 && (
+              <div className="bg-popover absolute top-full right-0 left-0 z-50 mt-1 max-h-72 overflow-y-auto rounded-lg border shadow-xl">
+                {filteredProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="hover:bg-muted/70 flex w-full items-center justify-between border-b px-4 py-3 text-left text-sm transition-colors last:border-0"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      addToCart(p);
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{p.name}</div>
+                      <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                        {p.barcode && <span>EAN: {p.barcode}</span>}
+                        {p.sku && <span>SKU: {p.sku}</span>}
+                        <span className={cn(p.currentStock <= 0 && "text-destructive font-medium")}>
+                          Estoque: {formatQuantity(p.currentStock, p.unit)} {p.unit}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-primary ml-4 font-bold whitespace-nowrap">
-                    {formatCurrency(p.salePrice)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+                    <span className="text-primary ml-4 font-bold whitespace-nowrap">
+                      {formatCurrency(p.salePrice)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <ScanBarcodeButton
+            continuous
+            className="size-12"
+            title="Ler produtos pela câmera"
+            description="Cada código lido adiciona um item ao carrinho. Afaste o código e aproxime de novo para somar outra unidade."
+            onDetected={handleScannedCode}
+          />
         </div>
 
         {notice && (
