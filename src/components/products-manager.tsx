@@ -28,6 +28,12 @@ import { ProductItem, deleteProduct } from "@/actions/products";
 import { CategoryData } from "@/actions/categories";
 import { ProductDialog } from "@/components/product-dialog";
 import { CategoryDialog } from "@/components/category-dialog";
+import { useConfirm } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
+import { IconButton } from "@/components/icon-button";
+import { OptionSelect } from "@/components/option-select";
+import { PageHeader } from "@/components/page-header";
+import { toast } from "sonner";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { isStockLow } from "@/lib/stock";
 
@@ -44,6 +50,7 @@ export function ProductsManager({
   canManage,
 }: ProductsManagerProps) {
   const router = useRouter();
+  const [askConfirm, confirmDialog] = useConfirm();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
@@ -59,8 +66,7 @@ export function ProductsManager({
       p.barcode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.sku?.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesCategory =
-      selectedCategory === "ALL" || p.categoryId === selectedCategory;
+    const matchesCategory = selectedCategory === "ALL" || p.categoryId === selectedCategory;
 
     return matchesSearch && matchesCategory;
   });
@@ -76,13 +82,20 @@ export function ProductsManager({
   };
 
   const handleDeleteProduct = async (id: string, name: string) => {
-    if (!confirm(`Deseja realmente excluir o produto "${name}"?`)) return;
+    const confirmed = await askConfirm({
+      title: "Excluir produto?",
+      description: `O produto "${name}" será removido do catálogo. Esta ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     const res = await deleteProduct(id);
     if (res.success) {
+      toast.success("Produto excluído.");
       router.refresh();
     } else {
-      alert(res.error || "Erro ao excluir produto.");
+      toast.error(res.error || "Erro ao excluir produto.");
     }
   };
 
@@ -92,46 +105,33 @@ export function ProductsManager({
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Package className="w-6 h-6 text-primary" />
-            Produtos e Categorias
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Gerencie o catálogo de produtos, preços, estoque e categorias da sua loja.
-          </p>
-        </div>
-
-        {canManage && (
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setCategoryDialogOpen(true)}
-            className="flex items-center gap-1.5"
-          >
-            <FolderKanban className="w-4 h-4" />
-            Categorias
-          </Button>
-
-          <Button
-            onClick={handleOpenNewProduct}
-            className="flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            Novo Produto
-          </Button>
-        </div>
-        )}
-      </div>
+      <PageHeader
+        title="Produtos e Categorias"
+        icon={Package}
+        description="Gerencie o catálogo de produtos, preços, estoque e categorias da sua loja."
+        actions={
+          canManage && (
+            <>
+              <Button variant="outline" onClick={() => setCategoryDialogOpen(true)}>
+                <FolderKanban />
+                Categorias
+              </Button>
+              <Button onClick={handleOpenNewProduct}>
+                <Plus />
+                Novo Produto
+              </Button>
+            </>
+          )
+        }
+      />
 
       {/* Filters & Search */}
       <Card>
-        <CardContent className="p-4 flex flex-col sm:flex-row gap-3">
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
             <Input
+              aria-label="Buscar produto"
               placeholder="Buscar por nome, código de barras ou SKU..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -140,18 +140,18 @@ export function ProductsManager({
           </div>
 
           <div className="w-full sm:w-64">
-            <select
-              className="w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            <OptionSelect
+              aria-label="Filtrar por categoria"
               value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-            >
-              <option value="ALL">Todas as Categorias</option>
-              {initialCategories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name} ({cat._count?.products ?? 0})
-                </option>
-              ))}
-            </select>
+              onValueChange={setSelectedCategory}
+              options={[
+                { value: "ALL", label: "Todas as Categorias" },
+                ...initialCategories.map((cat) => ({
+                  value: cat.id,
+                  label: `${cat.name} (${cat._count?.products ?? 0})`,
+                })),
+              ]}
+            />
           </div>
         </CardContent>
       </Card>
@@ -160,30 +160,35 @@ export function ProductsManager({
       <Card>
         <CardContent className="p-0">
           {filteredProducts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <Boxes className="w-12 h-12 text-muted-foreground/50 mb-3" />
-              <h3 className="font-semibold text-base">Nenhum produto encontrado</h3>
-              <p className="text-sm text-muted-foreground max-w-sm mt-1">
-                {searchQuery || selectedCategory !== "ALL"
+            <EmptyState
+              className="border-0"
+              icon={Boxes}
+              title="Nenhum produto encontrado"
+              description={
+                searchQuery || selectedCategory !== "ALL"
                   ? "Tente ajustar os filtros de busca para encontrar o produto desejado."
-                  : "Cadastre seu primeiro produto para começar a gerenciar o estoque."}
-              </p>
-              {canManage && !searchQuery && selectedCategory === "ALL" && (
-                <Button onClick={handleOpenNewProduct} className="mt-4">
-                  <Plus className="w-4 h-4 mr-1.5" /> Cadastrar Produto
-                </Button>
-              )}
-            </div>
+                  : "Cadastre seu primeiro produto para começar a gerenciar o estoque."
+              }
+              action={
+                canManage &&
+                !searchQuery &&
+                selectedCategory === "ALL" && (
+                  <Button onClick={handleOpenNewProduct}>
+                    <Plus /> Cadastrar Produto
+                  </Button>
+                )
+              }
+            />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Produto</TableHead>
-                  <TableHead>Código / SKU</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead className="text-right">P. Custo</TableHead>
+                  <TableHead className="hidden lg:table-cell">Código / SKU</TableHead>
+                  <TableHead className="hidden md:table-cell">Categoria</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">P. Custo</TableHead>
                   <TableHead className="text-right">P. Venda</TableHead>
-                  <TableHead className="text-center">Un.</TableHead>
+                  <TableHead className="hidden text-center sm:table-cell">Un.</TableHead>
                   <TableHead className="text-right">Estoque</TableHead>
                   <TableHead className="text-center">Status</TableHead>
                   {canManage && <TableHead className="text-center">Ações</TableHead>}
@@ -195,13 +200,13 @@ export function ProductsManager({
 
                   return (
                     <TableRow key={p.id}>
-                      <TableCell className="font-medium">
+                      <TableCell className="min-w-40 font-medium whitespace-normal">
                         <div>
                           <span>{p.name}</span>
                         </div>
                       </TableCell>
 
-                      <TableCell className="text-muted-foreground text-xs font-mono">
+                      <TableCell className="text-muted-foreground hidden font-mono text-xs lg:table-cell">
                         {p.barcode ? (
                           <div>EAN: {p.barcode}</div>
                         ) : p.sku ? (
@@ -211,9 +216,9 @@ export function ProductsManager({
                         )}
                       </TableCell>
 
-                      <TableCell>
+                      <TableCell className="hidden md:table-cell">
                         {p.categoryName ? (
-                          <Badge variant="secondary" className="font-normal text-xs">
+                          <Badge variant="secondary" className="text-xs font-normal">
                             {p.categoryName}
                           </Badge>
                         ) : (
@@ -221,7 +226,7 @@ export function ProductsManager({
                         )}
                       </TableCell>
 
-                      <TableCell className="text-right text-muted-foreground">
+                      <TableCell className="text-muted-foreground hidden text-right md:table-cell">
                         {formatCurrency(p.costPrice)}
                       </TableCell>
 
@@ -229,7 +234,7 @@ export function ProductsManager({
                         {formatCurrency(p.salePrice)}
                       </TableCell>
 
-                      <TableCell className="text-center">
+                      <TableCell className="hidden text-center sm:table-cell">
                         <Badge variant="outline" className="text-xs">
                           {p.unit}
                         </Badge>
@@ -241,40 +246,33 @@ export function ProductsManager({
 
                       <TableCell className="text-center">
                         {lowStock ? (
-                          <Badge variant="destructive" className="text-[11px] gap-1">
-                            <AlertTriangle className="w-3 h-3" /> Estoque Baixo
+                          <Badge variant="destructive" className="gap-1 text-[11px]">
+                            <AlertTriangle className="h-3 w-3" /> Estoque Baixo
                           </Badge>
                         ) : (
-                          <Badge
-                            variant="outline"
-                            className="text-[11px] text-emerald-600 border-emerald-600/30 bg-emerald-50/50 dark:bg-emerald-950/20 dark:text-emerald-400"
-                          >
+                          <Badge variant="success" className="text-[11px]">
                             OK
                           </Badge>
                         )}
                       </TableCell>
 
                       {canManage && (
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            onClick={() => handleOpenEditProduct(p)}
-                            title="Editar produto"
-                          >
-                            <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                          </Button>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            onClick={() => handleDeleteProduct(p.id, p.name)}
-                            title="Excluir produto"
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <IconButton
+                              label="Editar produto"
+                              onClick={() => handleOpenEditProduct(p)}
+                            >
+                              <Edit2 className="text-muted-foreground" />
+                            </IconButton>
+                            <IconButton
+                              label="Excluir produto"
+                              onClick={() => handleDeleteProduct(p.id, p.name)}
+                            >
+                              <Trash2 className="text-destructive" />
+                            </IconButton>
+                          </div>
+                        </TableCell>
                       )}
                     </TableRow>
                   );
@@ -300,6 +298,7 @@ export function ProductsManager({
         categories={initialCategories}
         onCategoryChange={handleRefreshData}
       />
+      {confirmDialog}
     </div>
   );
 }

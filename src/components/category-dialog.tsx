@@ -12,12 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Edit2, Trash2, Check, X, Loader2, FolderKanban } from "lucide-react";
-import {
-  CategoryData,
-  createCategory,
-  updateCategory,
-  deleteCategory,
-} from "@/actions/categories";
+import { CategoryData, createCategory, updateCategory, deleteCategory } from "@/actions/categories";
+import { useConfirm } from "@/components/confirm-dialog";
+import { IconButton } from "@/components/icon-button";
 
 interface CategoryDialogProps {
   open: boolean;
@@ -37,6 +34,7 @@ export function CategoryDialog({
   const [editingName, setEditingName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [askConfirm, confirmDialog] = useConfirm();
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,8 +70,14 @@ export function CategoryDialog({
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta categoria?")) return;
+  const handleDelete = async (id: string, name: string) => {
+    const confirmed = await askConfirm({
+      title: "Excluir categoria?",
+      description: `A categoria "${name}" será removida. Esta ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     setLoading(true);
     setError(null);
@@ -92,7 +96,7 @@ export function CategoryDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <FolderKanban className="w-5 h-5 text-primary" />
+            <FolderKanban className="text-primary h-5 w-5" />
             <DialogTitle>Gerenciar Categorias</DialogTitle>
           </div>
           <DialogDescription>
@@ -101,7 +105,7 @@ export function CategoryDialog({
         </DialogHeader>
 
         {error && (
-          <div className="p-2.5 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+          <div className="text-destructive bg-destructive/10 border-destructive/20 rounded-md border p-2.5 text-xs">
             {error}
           </div>
         )}
@@ -109,6 +113,7 @@ export function CategoryDialog({
         {/* Form para Nova Categoria */}
         <form onSubmit={handleCreate} className="flex gap-2">
           <Input
+            aria-label="Nome da nova categoria"
             placeholder="Nome da nova categoria..."
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
@@ -116,81 +121,78 @@ export function CategoryDialog({
           />
           <Button type="submit" disabled={loading || !newCategoryName.trim()}>
             {loading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <>
-                <Plus className="w-4 h-4 mr-1" /> Criar
+                <Plus className="mr-1 h-4 w-4" /> Criar
               </>
             )}
           </Button>
         </form>
 
         {/* Lista de Categorias */}
-        <div className="mt-4 max-h-60 overflow-y-auto space-y-2 pr-1">
+        <div className="mt-4 max-h-60 space-y-2 overflow-y-auto pr-1">
           {categories.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">
+            <p className="text-muted-foreground py-4 text-center text-xs">
               Nenhuma categoria cadastrada.
             </p>
           ) : (
             categories.map((cat) => (
               <div
                 key={cat.id}
-                className="flex items-center justify-between p-2.5 rounded-lg border bg-card text-sm"
+                className="bg-card flex items-center justify-between rounded-lg border p-2.5 text-sm"
               >
                 {editingId === cat.id ? (
-                  <div className="flex items-center gap-2 flex-1 mr-2">
+                  <div className="mr-2 flex flex-1 items-center gap-2">
                     <Input
+                      aria-label="Novo nome da categoria"
                       value={editingName}
                       onChange={(e) => setEditingName(e.target.value)}
                       className="h-8 text-xs"
                       autoFocus
                     />
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
+                    <IconButton
+                      label="Salvar nome"
                       onClick={() => handleUpdate(cat.id)}
                       disabled={loading}
                     >
-                      <Check className="w-4 h-4 text-green-600" />
-                    </Button>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
+                      <Check className="text-success" />
+                    </IconButton>
+                    <IconButton
+                      label="Cancelar edição"
                       onClick={() => {
                         setEditingId(null);
                         setEditingName("");
                       }}
                     >
-                      <X className="w-4 h-4 text-muted-foreground" />
-                    </Button>
+                      <X className="text-muted-foreground" />
+                    </IconButton>
                   </div>
                 ) : (
                   <>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{cat.name}</span>
-                      <Badge variant="outline" className="text-[10px] py-0 px-1.5">
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
                         {cat._count?.products ?? 0} produto(s)
                       </Badge>
                     </div>
 
                     <div className="flex items-center gap-1">
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
+                      <IconButton
+                        label={`Editar categoria ${cat.name}`}
                         onClick={() => {
                           setEditingId(cat.id);
                           setEditingName(cat.name);
                         }}
                       >
-                        <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
-                      </Button>
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        onClick={() => handleDelete(cat.id)}
+                        <Edit2 className="text-muted-foreground size-3.5" />
+                      </IconButton>
+                      <IconButton
+                        label={`Excluir categoria ${cat.name}`}
+                        onClick={() => handleDelete(cat.id, cat.name)}
                       >
-                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                      </Button>
+                        <Trash2 className="text-destructive size-3.5" />
+                      </IconButton>
                     </div>
                   </>
                 )}
@@ -199,6 +201,7 @@ export function CategoryDialog({
           )}
         </div>
       </DialogContent>
+      {confirmDialog}
     </Dialog>
   );
 }

@@ -1,10 +1,12 @@
 import { connection } from "next/server";
-import { UserRound } from "lucide-react";
+import { DatabaseZap, UserRound } from "lucide-react";
 import { getMyAccount } from "@/actions/users";
 import { requirePageAccess } from "@/lib/authz";
 import { ROLE_LABELS } from "@/lib/permissions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChangePasswordForm } from "@/components/change-password-form";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata = {
   title: "Minha conta",
@@ -18,13 +20,11 @@ export default async function MinhaContaPage() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-          <UserRound className="text-primary h-6 w-6" />
-          Minha conta
-        </h1>
-        <p className="text-muted-foreground text-sm">Seus dados de acesso e troca de senha.</p>
-      </div>
+      <PageHeader
+        title="Minha conta"
+        icon={UserRound}
+        description="Seus dados de acesso e troca de senha."
+      />
 
       {account ? (
         <Card>
@@ -46,9 +46,12 @@ export default async function MinhaContaPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="bg-card rounded-lg border p-6 text-center text-sm">
-          Não foi possível carregar os dados da conta. Recarregue a página.
-        </div>
+        <EmptyState
+          icon={DatabaseZap}
+          tone="destructive"
+          title="Dados indisponíveis"
+          description="Não foi possível carregar os dados da conta. Recarregue a página."
+        />
       )}
 
       <Card>

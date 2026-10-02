@@ -19,6 +19,7 @@ import {
   RECEIVABLE_PAYMENT_METHODS,
 } from "@/lib/payments";
 import { cn, formatCurrency } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 interface ReceivablePaymentDialogProps {
   open: boolean;
@@ -118,14 +119,21 @@ export function ReceivablePaymentDialog({
             </div>
 
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">Forma de recebimento</label>
-              <div className="grid grid-cols-4 gap-2">
+              <p id="receivable-forma-recebimento" className="text-foreground text-xs font-medium">
+                Forma de recebimento
+              </p>
+              <div
+                role="group"
+                aria-labelledby="receivable-forma-recebimento"
+                className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+              >
                 {RECEIVABLE_PAYMENT_METHODS.map((m) => (
                   <Button
                     key={m}
                     type="button"
                     size="sm"
                     variant={method === m ? "default" : "outline"}
+                    aria-pressed={method === m}
                     onClick={() => setMethod(m)}
                     className={cn("w-full")}
                   >
@@ -141,10 +149,14 @@ export function ReceivablePaymentDialog({
             </div>
 
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">
+              <Label
+                htmlFor="receivable-payment-valor-recebido-r"
+                className="text-foreground text-xs font-medium"
+              >
                 Valor recebido (R$) <span className="text-destructive">*</span>
-              </label>
+              </Label>
               <Input
+                id="receivable-payment-valor-recebido-r"
                 type="number"
                 step="0.01"
                 min="0"

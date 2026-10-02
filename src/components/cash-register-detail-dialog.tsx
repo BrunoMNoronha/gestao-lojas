@@ -114,8 +114,8 @@ export function CashRegisterDetailDialog({
                           className={cn(
                             "text-[11px]",
                             m.type === "WITHDRAWAL"
-                              ? "border-amber-600/30 text-amber-600 dark:text-amber-400"
-                              : "border-emerald-600/30 text-emerald-600 dark:text-emerald-400",
+                              ? "border-warning/30 text-warning"
+                              : "border-success/30 text-success",
                           )}
                         >
                           {m.type === "WITHDRAWAL" ? "Sangria" : "Suprimento"}
@@ -161,8 +161,8 @@ export function DifferenceValue({ value }: { value: number }) {
     <span
       className={cn(
         "font-mono font-semibold",
-        value === 0 && "text-emerald-600 dark:text-emerald-400",
-        value > 0 && "text-amber-600 dark:text-amber-400",
+        value === 0 && "text-success",
+        value > 0 && "text-warning",
         value < 0 && "text-destructive",
       )}
     >

@@ -17,6 +17,7 @@ import { adjustStock } from "@/actions/stock";
 import { cn } from "@/lib/utils";
 import { formatQuantity, isIntegerUnit } from "@/lib/stock";
 import { ProductPicker } from "@/components/stock-product-picker";
+import { Label } from "@/components/ui/label";
 
 interface StockAdjustDialogProps {
   open: boolean;
@@ -116,7 +117,7 @@ export function StockAdjustDialog({
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">Saldo Atual</label>
+              <span className="text-foreground block text-xs font-medium">Saldo Atual</span>
               <div className="border-input bg-muted/50 flex h-8 items-center rounded-lg border px-2.5 font-mono text-sm">
                 {product
                   ? `${formatQuantity(product.currentStock, product.unit)} ${product.unit}`
@@ -124,10 +125,14 @@ export function StockAdjustDialog({
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">
+              <Label
+                htmlFor="stock-adjust-saldo-contado"
+                className="text-foreground text-xs font-medium"
+              >
                 Saldo Contado <span className="text-destructive">*</span>
-              </label>
+              </Label>
               <Input
+                id="stock-adjust-saldo-contado"
                 type="number"
                 step={product && isIntegerUnit(product.unit) ? "1" : "0.001"}
                 min="0"
@@ -138,11 +143,11 @@ export function StockAdjustDialog({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">Diferença</label>
+              <span className="text-foreground block text-xs font-medium">Diferença</span>
               <div
                 className={cn(
                   "border-input bg-muted/50 flex h-8 items-center rounded-lg border px-2.5 font-mono text-sm font-semibold",
-                  delta !== null && delta > 0 && "text-emerald-600 dark:text-emerald-400",
+                  delta !== null && delta > 0 && "text-success",
                   delta !== null && delta < 0 && "text-destructive",
                 )}
               >
@@ -154,10 +159,11 @@ export function StockAdjustDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">
+            <Label htmlFor="stock-adjust-motivo" className="text-foreground text-xs font-medium">
               Motivo <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="stock-adjust-motivo"
               placeholder="Ex: Inventário mensal, avaria, perda, vencimento"
               maxLength={200}
               value={reason}

@@ -40,6 +40,9 @@ import {
 } from "@/components/cash-register-detail-dialog";
 import { dayBoundary, formatDateTime } from "@/lib/dates";
 import { formatCurrency } from "@/lib/utils";
+import { OptionSelect } from "@/components/option-select";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/page-header";
 
 interface CashRegisterManagerProps {
   current: CurrentCashRegister | null;
@@ -55,9 +58,6 @@ interface HistoryFilters {
 
 const PAGE_SIZE = 30;
 const EMPTY_FILTERS: HistoryFilters = { userId: "", from: "", to: "" };
-
-const selectClassName =
-  "w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring";
 
 function OpenCashRegisterCard({ onOpened }: { onOpened: () => void }) {
   const [amount, setAmount] = useState("");
@@ -102,8 +102,14 @@ function OpenCashRegisterCard({ onOpened }: { onOpened: () => void }) {
             </div>
           )}
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">Suprimento inicial (R$)</label>
+            <Label
+              htmlFor="cash-register-manager-suprimento-inicial-r"
+              className="text-foreground text-xs font-medium"
+            >
+              Suprimento inicial (R$)
+            </Label>
             <Input
+              id="cash-register-manager-suprimento-inicial-r"
               type="number"
               step="0.01"
               min="0"
@@ -193,43 +199,30 @@ export function CashRegisterManager({
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-            <Wallet className="text-primary h-6 w-6" />
-            Caixa
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Abertura, sangrias, suprimentos e fechamento do turno com conferência.
-          </p>
-        </div>
-
-        {current && view === "current" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => openMovementDialog("SUPPLY")}
-              className="gap-1.5"
-            >
-              <ArrowDownToLine className="h-4 w-4" />
-              Suprimento
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => openMovementDialog("WITHDRAWAL")}
-              className="gap-1.5"
-            >
-              <ArrowUpFromLine className="h-4 w-4" />
-              Sangria
-            </Button>
-            <Button onClick={openCloseDialog} className="gap-1.5">
-              <Lock className="h-4 w-4" />
-              Fechar Caixa
-            </Button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title="Caixa"
+        icon={Wallet}
+        description="Abertura, sangrias, suprimentos e fechamento do turno com conferência."
+        actions={
+          current &&
+          view === "current" && (
+            <>
+              <Button variant="outline" onClick={() => openMovementDialog("SUPPLY")}>
+                <ArrowDownToLine />
+                Suprimento
+              </Button>
+              <Button variant="outline" onClick={() => openMovementDialog("WITHDRAWAL")}>
+                <ArrowUpFromLine />
+                Sangria
+              </Button>
+              <Button onClick={openCloseDialog}>
+                <Lock />
+                Fechar Caixa
+              </Button>
+            </>
+          )
+        }
+      />
 
       {/* View switch */}
       <div className="bg-muted/40 inline-flex gap-1 rounded-lg border p-1">
@@ -275,23 +268,31 @@ export function CashRegisterManager({
           <Card>
             <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto]">
               <div className="space-y-1">
-                <label className="text-muted-foreground text-xs font-medium">Operador</label>
-                <select
-                  className={selectClassName}
-                  value={filters.userId}
-                  onChange={(e) => updateFilters({ userId: e.target.value })}
+                <Label
+                  htmlFor="cash-register-manager-operador"
+                  className="text-muted-foreground text-xs font-medium"
                 >
-                  <option value="">Todos os operadores</option>
-                  {operators.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
+                  Operador
+                </Label>
+                <OptionSelect
+                  id="cash-register-manager-operador"
+                  value={filters.userId}
+                  onValueChange={(v) => updateFilters({ userId: v })}
+                  options={[
+                    { value: "", label: "Todos os operadores" },
+                    ...operators.map((o) => ({ value: o.id, label: o.name })),
+                  ]}
+                />
               </div>
               <div className="space-y-1">
-                <label className="text-muted-foreground text-xs font-medium">Fechado de</label>
+                <Label
+                  htmlFor="cash-register-manager-fechado-de"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Fechado de
+                </Label>
                 <Input
+                  id="cash-register-manager-fechado-de"
                   type="date"
                   value={filters.from}
                   max={filters.to || undefined}
@@ -299,8 +300,14 @@ export function CashRegisterManager({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-muted-foreground text-xs font-medium">Até</label>
+                <Label
+                  htmlFor="cash-register-manager-ate"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Até
+                </Label>
                 <Input
+                  id="cash-register-manager-ate"
                   type="date"
                   value={filters.to}
                   min={filters.from || undefined}
@@ -358,7 +365,9 @@ export function CashRegisterManager({
                     <TableBody>
                       {history.items.map((r) => (
                         <TableRow key={r.id}>
-                          <TableCell className="font-medium">{r.userName}</TableCell>
+                          <TableCell className="min-w-40 font-medium whitespace-normal">
+                            {r.userName}
+                          </TableCell>
                           <TableCell
                             className="text-muted-foreground text-xs whitespace-nowrap"
                             suppressHydrationWarning

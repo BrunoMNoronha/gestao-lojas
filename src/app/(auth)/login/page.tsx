@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { isAppRole } from "@/lib/permissions";
 import { landingPathFor, safeInternalPath } from "@/lib/routes";
+import { Label } from "@/components/ui/label";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -51,38 +53,47 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="bg-muted/40 relative flex min-h-screen items-center justify-center p-4">
+      <div className="absolute top-3 right-3">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md space-y-6">
-        <div className="flex flex-col items-center text-center space-y-2">
-          <div className="p-3 bg-primary text-primary-foreground rounded-xl shadow-md">
-            <Store className="w-8 h-8" />
+        <div className="flex flex-col items-center space-y-2 text-center">
+          <div className="bg-primary text-primary-foreground rounded-xl p-3 shadow-md">
+            <Store className="h-8 w-8" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight">Gestão de Lojas</h1>
-          <p className="text-sm text-muted-foreground">Sistema de Gestão Comercial e PDV</p>
+          <p className="text-muted-foreground text-sm">Sistema de Gestão Comercial e PDV</p>
         </div>
 
-        <Card className="shadow-lg border-border">
+        <Card className="border-border shadow-lg">
           <CardHeader className="space-y-1 text-center">
             <CardTitle className="text-xl">Acessar o Painel</CardTitle>
-            <CardDescription>
-              Informe suas credenciais para entrar no sistema
-            </CardDescription>
+            <CardDescription>Informe suas credenciais para entrar no sistema</CardDescription>
           </CardHeader>
           <CardContent>
             {error && (
-              <div className="mb-4 flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div
+                role="alert"
+                className="text-destructive bg-destructive/10 border-destructive/20 mb-4 flex items-center gap-2 rounded-md border p-3 text-sm"
+              >
+                <AlertCircle className="h-4 w-4 shrink-0" />
                 <span>{error}</span>
               </div>
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                  <Mail className="w-3.5 h-3.5 text-muted-foreground" /> E-mail
-                </label>
+                <Label
+                  htmlFor="login-e-mail"
+                  className="text-foreground flex items-center gap-1.5 text-xs font-medium"
+                >
+                  <Mail className="text-muted-foreground h-3.5 w-3.5" /> E-mail
+                </Label>
                 <Input
+                  id="login-e-mail"
                   type="email"
+                  autoComplete="username"
                   placeholder="seu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -92,11 +103,16 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-muted-foreground" /> Senha
-                </label>
+                <Label
+                  htmlFor="login-senha"
+                  className="text-foreground flex items-center gap-1.5 text-xs font-medium"
+                >
+                  <Lock className="text-muted-foreground h-3.5 w-3.5" /> Senha
+                </Label>
                 <Input
+                  id="login-senha"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -104,10 +120,10 @@ export default function LoginPage() {
                 />
               </div>
 
-              <Button type="submit" className="w-full mt-2" disabled={loading}>
+              <Button type="submit" className="mt-2 w-full" disabled={loading}>
                 {loading ? (
                   <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Entrando...
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Entrando...
                   </>
                 ) : (
                   "Entrar"
@@ -117,7 +133,7 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <div className="text-center text-xs text-muted-foreground">
+        <div className="text-muted-foreground text-center text-xs">
           <p>Gestão de Lojas ERP/PDV &copy; {new Date().getFullYear()}</p>
         </div>
       </div>

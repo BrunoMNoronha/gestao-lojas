@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { changeOwnPassword } from "@/actions/users";
+import { Label } from "@/components/ui/label";
 
 export function ChangePasswordForm() {
   const [current, setCurrent] = useState("");
@@ -12,11 +14,9 @@ export function ChangePasswordForm() {
   const [confirmation, setConfirmation] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setDone(false);
     if (next.length < 8) return setError("A nova senha deve ter no mínimo 8 caracteres.");
     if (next !== confirmation) return setError("A confirmação não confere com a nova senha.");
 
@@ -29,7 +29,7 @@ export function ChangePasswordForm() {
       setCurrent("");
       setNext("");
       setConfirmation("");
-      setDone(true);
+      toast.success("Senha alterada com sucesso.");
     } else {
       setError(res.error || "Erro ao trocar a senha.");
     }
@@ -42,14 +42,15 @@ export function ChangePasswordForm() {
           {error}
         </div>
       )}
-      {done && (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-600/30 bg-emerald-50/50 p-2.5 text-xs text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400">
-          <CheckCircle2 className="h-4 w-4" /> Senha alterada com sucesso.
-        </div>
-      )}
       <div className="space-y-1">
-        <label className="text-foreground text-xs font-medium">Senha atual</label>
+        <Label
+          htmlFor="change-password-senha-atual"
+          className="text-foreground text-xs font-medium"
+        >
+          Senha atual
+        </Label>
         <Input
+          id="change-password-senha-atual"
           type="password"
           value={current}
           onChange={(e) => setCurrent(e.target.value)}
@@ -58,8 +59,11 @@ export function ChangePasswordForm() {
         />
       </div>
       <div className="space-y-1">
-        <label className="text-foreground text-xs font-medium">Nova senha</label>
+        <Label htmlFor="change-password-nova-senha" className="text-foreground text-xs font-medium">
+          Nova senha
+        </Label>
         <Input
+          id="change-password-nova-senha"
           type="password"
           value={next}
           onChange={(e) => setNext(e.target.value)}
@@ -70,8 +74,14 @@ export function ChangePasswordForm() {
         />
       </div>
       <div className="space-y-1">
-        <label className="text-foreground text-xs font-medium">Confirmar nova senha</label>
+        <Label
+          htmlFor="change-password-confirmar-nova-senha"
+          className="text-foreground text-xs font-medium"
+        >
+          Confirmar nova senha
+        </Label>
         <Input
+          id="change-password-confirmar-nova-senha"
           type="password"
           value={confirmation}
           onChange={(e) => setConfirmation(e.target.value)}

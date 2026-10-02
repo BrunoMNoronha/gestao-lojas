@@ -38,6 +38,9 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { MOVEMENT_TYPE_LABELS, formatQuantity } from "@/lib/stock";
 import { StockEntryDialog } from "@/components/stock-entry-dialog";
 import { StockAdjustDialog } from "@/components/stock-adjust-dialog";
+import { OptionSelect } from "@/components/option-select";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/page-header";
 
 interface StockManagerProps {
   products: ProductItem[];
@@ -57,9 +60,6 @@ interface Filters {
 
 const PAGE_SIZE = 50;
 const EMPTY_FILTERS: Filters = { productId: "", type: "", from: "", to: "" };
-
-const selectClassName =
-  "w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring";
 
 // Converte o dia local escolhido em limite ISO (início ou fim do dia no fuso do navegador)
 function dayBoundary(value: string, endOfDay: boolean): string | null {
@@ -85,10 +85,9 @@ function signedQuantity(m: StockMovementItem) {
 
 function MovementTypeBadge({ type }: { type: MovementTypeValue }) {
   const className = {
-    IN: "text-emerald-600 border-emerald-600/30 bg-emerald-50/50 dark:bg-emerald-950/20 dark:text-emerald-400",
-    OUT: "text-sky-600 border-sky-600/30 bg-sky-50/50 dark:bg-sky-950/20 dark:text-sky-400",
-    ADJUSTMENT:
-      "text-amber-600 border-amber-600/30 bg-amber-50/50 dark:bg-amber-950/20 dark:text-amber-400",
+    IN: "text-success border-success/30 bg-success/10",
+    OUT: "text-info border-info/30 bg-info/10",
+    ADJUSTMENT: "text-warning border-warning/30 bg-warning/10",
   }[type];
 
   return (
@@ -167,35 +166,25 @@ export function StockManager({
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-            <Boxes className="text-primary h-6 w-6" />
-            Controle de Estoque
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Registre entradas, ajuste saldos e acompanhe o histórico de movimentações.
-          </p>
-        </div>
-
-        {canManage && (
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => openAdjustDialog()}
-            className="flex items-center gap-1.5"
-          >
-            <ClipboardCheck className="h-4 w-4" />
-            Ajustar Estoque
-          </Button>
-          <Button onClick={() => openEntryDialog()} className="flex items-center gap-1.5">
-            <PackagePlus className="h-4 w-4" />
-            Registrar Entrada
-          </Button>
-        </div>
-        )}
-      </div>
+      <PageHeader
+        title="Controle de Estoque"
+        icon={Boxes}
+        description="Registre entradas, ajuste saldos e acompanhe o histórico de movimentações."
+        actions={
+          canManage && (
+            <>
+              <Button variant="outline" onClick={() => openAdjustDialog()}>
+                <ClipboardCheck />
+                Ajustar Estoque
+              </Button>
+              <Button onClick={() => openEntryDialog()}>
+                <PackagePlus />
+                Registrar Entrada
+              </Button>
+            </>
+          )
+        }
+      />
 
       {/* Summary */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -288,7 +277,9 @@ export function StockManager({
                 <TableBody>
                   {lowStock.map((p) => (
                     <TableRow key={p.id}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="min-w-40 font-medium whitespace-normal">
+                        {p.name}
+                      </TableCell>
                       <TableCell>
                         {p.categoryName ? (
                           <Badge variant="secondary" className="text-xs font-normal">
@@ -338,36 +329,50 @@ export function StockManager({
           <Card>
             <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
               <div className="space-y-1">
-                <label className="text-muted-foreground text-xs font-medium">Produto</label>
-                <select
-                  className={selectClassName}
+                <Label
+                  htmlFor="stock-manager-produto"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Produto
+                </Label>
+                <OptionSelect
+                  id="stock-manager-produto"
                   value={filters.productId}
-                  onChange={(e) => updateFilters({ productId: e.target.value })}
-                >
-                  <option value="">Todos os produtos</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                  onValueChange={(v) => updateFilters({ productId: v })}
+                  options={[
+                    { value: "", label: "Todos os produtos" },
+                    ...products.map((p) => ({ value: p.id, label: p.name })),
+                  ]}
+                />
               </div>
               <div className="space-y-1">
-                <label className="text-muted-foreground text-xs font-medium">Tipo</label>
-                <select
-                  className={selectClassName}
+                <Label
+                  htmlFor="stock-manager-tipo"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Tipo
+                </Label>
+                <OptionSelect
+                  id="stock-manager-tipo"
                   value={filters.type}
-                  onChange={(e) => updateFilters({ type: e.target.value as Filters["type"] })}
-                >
-                  <option value="">Todos</option>
-                  <option value="IN">Entrada</option>
-                  <option value="OUT">Saída</option>
-                  <option value="ADJUSTMENT">Ajuste</option>
-                </select>
+                  onValueChange={(v) => updateFilters({ type: v as Filters["type"] })}
+                  options={[
+                    { value: "", label: "Todos" },
+                    { value: "IN", label: "Entrada" },
+                    { value: "OUT", label: "Saída" },
+                    { value: "ADJUSTMENT", label: "Ajuste" },
+                  ]}
+                />
               </div>
               <div className="space-y-1">
-                <label className="text-muted-foreground text-xs font-medium">De</label>
+                <Label
+                  htmlFor="stock-manager-de"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  De
+                </Label>
                 <Input
+                  id="stock-manager-de"
                   type="date"
                   value={filters.from}
                   max={filters.to || undefined}
@@ -375,8 +380,14 @@ export function StockManager({
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-muted-foreground text-xs font-medium">Até</label>
+                <Label
+                  htmlFor="stock-manager-ate"
+                  className="text-muted-foreground text-xs font-medium"
+                >
+                  Até
+                </Label>
                 <Input
+                  id="stock-manager-ate"
                   type="date"
                   value={filters.to}
                   min={filters.from || undefined}
@@ -438,14 +449,16 @@ export function StockManager({
                           >
                             {formatDateTime(m.createdAt)}
                           </TableCell>
-                          <TableCell className="font-medium">{m.productName}</TableCell>
+                          <TableCell className="min-w-40 font-medium whitespace-normal">
+                            {m.productName}
+                          </TableCell>
                           <TableCell className="text-center">
                             <MovementTypeBadge type={m.type} />
                           </TableCell>
                           <TableCell
                             className={cn(
                               "text-right font-mono whitespace-nowrap",
-                              m.type === "IN" && "text-emerald-600 dark:text-emerald-400",
+                              m.type === "IN" && "text-success",
                               m.type === "ADJUSTMENT" && m.quantity < 0 && "text-destructive",
                             )}
                           >

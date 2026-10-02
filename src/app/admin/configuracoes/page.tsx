@@ -2,6 +2,8 @@ import { getStoreSettings } from "@/actions/settings";
 import { StoreSettingsForm } from "@/components/store-settings-form";
 import { connection } from "next/server";
 import { requirePageAccess } from "@/lib/authz";
+import { PageHeader } from "@/components/page-header";
+import { Settings } from "lucide-react";
 
 export const metadata = {
   title: "Configurações da Loja",
@@ -17,12 +19,11 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Parametrização & Configurações da Loja</h1>
-        <p className="text-sm text-muted-foreground">
-          Gerencie os dados institucionais, endereço, redes sociais e parâmetros de exibição da empresa.
-        </p>
-      </div>
+      <PageHeader
+        title="Configurações da Loja"
+        icon={Settings}
+        description="Gerencie os dados institucionais, endereço, redes sociais e parâmetros de exibição da empresa."
+      />
 
       <StoreSettingsForm initialSettings={settings} />
     </div>

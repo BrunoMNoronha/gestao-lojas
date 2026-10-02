@@ -12,12 +12,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { User, Loader2 } from "lucide-react";
-import {
-  CustomerItem,
-  CustomerInput,
-  createCustomer,
-  updateCustomer,
-} from "@/actions/customers";
+import { CustomerItem, CustomerInput, createCustomer, updateCustomer } from "@/actions/customers";
+import { Label } from "@/components/ui/label";
 
 interface CustomerDialogProps {
   open: boolean;
@@ -94,10 +90,8 @@ export function CustomerDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <User className="w-5 h-5 text-primary" />
-            <DialogTitle>
-              {customerToEdit ? "Editar Cliente" : "Novo Cliente"}
-            </DialogTitle>
+            <User className="text-primary h-5 w-5" />
+            <DialogTitle>{customerToEdit ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
           </div>
           <DialogDescription>
             {customerToEdit
@@ -107,17 +101,21 @@ export function CustomerDialog({
         </DialogHeader>
 
         {error && (
-          <div className="p-2.5 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+          <div className="text-destructive bg-destructive/10 border-destructive/20 rounded-md border p-2.5 text-xs">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-foreground">
+            <Label
+              htmlFor="customer-nome-completo-razao-social"
+              className="text-foreground text-xs font-medium"
+            >
               Nome Completo / Razão Social <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="customer-nome-completo-razao-social"
               placeholder="Ex: João da Silva"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -127,20 +125,28 @@ export function CustomerDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="customer-documento-cpf-ou-cnpj"
+                className="text-foreground text-xs font-medium"
+              >
                 Documento (CPF ou CNPJ)
-              </label>
+              </Label>
               <Input
+                id="customer-documento-cpf-ou-cnpj"
                 placeholder="000.000.000-00"
                 value={formData.document || ""}
                 onChange={(e) => setFormData({ ...formData, document: e.target.value })}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="customer-telefone-whatsapp"
+                className="text-foreground text-xs font-medium"
+              >
                 Telefone / WhatsApp
-              </label>
+              </Label>
               <Input
+                id="customer-telefone-whatsapp"
                 placeholder="(00) 90000-0000"
                 value={formData.phone || ""}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -149,8 +155,11 @@ export function CustomerDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-foreground">E-mail</label>
+            <Label htmlFor="customer-e-mail" className="text-foreground text-xs font-medium">
+              E-mail
+            </Label>
             <Input
+              id="customer-e-mail"
               type="email"
               placeholder="cliente@exemplo.com"
               value={formData.email || ""}
@@ -159,8 +168,14 @@ export function CustomerDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-foreground">Endereço Completo</label>
+            <Label
+              htmlFor="customer-endereco-completo"
+              className="text-foreground text-xs font-medium"
+            >
+              Endereço Completo
+            </Label>
             <Input
+              id="customer-endereco-completo"
               placeholder="Rua, Número, Bairro, Cidade - UF"
               value={formData.address || ""}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -168,17 +183,13 @@ export function CustomerDialog({
           </div>
 
           <DialogFooter className="pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={loading}>
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...
                 </>
               ) : customerToEdit ? (
                 "Atualizar Cliente"

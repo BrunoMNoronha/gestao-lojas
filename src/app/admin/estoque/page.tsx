@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { StockManager } from "@/components/stock-manager";
 import { requirePageAccess } from "@/lib/authz";
 import { can } from "@/lib/permissions";
+import { UnavailableState } from "@/components/empty-state";
 
 export const metadata = {
   title: "Controle de Estoque",
@@ -24,15 +25,10 @@ export default async function EstoquePage() {
 
   if (!data) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="bg-card max-w-md rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">Estoque indisponível</h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            Não foi possível carregar os dados de estoque. Verifique a conexão com o banco de dados
-            e recarregue a página.
-          </p>
-        </div>
-      </div>
+      <UnavailableState
+        title="Estoque indisponível"
+        description="Não foi possível carregar os dados de estoque. Verifique a conexão com o banco de dados e recarregue a página."
+      />
     );
   }
 

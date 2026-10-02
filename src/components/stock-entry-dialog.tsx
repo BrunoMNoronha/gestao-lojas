@@ -17,6 +17,8 @@ import { SupplierItem } from "@/actions/suppliers";
 import { registerStockEntry } from "@/actions/stock";
 import { formatQuantity, isIntegerUnit } from "@/lib/stock";
 import { ProductPicker } from "@/components/stock-product-picker";
+import { OptionSelect } from "@/components/option-select";
+import { Label } from "@/components/ui/label";
 
 interface StockEntryDialogProps {
   open: boolean;
@@ -124,10 +126,14 @@ export function StockEntryDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">
+              <Label
+                htmlFor="stock-entry-quantidade"
+                className="text-foreground text-xs font-medium"
+              >
                 Quantidade <span className="text-destructive">*</span>
-              </label>
+              </Label>
               <Input
+                id="stock-entry-quantidade"
                 type="number"
                 step={product && isIntegerUnit(product.unit) ? "1" : "0.001"}
                 min="0"
@@ -138,8 +144,14 @@ export function StockEntryDialog({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">Custo Unitário (R$)</label>
+              <Label
+                htmlFor="stock-entry-custo-unitario-r"
+                className="text-foreground text-xs font-medium"
+              >
+                Custo Unitário (R$)
+              </Label>
               <Input
+                id="stock-entry-custo-unitario-r"
                 type="number"
                 step="0.01"
                 min="0"
@@ -151,24 +163,26 @@ export function StockEntryDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">Fornecedor</label>
-            <select
-              className="border-input bg-background focus:ring-ring h-8 w-full rounded-lg border px-2.5 text-sm focus:ring-2 focus:outline-none"
+            <Label htmlFor="stock-entry-fornecedor" className="text-foreground text-xs font-medium">
+              Fornecedor
+            </Label>
+            <OptionSelect
+              id="stock-entry-fornecedor"
               value={supplierId}
-              onChange={(e) => setSupplierId(e.target.value)}
-            >
-              <option value="">Sem fornecedor</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={(v) => setSupplierId(v)}
+              options={[
+                { value: "", label: "Sem fornecedor" },
+                ...suppliers.map((s) => ({ value: s.id, label: s.name })),
+              ]}
+            />
           </div>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">Observação</label>
+            <Label htmlFor="stock-entry-observacao" className="text-foreground text-xs font-medium">
+              Observação
+            </Label>
             <Input
+              id="stock-entry-observacao"
               placeholder="Ex: NF 1234"
               maxLength={200}
               value={reason}

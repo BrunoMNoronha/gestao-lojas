@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { KeyRound, Loader2 } from "lucide-react";
 import { UserItem, resetUserPassword } from "@/actions/users";
+import { Label } from "@/components/ui/label";
 
 interface UserPasswordDialogProps {
   open: boolean;
@@ -75,8 +76,14 @@ export function UserPasswordDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">Nova senha</label>
+            <Label
+              htmlFor="user-password-nova-senha"
+              className="text-foreground text-xs font-medium"
+            >
+              Nova senha
+            </Label>
             <Input
+              id="user-password-nova-senha"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -87,8 +94,14 @@ export function UserPasswordDialog({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">Confirmar nova senha</label>
+            <Label
+              htmlFor="user-password-confirmar-nova-senha"
+              className="text-foreground text-xs font-medium"
+            >
+              Confirmar nova senha
+            </Label>
             <Input
+              id="user-password-confirmar-nova-senha"
               type="password"
               value={confirmation}
               onChange={(e) => setConfirmation(e.target.value)}

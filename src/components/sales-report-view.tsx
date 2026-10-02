@@ -19,6 +19,9 @@ import { PaymentMethodBars } from "@/components/payment-method-bars";
 import { PAYMENT_METHOD_LABELS, PaymentMethodValue } from "@/lib/payments";
 import { formatDayKeyBR, formatStoreDateTime } from "@/lib/store-time";
 import { formatCurrency } from "@/lib/utils";
+import { OptionSelect } from "@/components/option-select";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/page-header";
 
 interface SalesReportViewProps {
   operators: CashOperator[];
@@ -34,9 +37,6 @@ interface Filters {
 }
 
 const PAGE_SIZE = 50;
-
-const selectClassName =
-  "w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring";
 
 function TotalCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
   return (
@@ -97,23 +97,24 @@ export function SalesReportView({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-          <BarChart3 className="text-primary h-6 w-6" />
-          Relatório de Vendas
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Faturamento = vendas registradas (líquidas de desconto), incluindo o Fiado. Datas no
-          horário da loja.
-        </p>
-      </div>
+      <PageHeader
+        title="Relatório de Vendas"
+        icon={BarChart3}
+        description="Faturamento = vendas registradas (líquidas de desconto), incluindo o Fiado. Datas no horário da loja."
+      />
 
       {/* Filters */}
       <Card>
         <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs font-medium">De</label>
+            <Label
+              htmlFor="sales-report-view-de"
+              className="text-muted-foreground text-xs font-medium"
+            >
+              De
+            </Label>
             <Input
+              id="sales-report-view-de"
               type="date"
               value={filters.from}
               max={filters.to || undefined}
@@ -121,8 +122,14 @@ export function SalesReportView({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs font-medium">Até</label>
+            <Label
+              htmlFor="sales-report-view-ate"
+              className="text-muted-foreground text-xs font-medium"
+            >
+              Até
+            </Label>
             <Input
+              id="sales-report-view-ate"
               type="date"
               value={filters.to}
               min={filters.from || undefined}
@@ -130,36 +137,41 @@ export function SalesReportView({
             />
           </div>
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs font-medium">Forma de pagamento</label>
-            <select
-              className={selectClassName}
-              value={filters.paymentMethod}
-              onChange={(e) =>
-                updateFilters({ paymentMethod: e.target.value as Filters["paymentMethod"] })
-              }
+            <Label
+              htmlFor="sales-report-view-forma-de-pagamento"
+              className="text-muted-foreground text-xs font-medium"
             >
-              <option value="">Todas</option>
-              {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethodValue[]).map((m) => (
-                <option key={m} value={m}>
-                  {PAYMENT_METHOD_LABELS[m]}
-                </option>
-              ))}
-            </select>
+              Forma de pagamento
+            </Label>
+            <OptionSelect
+              id="sales-report-view-forma-de-pagamento"
+              value={filters.paymentMethod}
+              onValueChange={(v) => updateFilters({ paymentMethod: v as Filters["paymentMethod"] })}
+              options={[
+                { value: "", label: "Todas" },
+                ...(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethodValue[]).map((m) => ({
+                  value: m,
+                  label: PAYMENT_METHOD_LABELS[m],
+                })),
+              ]}
+            />
           </div>
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs font-medium">Operador</label>
-            <select
-              className={selectClassName}
-              value={filters.userId}
-              onChange={(e) => updateFilters({ userId: e.target.value })}
+            <Label
+              htmlFor="sales-report-view-operador"
+              className="text-muted-foreground text-xs font-medium"
             >
-              <option value="">Todos</option>
-              {operators.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-            </select>
+              Operador
+            </Label>
+            <OptionSelect
+              id="sales-report-view-operador"
+              value={filters.userId}
+              onValueChange={(v) => updateFilters({ userId: v })}
+              options={[
+                { value: "", label: "Todos" },
+                ...operators.map((o) => ({ value: o.id, label: o.name })),
+              ]}
+            />
           </div>
         </CardContent>
       </Card>

@@ -37,6 +37,8 @@ import { StoreSettingsData } from "@/actions/settings";
 import { createSale } from "@/actions/sales";
 import { ReceiptModal, CompletedSale } from "@/components/receipt-modal";
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import { IconButton } from "@/components/icon-button";
 
 interface CartItem {
   productId: string;
@@ -435,7 +437,10 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
   }, []);
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] gap-4">
+    // Celular/tablet: colunas empilhadas; desktop: terminal na altura da tela (main tem p-8)
+    <div className="flex flex-col gap-4 lg:h-[calc(100svh-4rem)] lg:flex-row">
+      {/* Terminal ocupa a tela toda: título só para leitores de tela */}
+      <h1 className="sr-only">Frente de Caixa (PDV)</h1>
       {/* LEFT: Product Search + Cart */}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         {/* Search Bar */}
@@ -443,6 +448,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
           <Search className="text-muted-foreground absolute top-1/2 left-3 h-5 w-5 -translate-y-1/2" />
           <Input
             ref={searchInputRef}
+            aria-label="Buscar produto"
             placeholder="Buscar produto por nome, código de barras ou SKU... (F2 · Enter para adicionar)"
             value={searchQuery}
             onChange={(e) => {
@@ -489,7 +495,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
         {notice && (
           <div
             role="alert"
-            className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+            className="border-warning/30 bg-warning/10 text-warning flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
           >
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span className="flex-1">{notice}</span>
@@ -505,8 +511,8 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
         )}
 
         {/* Cart Table */}
-        <Card className="flex flex-1 flex-col overflow-hidden">
-          <CardContent className="flex-1 overflow-y-auto p-0">
+        <Card className="flex min-h-72 flex-1 flex-col overflow-hidden lg:min-h-0">
+          <CardContent className="flex-1 overflow-auto p-0">
             {cart.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center p-8 text-center">
                 <ShoppingCart className="text-muted-foreground/30 mb-4 h-16 w-16" />
@@ -534,7 +540,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                       key={item.productId}
                       className="hover:bg-muted/30 border-b transition-colors"
                     >
-                      <td className="p-3">
+                      <td className="min-w-40 p-3">
                         <div className="font-medium">{item.name}</div>
                         <div className="text-muted-foreground text-[11px]">
                           {item.barcode && <>EAN: {item.barcode} · </>}
@@ -546,6 +552,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                           <Button
                             size="icon-xs"
                             variant="outline"
+                            aria-label={`Diminuir quantidade de ${item.name}`}
                             onClick={() => updateQuantity(item.productId, -1)}
                           >
                             <Minus className="h-3 w-3" />
@@ -554,6 +561,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                           <Button
                             size="icon-xs"
                             variant="outline"
+                            aria-label={`Aumentar quantidade de ${item.name}`}
                             onClick={() => updateQuantity(item.productId, 1)}
                             disabled={item.quantity + 1 > item.maxStock}
                           >
@@ -568,13 +576,13 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                         {formatCurrency(item.subtotal)}
                       </td>
                       <td className="p-3">
-                        <Button
+                        <IconButton
                           size="icon-xs"
-                          variant="ghost"
+                          label={`Remover ${item.name}`}
                           onClick={() => removeItem(item.productId)}
                         >
                           <X className="text-destructive h-3.5 w-3.5" />
-                        </Button>
+                        </IconButton>
                       </td>
                     </tr>
                   ))}
@@ -586,7 +594,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
       </div>
 
       {/* RIGHT: Summary Sidebar */}
-      <div className="flex w-80 shrink-0 flex-col gap-4">
+      <div className="flex w-full flex-col gap-4 lg:w-80 lg:shrink-0">
         {/* Customer */}
         <Card>
           <CardContent className="space-y-2 p-4">
@@ -601,9 +609,13 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                     <div className="text-muted-foreground text-xs">{selectedCustomer.document}</div>
                   )}
                 </div>
-                <Button size="icon-xs" variant="ghost" onClick={() => setSelectedCustomer(null)}>
+                <IconButton
+                  size="icon-xs"
+                  label="Remover cliente da venda"
+                  onClick={() => setSelectedCustomer(null)}
+                >
                   <X className="h-3.5 w-3.5" />
-                </Button>
+                </IconButton>
               </div>
             ) : (
               <Button
@@ -641,6 +653,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                   <span className="text-muted-foreground shrink-0 text-sm">Desconto R$ (F8):</span>
                   <Input
                     ref={discountInputRef}
+                    aria-label="Desconto em reais"
                     type="number"
                     step="0.01"
                     min="0"
@@ -728,6 +741,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
           </DialogHeader>
 
           <Input
+            aria-label="Buscar cliente"
             placeholder="Buscar por nome, CPF/CNPJ..."
             value={customerSearch}
             onChange={(e) => setCustomerSearch(e.target.value)}
@@ -789,7 +803,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
           )}
 
           {needsCustomer && (
-            <div className="flex items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+            <div className="border-warning/30 bg-warning/10 text-warning flex items-center justify-between gap-2 rounded-md border p-2.5 text-xs">
               <span>Venda no Fiado exige um cliente vinculado.</span>
               <Button size="xs" variant="outline" onClick={openCustomerDialog}>
                 Selecionar (F4)
@@ -808,8 +822,14 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
 
           {/* Payment Method Selection */}
           <div className="space-y-2">
-            <label className="text-foreground text-xs font-medium">Forma de Pagamento</label>
-            <div className="grid grid-cols-3 gap-2">
+            <p id="pdv-forma-pagamento" className="text-foreground text-xs font-medium">
+              Forma de Pagamento
+            </p>
+            <div
+              role="group"
+              aria-labelledby="pdv-forma-pagamento"
+              className="grid grid-cols-3 gap-2"
+            >
               {paymentMethods.map((pm) => {
                 const Icon = pm.icon;
                 const isActive = selectedPayment === pm.key;
@@ -817,6 +837,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                   <button
                     key={pm.key}
                     type="button"
+                    aria-pressed={isActive}
                     onClick={() => setSelectedPayment(pm.key)}
                     className={cn(
                       "flex flex-col items-center gap-1 rounded-lg border p-3 text-xs font-medium transition-all",
@@ -836,8 +857,14 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
           {/* Amount Paid (only for cash) */}
           {selectedPayment === "MONEY" && (
             <div className="space-y-2">
-              <label className="text-foreground text-xs font-medium">Valor Recebido (R$)</label>
+              <Label
+                htmlFor="pdv-terminal-valor-recebido-r"
+                className="text-foreground text-xs font-medium"
+              >
+                Valor Recebido (R$)
+              </Label>
               <Input
+                id="pdv-terminal-valor-recebido-r"
                 type="number"
                 step="0.01"
                 min={0}
@@ -850,13 +877,9 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                 autoFocus
               />
               {amountPaid >= total && (
-                <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 p-2 dark:border-emerald-800 dark:bg-emerald-950/30">
-                  <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
-                    Troco:
-                  </span>
-                  <span className="text-lg font-bold text-emerald-700 dark:text-emerald-400">
-                    {formatCurrency(change)}
-                  </span>
+                <div className="border-success/30 bg-success/10 flex items-center justify-between rounded-md border p-2">
+                  <span className="text-success text-sm font-medium">Troco:</span>
+                  <span className="text-success text-lg font-bold">{formatCurrency(change)}</span>
                 </div>
               )}
             </div>
