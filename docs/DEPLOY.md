@@ -39,14 +39,19 @@ Só existe o ambiente de **produção** (`main`). Não há previews nem banco de
 1. Vercel → time **TechLab** → _Add New → Project_ → importar `BrunoMNoronha/gestao-lojas`.
    Framework: Next.js. Comandos padrão (`pnpm install` / `next build`). O `postinstall` gera o
    Prisma Client.
-2. _Storage_ → _Create Database_ → **Neon** (plano Free), região **São Paulo (`aws-sa-east-1`)** →
-   conectar ao projeto **somente no ambiente Production** (desmarcar Preview e Development), sem
-   prefixo nas variáveis. A integração cria `DATABASE_URL` e `DATABASE_URL_UNPOOLED`.
-   A org Neon do time é gerida pela Vercel: criar o banco pela API/console da Neon é bloqueado,
-   então o caminho é sempre o Marketplace.
-3. Em _Settings → Environment Variables_ (Production), crie `DIRECT_URL` com o valor de
-   `DATABASE_URL_UNPOOLED`, e as variáveis `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
-   `ADMIN_NAME`.
+2. Banco atual de produção (criado em 2026-10-02): projeto Neon **`gestao-lojas`**
+   (`fancy-violet-38898614`), org **"TechLab+ Gestão Lojas"** (plano Free), região **São Paulo
+   (`aws-sa-east-1`)**, Postgres 18, branch `production`, banco `neondb`. Foi criado no console da
+   Neon (não pelo Marketplace), então **não há integração** sincronizando variáveis: as URLs foram
+   gravadas manualmente na Vercel. Se a senha do role `neondb_owner` for trocada na Neon, atualize
+   `DATABASE_URL` e `DIRECT_URL` e faça redeploy.
+   - Alternativa para um banco novo: _Storage_ → _Create Database_ → **Neon** pelo Marketplace,
+     ligado só a Production. A org "TechLab Aldeia" é gerida pela Vercel e bloqueia criação de
+     projetos pela API/console da Neon.
+3. Em _Settings → Environment Variables_, ambiente **Production**, tipo **Sensitive**:
+   - `DATABASE_URL`: URL **com pooler** (host com `-pooler`);
+   - `DIRECT_URL`: a mesma URL **sem** `-pooler` (conexão direta, usada pelas migrations);
+   - `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`.
 4. Preview e Development ficam sem banco e sem variáveis: os previews estão desligados no
    `vercel.json`. Nunca conecte o banco de produção a esses ambientes.
 
