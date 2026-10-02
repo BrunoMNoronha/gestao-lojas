@@ -20,6 +20,9 @@ export default async function AdminDashboardPage() {
   const user = await requirePageAccess("dashboard.view");
 
   const [settings, metrics] = await Promise.all([getStoreSettings(), getDashboardMetrics()]);
+  // Card "Fiado em aberto": some com o fiado desligado e nenhum título a receber
+  const showReceivables =
+    settings.onAccountEnabled !== false || (metrics?.receivables.openCount ?? 0) > 0;
 
   return (
     <div className="space-y-6">
@@ -43,7 +46,7 @@ export default async function AdminDashboardPage() {
       />
 
       {metrics ? (
-        <DashboardView metrics={metrics} />
+        <DashboardView metrics={metrics} showReceivables={showReceivables} />
       ) : (
         <EmptyState
           icon={DatabaseZap}

@@ -51,7 +51,13 @@ function PeriodCard({
   );
 }
 
-export function DashboardView({ metrics }: { metrics: DashboardMetrics }) {
+export function DashboardView({
+  metrics,
+  showReceivables = true,
+}: {
+  metrics: DashboardMetrics;
+  showReceivables?: boolean;
+}) {
   return (
     <div className="space-y-6">
       {/* Faturamento */}
@@ -67,30 +73,32 @@ export function DashboardView({ metrics }: { metrics: DashboardMetrics }) {
 
       {/* Alertas */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Link href="/admin/contas-a-receber" className="group">
-          <Card className="group-hover:border-primary/50 h-full transition-colors">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Fiado em aberto</CardTitle>
-              <HandCoins className="text-muted-foreground h-4 w-4" />
-            </CardHeader>
-            <CardContent>
-              <div
-                className={cn(
-                  "text-2xl font-bold",
-                  metrics.receivables.openTotal > 0 && "text-destructive",
-                )}
-              >
-                {formatCurrency(metrics.receivables.openTotal)}
-              </div>
-              <p className="text-muted-foreground mt-1 text-xs">
-                {metrics.receivables.openCount}{" "}
-                {metrics.receivables.openCount === 1 ? "título" : "títulos"} ·{" "}
-                {metrics.receivables.debtorCount}{" "}
-                {metrics.receivables.debtorCount === 1 ? "cliente" : "clientes"}
-              </p>
-            </CardContent>
-          </Card>
-        </Link>
+        {showReceivables && (
+          <Link href="/admin/contas-a-receber" className="group">
+            <Card className="group-hover:border-primary/50 h-full transition-colors">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">Fiado em aberto</CardTitle>
+                <HandCoins className="text-muted-foreground h-4 w-4" />
+              </CardHeader>
+              <CardContent>
+                <div
+                  className={cn(
+                    "text-2xl font-bold",
+                    metrics.receivables.openTotal > 0 && "text-destructive",
+                  )}
+                >
+                  {formatCurrency(metrics.receivables.openTotal)}
+                </div>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {metrics.receivables.openCount}{" "}
+                  {metrics.receivables.openCount === 1 ? "título" : "títulos"} ·{" "}
+                  {metrics.receivables.debtorCount}{" "}
+                  {metrics.receivables.debtorCount === 1 ? "cliente" : "clientes"}
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+        )}
         <Link href="/admin/estoque" className="group">
           <Card className="group-hover:border-primary/50 h-full transition-colors">
             <CardHeader className="flex flex-row items-center justify-between pb-2">

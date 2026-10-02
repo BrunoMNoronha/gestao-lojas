@@ -23,7 +23,16 @@ export interface AppRoute {
   permission: Permission;
   // Fora do menu lateral (ex.: "Minha conta", acessada pelo bloco do usuário)
   hidden?: boolean;
+  // Item que some do menu quando o recurso da loja está inativo (só visual: a página continua
+  // protegida pela permissão)
+  feature?: NavFeature;
 }
+
+// "onAccount": Contas a Receber, oculto com o fiado desligado e sem títulos a receber (issue #29)
+export type NavFeature = "onAccount";
+
+/** Recursos visíveis no menu; ausente ou true = exibido. */
+export type NavFeatures = Partial<Record<NavFeature, boolean>>;
 
 export const APP_ROUTES: AppRoute[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
@@ -34,6 +43,7 @@ export const APP_ROUTES: AppRoute[] = [
     label: "Contas a Receber",
     icon: HandCoins,
     permission: "receivables.view",
+    feature: "onAccount",
   },
   {
     href: "/admin/relatorios/vendas",
@@ -66,8 +76,16 @@ export const APP_ROUTES: AppRoute[] = [
   },
 ];
 
-export function routesFor(role: AppRole | null | undefined): AppRoute[] {
-  return APP_ROUTES.filter((route) => !route.hidden && can(role, route.permission));
+export function routesFor(
+  role: AppRole | null | undefined,
+  features: NavFeatures = {},
+): AppRoute[] {
+  return APP_ROUTES.filter(
+    (route) =>
+      !route.hidden &&
+      can(role, route.permission) &&
+      (!route.feature || features[route.feature] !== false),
+  );
 }
 
 /**

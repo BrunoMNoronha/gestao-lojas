@@ -68,6 +68,10 @@ erDiagram
         string receiptFooterNote
         string whatsappNumber "só dígitos, com DDI"
         boolean catalogEnabled
+        boolean onAccountEnabled "fiado permitido (padrão true)"
+        int onAccountDueDays "prazo do título; nulo = sem vencimento"
+        decimal onAccountCreditLimit "limite por cliente; nulo = sem limite"
+        boolean onAccountBlockOverdue
     }
 
     Sale {
@@ -102,6 +106,11 @@ Toda a lógica de negócios e persistência deve ser encapsulada em Server Actio
 - **Pedido:** `POST /api/catalogo/pedido` (`src/lib/catalog-order.ts`) valida o carrinho, recalcula preços com `Prisma.Decimal`, exclui itens ocultos ou sem estoque e devolve a mensagem e a URL `wa.me`. Não grava nada no banco.
 - **Carrinho:** `src/lib/catalog-cart.ts`, no `localStorage` do navegador; regras de unidade e quantidade compartilhadas em `src/lib/catalog-shared.ts`.
 - **Painel:** produtos entram no catálogo por opt-in (`catalog.manage`); WhatsApp e liga/desliga ficam nas Configurações (`settings.manage`).
+
+### 5. Venda no Fiado (issue #29)
+Parâmetros em `StoreSettings`, editados nas Configurações (`settings.manage`) e lidos no servidor por `src/lib/on-account.ts`.
+- **Venda:** `createSale` aplica as regras dentro da transação: fiado desligado recusa `ON_ACCOUNT`; com bloqueio de vencidos ou limite, trava a linha do cliente e recusa se houver título vencido não quitado ou se *saldo em aberto + venda* passar do limite. O prazo preenche `Receivable.dueDate` com 00:00 (fuso da loja) do dia da venda + N; o título fica vencido a partir do dia seguinte (`src/lib/store-time.ts`).
+- **Menu:** `AppRoute.feature = "onAccount"` esconde "Contas a Receber" (e o card do Dashboard) só quando o fiado está desligado **e** não há títulos a receber. É só exibição: a página continua protegida por `receivables.view` e, pela URL, mostra um estado vazio informativo.
 
 ---
 
