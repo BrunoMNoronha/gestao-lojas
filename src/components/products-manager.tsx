@@ -29,6 +29,7 @@ import { CategoryData } from "@/actions/categories";
 import { ProductDialog } from "@/components/product-dialog";
 import { CategoryDialog } from "@/components/category-dialog";
 import { formatCurrency, formatNumber } from "@/lib/utils";
+import { isStockLow } from "@/lib/stock";
 
 interface ProductsManagerProps {
   initialProducts: ProductItem[];
@@ -185,7 +186,7 @@ export function ProductsManager({
               </TableHeader>
               <TableBody>
                 {filteredProducts.map((p) => {
-                  const isStockLow = p.currentStock <= p.minStock;
+                  const lowStock = isStockLow(p);
 
                   return (
                     <TableRow key={p.id}>
@@ -234,7 +235,7 @@ export function ProductsManager({
                       </TableCell>
 
                       <TableCell className="text-center">
-                        {isStockLow ? (
+                        {lowStock ? (
                           <Badge variant="destructive" className="text-[11px] gap-1">
                             <AlertTriangle className="w-3 h-3" /> Estoque Baixo
                           </Badge>

@@ -185,6 +185,7 @@ export async function createSale(data: CreateSaleInput) {
           type: MovementType.OUT,
           quantity: item.quantity,
           reason: `Venda #${newSale.code}`,
+          userId,
         })),
       });
 
