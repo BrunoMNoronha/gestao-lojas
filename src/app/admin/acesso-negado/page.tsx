@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ShieldAlert } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
 import { getSessionUser } from "@/lib/authz";
 import { ROLE_LABELS, homePathFor } from "@/lib/permissions";
 
@@ -12,20 +13,25 @@ export default async function AcessoNegadoPage() {
   const user = await getSessionUser();
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-      <div className="bg-card max-w-md rounded-lg border p-6 text-center">
-        <ShieldAlert className="text-destructive mx-auto mb-3 h-10 w-10" />
-        <h1 className="text-lg font-semibold">Acesso negado</h1>
-        <p className="text-muted-foreground mt-2 text-sm">
+    <EmptyState
+      fullPage
+      headingLevel="h1"
+      icon={ShieldAlert}
+      tone="destructive"
+      title="Acesso negado"
+      description={
+        <>
           {user
             ? `Seu perfil (${ROLE_LABELS[user.role]}) não tem permissão para acessar esta área.`
             : "Você não tem permissão para acessar esta área."}{" "}
           Fale com o administrador da loja se precisar de acesso.
-        </p>
-        <Link href={homePathFor(user?.role)}>
-          <Button className="mt-4">Voltar à página inicial</Button>
+        </>
+      }
+      action={
+        <Link href={homePathFor(user?.role)} className={buttonVariants()}>
+          Voltar à página inicial
         </Link>
-      </div>
-    </div>
+      }
+    />
   );
 }

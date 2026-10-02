@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { currentMonthDayKeys } from "@/lib/store-time";
 import { SalesReportView } from "@/components/sales-report-view";
 import { requirePageAccess } from "@/lib/authz";
+import { UnavailableState } from "@/components/empty-state";
 
 export const metadata = {
   title: "Relatório de Vendas",
@@ -22,15 +23,10 @@ export default async function RelatorioVendasPage() {
 
   if (!report.success || !report.data) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="bg-card max-w-md rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">Relatório indisponível</h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            {report.error ??
-              "Não foi possível gerar o relatório. Verifique a conexão com o banco de dados."}
-          </p>
-        </div>
-      </div>
+      <UnavailableState
+        title="Relatório indisponível"
+        description={report.error ?? "Não foi possível gerar o relatório. Verifique a conexão com o banco de dados."}
+      />
     );
   }
 

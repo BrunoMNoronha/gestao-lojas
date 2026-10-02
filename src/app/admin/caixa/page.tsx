@@ -6,6 +6,7 @@ import {
 import { connection } from "next/server";
 import { CashRegisterManager } from "@/components/cash-register-manager";
 import { requirePageAccess } from "@/lib/authz";
+import { UnavailableState } from "@/components/empty-state";
 
 export const metadata = {
   title: "Caixa",
@@ -25,15 +26,10 @@ export default async function CaixaPage() {
 
   if (!data) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="bg-card max-w-md rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">Caixa indisponível</h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            Não foi possível carregar os dados do caixa. Verifique a conexão com o banco de dados e
-            recarregue a página.
-          </p>
-        </div>
-      </div>
+      <UnavailableState
+        title="Caixa indisponível"
+        description="Não foi possível carregar os dados do caixa. Verifique a conexão com o banco de dados e recarregue a página."
+      />
     );
   }
 

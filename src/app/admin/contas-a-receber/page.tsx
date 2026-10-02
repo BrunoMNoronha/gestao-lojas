@@ -4,6 +4,7 @@ import { getCurrentCashRegister } from "@/actions/cash-register";
 import { connection } from "next/server";
 import { ReceivablesManager } from "@/components/receivables-manager";
 import { requirePageAccess } from "@/lib/authz";
+import { UnavailableState } from "@/components/empty-state";
 
 export const metadata = {
   title: "Contas a Receber",
@@ -23,15 +24,10 @@ export default async function ContasAReceberPage() {
 
   if (!data) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="bg-card max-w-md rounded-lg border p-6 text-center">
-          <h2 className="text-lg font-semibold">Contas a Receber indisponível</h2>
-          <p className="text-muted-foreground mt-2 text-sm">
-            Não foi possível carregar os títulos. Verifique a conexão com o banco de dados e
-            recarregue a página.
-          </p>
-        </div>
-      </div>
+      <UnavailableState
+        title="Contas a Receber indisponível"
+        description="Não foi possível carregar os títulos. Verifique a conexão com o banco de dados e recarregue a página."
+      />
     );
   }
 
