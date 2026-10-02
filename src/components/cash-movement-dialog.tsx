@@ -1,0 +1,151 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react";
+import { CashMovementTypeValue, registerCashMovement } from "@/actions/cash-register";
+import { formatCurrency } from "@/lib/utils";
+
+interface CashMovementDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  type: CashMovementTypeValue;
+  expectedCash: number;
+  onSuccess: () => void;
+}
+
+const parseMoneyInput = (value: string) => parseFloat(value.replace(",", "."));
+
+// O componente pai troca a `key` a cada abertura, reiniciando o formulário
+export function CashMovementDialog({
+  open,
+  onOpenChange,
+  type,
+  expectedCash,
+  onSuccess,
+}: CashMovementDialogProps) {
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isWithdrawal = type === "WITHDRAWAL";
+  const Icon = isWithdrawal ? ArrowUpFromLine : ArrowDownToLine;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const value = parseMoneyInput(amount);
+    if (!Number.isFinite(value) || value <= 0) {
+      setError("Informe um valor maior que zero.");
+      return;
+    }
+    if (isWithdrawal && value > expectedCash) {
+      setError("A sangria não pode ser maior que o dinheiro disponível no caixa.");
+      return;
+    }
+    if (!reason.trim()) {
+      setError("Informe o motivo da movimentação.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    const res = await registerCashMovement({ type, amount: value, reason: reason.trim() });
+    setLoading(false);
+
+    if (res.success) {
+      onOpenChange(false);
+      onSuccess();
+    } else {
+      setError(res.error || "Erro ao registrar a movimentação.");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <Icon className="text-primary h-5 w-5" />
+            <DialogTitle>{isWithdrawal ? "Sangria" : "Suprimento"}</DialogTitle>
+          </div>
+          <DialogDescription>
+            {isWithdrawal
+              ? "Retirada de dinheiro da gaveta (ex.: depósito, pagamento de despesa)."
+              : "Entrada de dinheiro na gaveta (ex.: reforço de troco)."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && (
+          <div className="text-destructive bg-destructive/10 border-destructive/20 rounded-md border p-2.5 text-xs">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <p className="text-muted-foreground text-xs">
+            Dinheiro esperado na gaveta:{" "}
+            <span className="text-foreground font-mono font-medium">
+              {formatCurrency(expectedCash)}
+            </span>
+          </p>
+
+          <div className="space-y-1">
+            <label className="text-foreground text-xs font-medium">
+              Valor (R$) <span className="text-destructive">*</span>
+            </label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="0,00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-foreground text-xs font-medium">
+              Motivo <span className="text-destructive">*</span>
+            </label>
+            <Input
+              placeholder={isWithdrawal ? "Ex: Depósito bancário" : "Ex: Reforço de troco"}
+              maxLength={200}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+            />
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...
+                </>
+              ) : isWithdrawal ? (
+                "Registrar Sangria"
+              ) : (
+                "Registrar Suprimento"
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

@@ -35,16 +35,35 @@ enum MovementType {
   ADJUSTMENT
 }
 
+enum CashRegisterStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashMovementType {
+  SUPPLY // Suprimento
+  WITHDRAWAL // Sangria
+}
+
+enum ReceivableStatus {
+  OPEN
+  PARTIAL
+  PAID
+}
+
 model User {
-  id             String          @id @default(cuid())
-  name           String
-  email          String          @unique
-  password       String
-  role           Role            @default(SELLER)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  sales          Sale[]
-  stockMovements StockMovement[]
+  id                 String              @id @default(cuid())
+  name               String
+  email              String              @unique
+  password           String
+  role               Role                @default(SELLER)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  sales              Sale[]
+  stockMovements     StockMovement[]
+  cashRegisters      CashRegister[]
+  cashMovements      CashMovement[]
+  receivablePayments ReceivablePayment[]
 }
 
 model Category {
@@ -72,29 +91,34 @@ model Product {
 }
 
 model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  document  String?  @unique
-  phone     String?
-  email     String?
-  address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  sales     Sale[]
+  id          String       @id @default(cuid())
+  name        String
+  document    String?      @unique
+  phone       String?
+  email       String?
+  address     String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  sales       Sale[]
+  receivables Receivable[]
 }
 
 model Sale {
-  id            String        @id @default(cuid())
-  code          Int           @default(autoincrement())
-  total         Decimal       @db.Decimal(10, 2)
-  discount      Decimal       @default(0) @db.Decimal(10, 2)
-  paymentMethod PaymentMethod
-  userId        String
-  user          User          @relation(fields: [userId], references: [id])
-  customerId    String?
-  customer      Customer?     @relation(fields: [customerId], references: [id])
-  createdAt     DateTime      @default(now())
-  items         SaleItem[]
+  id             String        @id @default(cuid())
+  code           Int           @default(autoincrement())
+  total          Decimal       @db.Decimal(10, 2)
+  discount       Decimal       @default(0) @db.Decimal(10, 2)
+  paymentMethod  PaymentMethod
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  customerId     String?
+  customer       Customer?     @relation(fields: [customerId], references: [id])
+  // Opcional: vendas anteriores ao controle de caixa não têm turno
+  cashRegisterId String?
+  cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  createdAt      DateTime      @default(now())
+  items          SaleItem[]
+  receivable     Receivable?
 }
 
 model SaleItem {
@@ -159,4 +183,71 @@ model Supplier {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   stockMovements StockMovement[]
+}
+
+// Turno de caixa por operador. openUserId fica preenchido apenas enquanto o caixa está
+// aberto: a unicidade garante no banco no máximo um caixa aberto por operador.
+model CashRegister {
+  id                 String              @id @default(cuid())
+  userId             String
+  user               User                @relation(fields: [userId], references: [id])
+  openUserId         String?             @unique
+  status             CashRegisterStatus  @default(OPEN)
+  openingAmount      Decimal             @db.Decimal(10, 2)
+  openedAt           DateTime            @default(now())
+  closedAt           DateTime?
+  // Snapshot gravado no fechamento (imutável depois)
+  expectedAmount     Decimal?            @db.Decimal(10, 2)
+  countedAmount      Decimal?            @db.Decimal(10, 2)
+  difference         Decimal?            @db.Decimal(10, 2)
+  closingNote        String?
+  sales              Sale[]
+  movements          CashMovement[]
+  receivablePayments ReceivablePayment[]
+
+  @@index([userId, openedAt])
+}
+
+model CashMovement {
+  id             String           @id @default(cuid())
+  cashRegisterId String
+  cashRegister   CashRegister     @relation(fields: [cashRegisterId], references: [id])
+  type           CashMovementType
+  amount         Decimal          @db.Decimal(10, 2)
+  reason         String
+  userId         String
+  user           User             @relation(fields: [userId], references: [id])
+  createdAt      DateTime         @default(now())
+}
+
+// Título a receber gerado por venda no Fiado (ON_ACCOUNT)
+model Receivable {
+  id         String              @id @default(cuid())
+  saleId     String              @unique
+  sale       Sale                @relation(fields: [saleId], references: [id])
+  customerId String
+  customer   Customer            @relation(fields: [customerId], references: [id])
+  amount     Decimal             @db.Decimal(10, 2)
+  paidAmount Decimal             @default(0) @db.Decimal(10, 2)
+  status     ReceivableStatus    @default(OPEN)
+  dueDate    DateTime?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  payments   ReceivablePayment[]
+
+  @@index([customerId, status])
+}
+
+model ReceivablePayment {
+  id             String        @id @default(cuid())
+  receivableId   String
+  receivable     Receivable    @relation(fields: [receivableId], references: [id])
+  amount         Decimal       @db.Decimal(10, 2)
+  method         PaymentMethod
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  // Preenchido em recebimentos em dinheiro (entram na gaveta do caixa aberto)
+  cashRegisterId String?
+  cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  createdAt      DateTime      @default(now())
 }
