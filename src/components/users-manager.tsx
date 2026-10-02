@@ -204,7 +204,7 @@ export function UsersManager({ initialUsers, currentUserId }: UsersManagerProps)
                   const isSelf = u.id === currentUserId;
                   return (
                     <TableRow key={u.id} className={cn(!u.active && "opacity-60")}>
-                      <TableCell className="font-medium">
+                      <TableCell className="min-w-40 font-medium whitespace-normal">
                         {u.name}
                         {isSelf && (
                           <span className="text-muted-foreground ml-1 text-xs">(você)</span>

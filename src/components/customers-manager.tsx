@@ -141,7 +141,7 @@ export function CustomersManager({ initialCustomers, canDelete }: CustomersManag
               <TableBody>
                 {filteredCustomers.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="min-w-40 font-medium whitespace-normal">
                       <div>
                         <span>{c.name}</span>
                       </div>

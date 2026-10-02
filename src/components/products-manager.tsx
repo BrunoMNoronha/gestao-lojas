@@ -200,7 +200,7 @@ export function ProductsManager({
 
                   return (
                     <TableRow key={p.id}>
-                      <TableCell className="font-medium">
+                      <TableCell className="min-w-40 font-medium whitespace-normal">
                         <div>
                           <span>{p.name}</span>
                         </div>

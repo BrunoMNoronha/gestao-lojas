@@ -277,7 +277,9 @@ export function StockManager({
                 <TableBody>
                   {lowStock.map((p) => (
                     <TableRow key={p.id}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="min-w-40 font-medium whitespace-normal">
+                        {p.name}
+                      </TableCell>
                       <TableCell>
                         {p.categoryName ? (
                           <Badge variant="secondary" className="text-xs font-normal">
@@ -447,7 +449,9 @@ export function StockManager({
                           >
                             {formatDateTime(m.createdAt)}
                           </TableCell>
-                          <TableCell className="font-medium">{m.productName}</TableCell>
+                          <TableCell className="min-w-40 font-medium whitespace-normal">
+                            {m.productName}
+                          </TableCell>
                           <TableCell className="text-center">
                             <MovementTypeBadge type={m.type} />
                           </TableCell>

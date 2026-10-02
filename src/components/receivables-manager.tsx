@@ -255,7 +255,9 @@ export function ReceivablesManager({
                               </IconButton>
                             )}
                           </TableCell>
-                          <TableCell className="font-medium">{r.customerName}</TableCell>
+                          <TableCell className="min-w-40 font-medium whitespace-normal">
+                            {r.customerName}
+                          </TableCell>
                           <TableCell className="text-sm" suppressHydrationWarning>
                             #{r.saleCode}{" "}
                             <span className="text-muted-foreground text-xs">

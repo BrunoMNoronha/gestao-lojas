@@ -137,7 +137,7 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
               <TableBody>
                 {filteredSuppliers.map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="min-w-40 font-medium whitespace-normal">
                       <div>
                         <span>{s.name}</span>
                       </div>

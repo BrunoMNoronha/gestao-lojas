@@ -540,7 +540,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                       key={item.productId}
                       className="hover:bg-muted/30 border-b transition-colors"
                     >
-                      <td className="p-3">
+                      <td className="min-w-40 p-3">
                         <div className="font-medium">{item.name}</div>
                         <div className="text-muted-foreground text-[11px]">
                           {item.barcode && <>EAN: {item.barcode} · </>}

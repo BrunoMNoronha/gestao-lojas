@@ -165,7 +165,9 @@ export function DashboardView({ metrics }: { metrics: DashboardMetrics }) {
                       <TableCell className="text-muted-foreground text-center">
                         {index + 1}
                       </TableCell>
-                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="min-w-40 font-medium whitespace-normal">
+                        {p.name}
+                      </TableCell>
                       <TableCell className="text-right font-mono">
                         {formatQuantity(p.quantity, p.unit)} {p.unit}
                       </TableCell>

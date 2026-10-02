@@ -365,7 +365,9 @@ export function CashRegisterManager({
                     <TableBody>
                       {history.items.map((r) => (
                         <TableRow key={r.id}>
-                          <TableCell className="font-medium">{r.userName}</TableCell>
+                          <TableCell className="min-w-40 font-medium whitespace-normal">
+                            {r.userName}
+                          </TableCell>
                           <TableCell
                             className="text-muted-foreground text-xs whitespace-nowrap"
                             suppressHydrationWarning
