@@ -119,6 +119,8 @@ model Sale {
   createdAt      DateTime      @default(now())
   items          SaleItem[]
   receivable     Receivable?
+
+  @@index([createdAt])
 }
 
 model SaleItem {
