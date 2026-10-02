@@ -25,6 +25,9 @@ export const PERMISSIONS = {
   "customers.delete": MANAGEMENT,
   "suppliers.manage": MANAGEMENT,
   "settings.manage": ["ADMIN"],
+  "users.manage": ["ADMIN"],
+  // Página "Minha conta" (dados próprios e troca de senha)
+  "account.self": ALL,
 } as const satisfies Record<string, readonly AppRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

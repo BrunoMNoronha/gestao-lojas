@@ -7,6 +7,8 @@ import {
   Settings,
   ShoppingCart,
   Truck,
+  UserCog,
+  UserRound,
   Users,
   Wallet,
   type LucideIcon,
@@ -19,6 +21,8 @@ export interface AppRoute {
   label: string;
   icon: LucideIcon;
   permission: Permission;
+  // Fora do menu lateral (ex.: "Minha conta", acessada pelo bloco do usuário)
+  hidden?: boolean;
 }
 
 export const APP_ROUTES: AppRoute[] = [
@@ -52,10 +56,18 @@ export const APP_ROUTES: AppRoute[] = [
     icon: Settings,
     permission: "settings.manage",
   },
+  { href: "/admin/usuarios", label: "Usuários", icon: UserCog, permission: "users.manage" },
+  {
+    href: "/admin/minha-conta",
+    label: "Minha conta",
+    icon: UserRound,
+    permission: "account.self",
+    hidden: true,
+  },
 ];
 
 export function routesFor(role: AppRole | null | undefined): AppRoute[] {
-  return APP_ROUTES.filter((route) => can(role, route.permission));
+  return APP_ROUTES.filter((route) => !route.hidden && can(role, route.permission));
 }
 
 /**

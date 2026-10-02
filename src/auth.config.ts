@@ -1,26 +1,26 @@
 import type { NextAuthConfig } from "next-auth";
-import { homePathFor, isAppRole } from "@/lib/permissions";
+import { isAppRole } from "@/lib/permissions";
 
 export const authConfig = {
   pages: {
     signIn: "/login",
   },
   callbacks: {
-    // Executado pelo proxy: apenas redireciona por estado de login. A permissão de cada área é
-    // conferida no servidor (requirePageAccess / authorize em src/lib/authz.ts).
+    // Executado pelo proxy: apenas redireciona por estado de login. O perfil do token pode estar
+    // desatualizado, então a página inicial e as permissões são decididas no servidor com o perfil
+    // atual do banco (src/app/page.tsx, requirePageAccess / authorize em src/lib/authz.ts).
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const role = isAppRole(auth?.user?.role) ? auth.user.role : null;
       const { pathname } = nextUrl;
 
       if (pathname === "/") {
-        return Response.redirect(new URL(isLoggedIn ? homePathFor(role) : "/login", nextUrl));
+        return isLoggedIn ? true : Response.redirect(new URL("/login", nextUrl));
       }
       if (pathname.startsWith("/admin")) {
         return isLoggedIn; // false → redireciona para /login?callbackUrl=...
       }
       if (isLoggedIn && pathname === "/login") {
-        return Response.redirect(new URL(homePathFor(role), nextUrl));
+        return Response.redirect(new URL("/", nextUrl));
       }
       return true;
     },

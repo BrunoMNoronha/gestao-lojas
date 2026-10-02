@@ -32,7 +32,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             where: { email },
           });
 
-          if (!user || !user.password) {
+          // Usuário desativado recebe a mesma resposta de credenciais inválidas
+          if (!user || !user.password || !user.active) {
             return null;
           }
 
