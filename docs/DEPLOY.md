@@ -103,6 +103,7 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 - [ ] `/login` mostra o aviso "Este site é protegido pelo reCAPTCHA…" e o botão "Entrar" habilita.
 - [ ] Login com o administrador.
 - [ ] Configurações da Loja: salvar nome, CNPJ e endereço.
+- [ ] Configurações da Loja: a seção "Venda no Fiado" abre com o fiado permitido e salva/recarrega os parâmetros.
 - [ ] Produtos: cadastrar um produto com estoque inicial → aparece em Estoque como "Estoque inicial".
 - [ ] Caixa: abrir com suprimento inicial.
 - [ ] PDV: venda em dinheiro (com troco) e venda no Fiado para um cliente; recibo abre e imprime.

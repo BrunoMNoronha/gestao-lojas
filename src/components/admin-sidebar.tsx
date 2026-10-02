@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AppRole, ROLE_LABELS } from "@/lib/permissions";
-import { routesFor } from "@/lib/routes";
+import { type NavFeatures, routesFor } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 
 interface AdminNavProps {
   user: { name: string; role: AppRole };
   storeName: string;
+  features?: NavFeatures;
 }
 
 function Brand({ storeName }: { storeName: string }) {
@@ -35,11 +36,12 @@ function Brand({ storeName }: { storeName: string }) {
 function SidebarContent({
   user,
   storeName,
+  features,
   onNavigate,
 }: AdminNavProps & { onNavigate?: () => void }) {
   const pathname = usePathname();
-  // Menu filtrado pela matriz de acesso (src/lib/permissions.ts)
-  const navItems = routesFor(user.role);
+  // Menu filtrado pela matriz de acesso (src/lib/permissions.ts) e pelos recursos da loja
+  const navItems = routesFor(user.role, features);
   const accountActive = pathname === "/admin/minha-conta";
 
   return (

@@ -43,6 +43,7 @@ import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
 import { toast } from "sonner";
 import { MoneyInput } from "@/components/money-input";
 import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
+import { formatStoreDate, storeDueDate } from "@/lib/store-time";
 
 interface CartItem {
   productId: string;
@@ -172,6 +173,13 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
   const total = roundMoney(Math.max(0, subtotal - effectiveDiscount));
   const change = selectedPayment === "MONEY" ? roundMoney(Math.max(0, amountPaid - total)) : 0;
   const needsCustomer = selectedPayment === "ON_ACCOUNT" && !selectedCustomer;
+
+  // Fiado desligado nas Configurações da Loja: a forma some (o servidor também recusa)
+  const onAccountDueDays = storeSettings.onAccountDueDays ?? null;
+  const availablePaymentMethods =
+    storeSettings.onAccountEnabled === false
+      ? paymentMethods.filter((pm) => pm.key !== "ON_ACCOUNT")
+      : paymentMethods;
 
   // Focus search on mount and after sale
   useEffect(() => {
@@ -864,7 +872,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
               aria-labelledby="pdv-forma-pagamento"
               className="grid grid-cols-3 gap-2"
             >
-              {paymentMethods.map((pm) => {
+              {availablePaymentMethods.map((pm) => {
                 const Icon = pm.icon;
                 const isActive = selectedPayment === pm.key;
                 return (
@@ -887,6 +895,13 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
               })}
             </div>
           </div>
+
+          {selectedPayment === "ON_ACCOUNT" && onAccountDueDays !== null && (
+            <p className="text-muted-foreground text-xs" suppressHydrationWarning>
+              Vencimento do título: {formatStoreDate(storeDueDate(onAccountDueDays))} (
+              {onAccountDueDays === 1 ? "1 dia" : `${onAccountDueDays} dias`}).
+            </p>
+          )}
 
           {/* Amount Paid (only for cash) */}
           {selectedPayment === "MONEY" && (

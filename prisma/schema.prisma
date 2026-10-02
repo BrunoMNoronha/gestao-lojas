@@ -189,6 +189,11 @@ model StoreSettings {
   receiptFooterNote  String?  // Mensagem no rodapé do recibo
   whatsappNumber     String?  // WhatsApp do catálogo, só dígitos com DDI (ex.: 5511999998888)
   catalogEnabled     Boolean  @default(false) // Catálogo público (/catalogo) ativo
+  // Venda no Fiado (issue #29): os padrões mantêm o comportamento anterior (permitido, sem regras)
+  onAccountEnabled      Boolean  @default(true)  // Desligado: o PDV e o servidor recusam o Fiado
+  onAccountDueDays      Int?     // Prazo do título em dias corridos; nulo = sem vencimento
+  onAccountCreditLimit  Decimal? @db.Decimal(10, 2) // Saldo em aberto + venda, por cliente; nulo = sem limite
+  onAccountBlockOverdue Boolean  @default(false) // Bloqueia o Fiado de cliente com título vencido
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }

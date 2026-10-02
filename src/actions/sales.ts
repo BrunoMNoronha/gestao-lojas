@@ -5,6 +5,9 @@ import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 import { PaymentMethod, MovementType, Prisma, Unit } from "@prisma/client";
 import { lockOpenCashRegister } from "@/lib/cash-register";
+import { getOnAccountSettings, unpaidReceivables, type OnAccountSettings } from "@/lib/on-account";
+import { formatStoreDate, startOfStoreDay, storeDueDate } from "@/lib/store-time";
+import { formatCurrency } from "@/lib/utils";
 
 // O cliente informa apenas O QUE está sendo vendido. Preços, subtotais, total e troco
 // são sempre recalculados no servidor a partir do banco (fonte da verdade).
@@ -29,6 +32,61 @@ class SaleValidationError extends Error {}
 
 function toNumberOrNaN(value: unknown): number {
   return typeof value === "number" ? value : Number.NaN;
+}
+
+/**
+ * Regras do Fiado configuradas na loja (issue #29): cliente com título vencido e limite de
+ * crédito (saldo em aberto + esta venda). Roda na transação da venda, com a linha do cliente
+ * travada, para que duas vendas simultâneas não ultrapassem juntas o limite.
+ */
+async function assertOnAccountAllowed(
+  tx: Prisma.TransactionClient,
+  settings: OnAccountSettings,
+  customer: { id: string; name: string },
+  total: Prisma.Decimal,
+) {
+  if (!settings.blockOverdue && settings.creditLimit === null) return;
+
+  await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${customer.id} FOR UPDATE`;
+
+  if (settings.blockOverdue) {
+    const overdue = await tx.receivable.findFirst({
+      where: {
+        customerId: customer.id,
+        ...unpaidReceivables,
+        dueDate: { lt: startOfStoreDay() },
+      },
+      orderBy: { dueDate: "asc" },
+      select: { dueDate: true, sale: { select: { code: true } } },
+    });
+    if (overdue?.dueDate) {
+      throw new SaleValidationError(
+        `Venda no Fiado bloqueada: ${customer.name} tem título vencido em aberto ` +
+          `(venda #${overdue.sale.code}, vencimento ${formatStoreDate(overdue.dueDate)}). ` +
+          "Receba o título em Contas a Receber para liberar novas compras no Fiado.",
+      );
+    }
+  }
+
+  if (settings.creditLimit !== null) {
+    const open = await tx.receivable.aggregate({
+      where: { customerId: customer.id, ...unpaidReceivables },
+      _sum: { amount: true, paidAmount: true },
+    });
+    const balance = (open._sum.amount ?? new Prisma.Decimal(0)).sub(
+      open._sum.paidAmount ?? new Prisma.Decimal(0),
+    );
+    if (balance.add(total).gt(settings.creditLimit)) {
+      const available = Prisma.Decimal.max(settings.creditLimit.sub(balance), 0);
+      throw new SaleValidationError(
+        `Limite de crédito do Fiado excedido para ${customer.name}: ` +
+          `limite ${formatCurrency(settings.creditLimit.toNumber())}, ` +
+          `saldo em aberto ${formatCurrency(balance.toNumber())}, ` +
+          `disponível ${formatCurrency(available.toNumber())}. ` +
+          `Esta venda: ${formatCurrency(total.toNumber())}.`,
+      );
+    }
+  }
 }
 
 export async function createSale(data: CreateSaleInput) {
@@ -94,10 +152,20 @@ export async function createSale(data: CreateSaleInput) {
         throw new SaleValidationError("Abra o caixa antes de registrar vendas.");
       }
 
+      // Fiado desligado nas Configurações da Loja: recusa mesmo com chamada direta à action
+      const onAccount =
+        data.paymentMethod === PaymentMethod.ON_ACCOUNT ? await getOnAccountSettings(tx) : null;
+      if (onAccount && !onAccount.enabled) {
+        throw new SaleValidationError(
+          "A venda no Fiado está desativada nas Configurações da Loja. Escolha outra forma de pagamento.",
+        );
+      }
+
+      let customer: { id: string; name: string } | null = null;
       if (customerId) {
-        const customer = await tx.customer.findUnique({
+        customer = await tx.customer.findUnique({
           where: { id: customerId },
-          select: { id: true },
+          select: { id: true, name: true },
         });
         if (!customer) {
           throw new SaleValidationError("Cliente selecionado não foi encontrado.");
@@ -142,6 +210,10 @@ export async function createSale(data: CreateSaleInput) {
             "O valor recebido não pode ser menor que o total da venda.",
           );
         }
+      }
+
+      if (onAccount && customer) {
+        await assertOnAccountAllowed(tx, onAccount, customer, total);
       }
 
       // Baixa de estoque com guarda atômica: só decrementa se houver saldo suficiente,
@@ -194,10 +266,13 @@ export async function createSale(data: CreateSaleInput) {
         })),
       });
 
-      // Venda no Fiado gera o título em Contas a Receber
-      if (data.paymentMethod === PaymentMethod.ON_ACCOUNT && customerId) {
+      // Venda no Fiado gera o título em Contas a Receber, com vencimento se houver prazo
+      // configurado (dia da venda + N dias, no fuso da loja)
+      if (onAccount && customerId) {
+        const dueDate =
+          onAccount.dueDays === null ? null : storeDueDate(onAccount.dueDays, newSale.createdAt);
         await tx.receivable.create({
-          data: { saleId: newSale.id, customerId, amount: total },
+          data: { saleId: newSale.id, customerId, amount: total, dueDate },
         });
       }
 

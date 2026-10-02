@@ -68,7 +68,7 @@ export function storeCalendarDay(date: Date = new Date()): CalendarDay {
 }
 
 // Soma dias em aritmética de calendário pura (sem fuso)
-function addDays({ year, month, day }: CalendarDay, days: number): CalendarDay {
+export function addDays({ year, month, day }: CalendarDay, days: number): CalendarDay {
   const d = new Date(Date.UTC(year, month - 1, day + days));
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
 }
@@ -131,6 +131,28 @@ const storeDateTimeFormatter = new Intl.DateTimeFormat("pt-BR", {
   dateStyle: "short",
   timeStyle: "short",
 });
+
+/** Início (00:00 na loja) do dia em que o instante cai. */
+export const startOfStoreDay = (date: Date = new Date()) => storeTimeToUtc(storeCalendarDay(date));
+
+/**
+ * Vencimento de um título com prazo de `days` dias corridos: 00:00 (fuso da loja) do dia da venda
+ * + N. O título fica vencido a partir do dia seguinte ao vencimento (ver `isOverdue`).
+ */
+export const storeDueDate = (days: number, from: Date = new Date()) =>
+  storeTimeToUtc(addDays(storeCalendarDay(from), days));
+
+/** Vencido: o dia do vencimento já passou no relógio da loja (vencer hoje ainda não é atraso). */
+export const isOverdue = (dueDate: Date | string, now: Date = new Date()) =>
+  new Date(dueDate).getTime() < startOfStoreDay(now).getTime();
+
+const storeDateFormatter = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: STORE_TIME_ZONE,
+  dateStyle: "short",
+});
+
+/** Data (dd/mm/aaaa) no relógio da loja. */
+export const formatStoreDate = (iso: string | Date) => storeDateFormatter.format(new Date(iso));
 
 /** Data e hora no relógio da loja (igual no servidor e no navegador). */
 export const formatStoreDateTime = (iso: string) => storeDateTimeFormatter.format(new Date(iso));

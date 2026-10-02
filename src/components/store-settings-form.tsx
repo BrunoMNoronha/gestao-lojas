@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
+  BookOpen,
   Building2,
   ExternalLink,
   MapPin,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { MoneyInput } from "@/components/money-input";
 import { formatWhatsappNumber, normalizeWhatsappNumber } from "@/lib/catalog-shared";
 import {
   formatCep,
@@ -51,6 +53,7 @@ export function StoreSettingsForm({ initialSettings }: Props) {
   };
 
   const isIndividual = formData.personType === "INDIVIDUAL";
+  const onAccountEnabled = formData.onAccountEnabled !== false;
 
   // Trocar o tipo limpa o documento: um CNPJ não pode ficar salvo como CPF (e vice-versa)
   const handlePersonTypeChange = (personType: PersonTypeValue) => {
@@ -78,6 +81,8 @@ export function StoreSettingsForm({ initialSettings }: Props) {
         document: res.data?.document ?? "",
         phone: res.data?.phone ?? "",
         zipCode: res.data?.zipCode ?? "",
+        onAccountDueDays: res.data?.onAccountDueDays ?? null,
+        onAccountCreditLimit: res.data?.onAccountCreditLimit ?? null,
       }));
       toast.success("Configurações da loja salvas com sucesso!");
       // Atualiza o nome da loja exibido na sidebar
@@ -459,6 +464,107 @@ export function StoreSettingsForm({ initialSettings }: Props) {
               Com DDD; sem o código do país, assume +55. Sem número, o catálogo funciona, mas o
               envio do pedido fica desabilitado.
             </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Venda no Fiado */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <BookOpen className="text-primary h-5 w-5" />
+            Venda no Fiado
+          </CardTitle>
+          <CardDescription>
+            Regras aplicadas no PDV e na gravação da venda. Títulos já existentes não são alterados.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="flex items-start justify-between gap-3 rounded-lg border p-3 md:col-span-2">
+            <div className="space-y-1">
+              <Label htmlFor="store-settings-fiado-permitido" className="text-sm font-medium">
+                Permitir venda no fiado
+              </Label>
+              <p className="text-muted-foreground text-xs">
+                Desligado, a forma &quot;Fiado&quot; some do PDV. Títulos em aberto continuam em
+                Contas a Receber para recebimento.
+              </p>
+            </div>
+            <Switch
+              id="store-settings-fiado-permitido"
+              checked={onAccountEnabled}
+              onCheckedChange={(checked) =>
+                setFormData((prev) => ({ ...prev, onAccountEnabled: checked }))
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="store-settings-fiado-prazo" className="text-sm font-medium">
+              Prazo padrão de vencimento (dias)
+            </Label>
+            <Input
+              id="store-settings-fiado-prazo"
+              inputMode="numeric"
+              autoComplete="off"
+              disabled={!onAccountEnabled}
+              value={formData.onAccountDueDays ?? ""}
+              onChange={(e) => {
+                const digits = onlyDigits(e.target.value).slice(0, 4);
+                setFormData((prev) => ({
+                  ...prev,
+                  onAccountDueDays: digits ? Number(digits) : null,
+                }));
+              }}
+              placeholder="Sem vencimento"
+              aria-describedby="store-settings-fiado-prazo-ajuda"
+            />
+            <p id="store-settings-fiado-prazo-ajuda" className="text-muted-foreground text-xs">
+              Vencimento = data da venda + N dias. Vazio: título sem vencimento.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="store-settings-fiado-limite" className="text-sm font-medium">
+              Limite de crédito por cliente (R$)
+            </Label>
+            <MoneyInput
+              id="store-settings-fiado-limite"
+              disabled={!onAccountEnabled}
+              value={formData.onAccountCreditLimit ?? null}
+              onValueChange={(value) =>
+                setFormData((prev) => ({ ...prev, onAccountCreditLimit: value }))
+              }
+              placeholder="Sem limite"
+              aria-describedby="store-settings-fiado-limite-ajuda"
+            />
+            <p id="store-settings-fiado-limite-ajuda" className="text-muted-foreground text-xs">
+              Bloqueia a venda se o saldo em aberto do cliente mais a venda passar do limite. Vazio:
+              sem limite.
+            </p>
+          </div>
+
+          <div className="flex items-start justify-between gap-3 rounded-lg border p-3 md:col-span-2">
+            <div className="space-y-1">
+              <Label
+                htmlFor="store-settings-fiado-bloquear-vencidos"
+                className="text-sm font-medium"
+              >
+                Bloquear cliente com título vencido
+              </Label>
+              <p className="text-muted-foreground text-xs">
+                Impede nova venda no fiado enquanto o cliente tiver título vencido não quitado. Só
+                vale para títulos com vencimento.
+              </p>
+            </div>
+            <Switch
+              id="store-settings-fiado-bloquear-vencidos"
+              disabled={!onAccountEnabled}
+              checked={!!formData.onAccountBlockOverdue}
+              onCheckedChange={(checked) =>
+                setFormData((prev) => ({ ...prev, onAccountBlockOverdue: checked }))
+              }
+            />
           </div>
         </CardContent>
       </Card>

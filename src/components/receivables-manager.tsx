@@ -2,7 +2,16 @@
 
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { HandCoins, Users, Wallet, Loader2, X, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  HandCoins,
+  Users,
+  Wallet,
+  Loader2,
+  X,
+  ChevronDown,
+  ChevronRight,
+  Info,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +34,7 @@ import { ReceivablePaymentDialog } from "@/components/receivable-payment-dialog"
 import { PAYMENT_METHOD_LABELS, RECEIVABLE_STATUS_LABELS } from "@/lib/payments";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { cn, formatCurrency } from "@/lib/utils";
+import { formatStoreDate, isOverdue } from "@/lib/store-time";
 import { OptionSelect } from "@/components/option-select";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
@@ -35,6 +45,8 @@ interface ReceivablesManagerProps {
   summary: ReceivablesSummary;
   initialReceivables: { items: ReceivableItem[]; total: number };
   hasOpenCashRegister: boolean;
+  // Fiado desligado nas configurações: só recebimento dos títulos existentes
+  onAccountEnabled?: boolean;
 }
 
 interface Filters {
@@ -63,6 +75,7 @@ export function ReceivablesManager({
   summary,
   initialReceivables,
   hasOpenCashRegister,
+  onAccountEnabled = true,
 }: ReceivablesManagerProps) {
   const router = useRouter();
 
@@ -116,6 +129,16 @@ export function ReceivablesManager({
         icon={HandCoins}
         description="Vendas no Fiado e recebimentos de clientes."
       />
+
+      {!onAccountEnabled && (
+        <div
+          role="status"
+          className="border-warning/30 bg-warning/10 text-warning flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
+        >
+          <Info className="h-4 w-4 shrink-0" />
+          Venda no fiado desativada — apenas recebimento de títulos existentes.
+        </div>
+      )}
 
       {/* Summary */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -231,6 +254,7 @@ export function ReceivablesManager({
                     <TableHead className="w-8" />
                     <TableHead>Cliente</TableHead>
                     <TableHead>Venda</TableHead>
+                    <TableHead>Vencimento</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
                     <TableHead className="text-right">Pago</TableHead>
                     <TableHead className="text-right">Saldo</TableHead>
@@ -241,6 +265,7 @@ export function ReceivablesManager({
                 <TableBody>
                   {receivables.items.map((r) => {
                     const expanded = expandedId === r.id;
+                    const overdue = r.balance > 0 && !!r.dueDate && isOverdue(r.dueDate);
                     return (
                       <Fragment key={r.id}>
                         <TableRow>
@@ -263,6 +288,19 @@ export function ReceivablesManager({
                             <span className="text-muted-foreground text-xs">
                               {formatDate(r.saleDate)}
                             </span>
+                          </TableCell>
+                          <TableCell
+                            className={cn("text-sm", overdue && "text-destructive font-medium")}
+                            suppressHydrationWarning
+                          >
+                            {r.dueDate ? (
+                              <>
+                                {formatStoreDate(r.dueDate)}
+                                {overdue && <span className="block text-xs">Vencido</span>}
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right font-mono">
                             {formatCurrency(r.amount)}
@@ -296,7 +334,7 @@ export function ReceivablesManager({
                         {expanded && (
                           <TableRow className="bg-muted/30 hover:bg-muted/30">
                             <TableCell />
-                            <TableCell colSpan={7}>
+                            <TableCell colSpan={8}>
                               <ul className="space-y-1 text-xs">
                                 {r.payments.map((p) => (
                                   <li key={p.id} className="flex gap-4">

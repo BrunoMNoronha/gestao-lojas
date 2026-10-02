@@ -2,9 +2,14 @@ import { getCustomers } from "@/actions/customers";
 import { getReceivables, getReceivablesSummary } from "@/actions/receivables";
 import { getCurrentCashRegister } from "@/actions/cash-register";
 import { connection } from "next/server";
+import Link from "next/link";
+import { HandCoins, Settings } from "lucide-react";
 import { ReceivablesManager } from "@/components/receivables-manager";
 import { requirePageAccess } from "@/lib/authz";
-import { UnavailableState } from "@/components/empty-state";
+import { EmptyState, UnavailableState } from "@/components/empty-state";
+import { buttonVariants } from "@/components/ui/button";
+import { getOnAccountSettings } from "@/lib/on-account";
+import { can } from "@/lib/permissions";
 
 export const metadata = {
   title: "Contas a Receber",
@@ -13,7 +18,7 @@ export const metadata = {
 export default async function ContasAReceberPage() {
   // Títulos mudam a cada venda no Fiado e a cada recebimento: renderiza a cada requisição
   await connection();
-  await requirePageAccess("receivables.view");
+  const user = await requirePageAccess("receivables.view");
 
   let data: Awaited<ReturnType<typeof loadReceivablesData>> | null = null;
   try {
@@ -31,8 +36,31 @@ export default async function ContasAReceberPage() {
     );
   }
 
+  // Fiado desligado e nada a receber: o menu esconde a página, e o acesso direto pela URL
+  // mostra um estado informativo
+  if (!data.onAccountEnabled && data.summary.openCount === 0) {
+    return (
+      <EmptyState
+        fullPage
+        headingLevel="h1"
+        icon={HandCoins}
+        title="Venda no Fiado desativada"
+        description="Não há títulos em aberto para receber. Para voltar a vender no Fiado, ative a opção nas Configurações da Loja."
+        action={
+          can(user.role, "settings.manage") && (
+            <Link href="/admin/configuracoes" className={buttonVariants({ variant: "outline" })}>
+              <Settings />
+              Configurações da Loja
+            </Link>
+          )
+        }
+      />
+    );
+  }
+
   return (
     <ReceivablesManager
+      onAccountEnabled={data.onAccountEnabled}
       customers={data.customers}
       summary={data.summary}
       initialReceivables={data.receivables}
@@ -42,11 +70,18 @@ export default async function ContasAReceberPage() {
 }
 
 async function loadReceivablesData() {
-  const [customers, summary, receivables, current] = await Promise.all([
+  const [customers, summary, receivables, current, onAccount] = await Promise.all([
     getCustomers(),
     getReceivablesSummary(),
     getReceivables(),
     getCurrentCashRegister(),
+    getOnAccountSettings(),
   ]);
-  return { customers, summary, receivables, hasOpenCashRegister: !!current };
+  return {
+    customers,
+    summary,
+    receivables,
+    hasOpenCashRegister: !!current,
+    onAccountEnabled: onAccount.enabled,
+  };
 }
