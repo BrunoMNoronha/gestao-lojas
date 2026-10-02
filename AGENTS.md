@@ -35,8 +35,11 @@ pnpm build
 # Gerar Prisma Client
 pnpm prisma generate
 
-# Aplicar alterações no Banco de Dados
-pnpm prisma db push
+# Criar migration após alterar prisma/schema.prisma (desenvolvimento)
+pnpm db:migrate --name <descricao>
+
+# Aplicar migrations pendentes (produção / CI) — nunca use `db push` em produção
+pnpm db:deploy
 
 # Adicionar novos componentes Shadcn UI
 npx shadcn@latest add <componente>

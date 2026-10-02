@@ -25,8 +25,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password = String(credentials.password);
 
         try {
-          const { ensureDefaultUser } = await import("@/actions/auth");
-          await ensureDefaultUser();
+          const { bootstrapFirstAdmin } = await import("@/lib/bootstrap-admin");
+          await bootstrapFirstAdmin();
 
           const user = await prisma.user.findUnique({
             where: { email },

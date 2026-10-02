@@ -74,7 +74,7 @@ export default function LoginPage() {
                 </label>
                 <Input
                   type="email"
-                  placeholder="admin@gestaolojas.com"
+                  placeholder="seu@email.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required

@@ -97,4 +97,6 @@ Toda a lógica de negócios e persistência deve ser encapsulada em Server Actio
 
 - **Execução do Build:** Sempre valide alterações executando `pnpm build`.
 - **Regeneração de Tipos:** Execute `pnpm prisma generate` após qualquer modificação em `prisma/schema.prisma`.
+- **Migrations:** Toda mudança de schema gera uma migration versionada em `prisma/migrations/` (`pnpm db:migrate --name <descricao>`). Em produção as migrations são aplicadas por passo explícito (`pnpm db:deploy`, conexão direta via `DIRECT_URL`), nunca no build. Ver `docs/DEPLOY.md`.
+- **Primeiro administrador:** Criado por `src/lib/bootstrap-admin.ts` apenas quando o banco não tem usuários, a partir de `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Não há credenciais fixas em produção.
 - **Formatação de Código:** O projeto utiliza Prettier integrado ao Tailwind CSS para ordenação de classes.
