@@ -148,3 +148,8 @@
     @apply font-sans;
   }
 }
+/* Selo flutuante do reCAPTCHA v3 (só existe após abrir /login). Fica oculto porque a tela de
+   login exibe o aviso de privacidade exigido pelo Google no lugar dele. */
+.grecaptcha-badge {
+  visibility: hidden;
+}

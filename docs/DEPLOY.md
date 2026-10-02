@@ -25,6 +25,15 @@ Só existe o ambiente de **produção** (`main`). Não há previews nem banco de
 
 `AUTH_URL` não é necessário na Vercel (o host é detectado automaticamente).
 
+Variáveis do reCAPTCHA do login (passo a passo na seção 9):
+
+| Variável                      | Ambiente   | Tipo               | Valor                                                                               |
+| ----------------------------- | ---------- | ------------------ | ----------------------------------------------------------------------------------- |
+| `RECAPTCHA_SITE_KEY`          | Production | Plain ou Sensitive | Chave do site (pública, enviada à tela de login). Mudou, redeploy                   |
+| `RECAPTCHA_SECRET_KEY`        | Production | Sensitive          | Chave secreta (só no servidor). Sem ela o login é recusado                          |
+| `RECAPTCHA_MIN_SCORE`         | Production | Plain              | Opcional. Score mínimo de 0 a 1 (padrão `0.5`)                                      |
+| `RECAPTCHA_ALLOWED_HOSTNAMES` | Production | Plain              | Opcional. Recomendado: `gestao-lojas-dpv.vercel.app` (padrão: o host da requisição) |
+
 ## 2. Configuração do projeto na Vercel
 
 | Item                  | Valor                                                                                                                                       | Onde                                    |
@@ -51,7 +60,8 @@ Só existe o ambiente de **produção** (`main`). Não há previews nem banco de
 3. Em _Settings → Environment Variables_, ambiente **Production**, tipo **Sensitive**:
    - `DATABASE_URL`: URL **com pooler** (host com `-pooler`);
    - `DIRECT_URL`: a mesma URL **sem** `-pooler` (conexão direta, usada pelas migrations);
-   - `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`.
+   - `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`;
+   - `RECAPTCHA_SECRET_KEY` (seção 9).
 4. Preview e Development ficam sem banco e sem variáveis: os previews estão desligados no
    `vercel.json`. Nunca conecte o banco de produção a esses ambientes.
 
@@ -90,6 +100,7 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 ## 6. Checklist de fumaça (após cada deploy de produção)
 
 - [ ] `/login` abre; `/admin` sem sessão redireciona para `/login`.
+- [ ] `/login` mostra o aviso "Este site é protegido pelo reCAPTCHA…" e o botão "Entrar" habilita.
 - [ ] Login com o administrador.
 - [ ] Configurações da Loja: salvar nome, CNPJ e endereço.
 - [ ] Produtos: cadastrar um produto com estoque inicial → aparece em Estoque como "Estoque inicial".
@@ -115,3 +126,60 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 - **Banco:** migrations não são revertidas automaticamente. Se uma migration causar problema,
   publique uma nova migration corretiva. Antes de mudanças de schema arriscadas, crie um branch
   ou snapshot da Neon.
+
+## 9. reCAPTCHA no login (issue #26)
+
+Toda tentativa de login passa por uma verificação **reCAPTCHA v3** (invisível, por score) validada
+no servidor, dentro do `authorize()` do Auth.js (`src/auth.ts` → `src/lib/recaptcha.ts`), **antes**
+do bootstrap do administrador e de qualquer consulta ao banco. Chamar
+`POST /api/auth/callback/credentials` direto, sem token válido, não chega ao banco.
+
+O servidor confere no `siteverify` do Google (timeout de 5 s): `success`, `action === "login"`,
+`hostname` aceito e `score` ≥ `RECAPTCHA_MIN_SCORE`. Cada token vale uma vez (o Google recusa a
+reutilização) e a tela gera um novo a cada envio.
+
+### Criar a chave (responsável pela conta Google)
+
+O reCAPTCHA agora é gerenciado no Google Cloud (não é mais possível criar chaves "Classic").
+Os nomes abaixo são os da documentação oficial em 2026-10; confira no console se mudaram.
+
+1. No [Google Cloud Console](https://console.cloud.google.com/), crie ou escolha um projeto da loja
+   e abra a página **Fraud Defense** (reCAPTCHA) → aba **Keys** → **Create key**.
+2. _Display name_ à escolha; tipo **Web**; deixe **Disable domain verification** desligado.
+3. **Add a domain**: `gestao-lojas-dpv.vercel.app` e `localhost`. Mantenha a opção padrão (por
+   score, sem checkbox). Mudanças de domínio levam até 30 minutos para valer.
+4. Copie o **ID da chave** (chave do site) → `RECAPTCHA_SITE_KEY`.
+5. Na chave criada: **Key Details** → aba **Integration** → **Use Legacy Key** → copie a chave
+   secreta legada → `RECAPTCHA_SECRET_KEY` (é a usada pelo `siteverify`).
+6. Grave as duas na Vercel (Production; a secreta como **Sensitive**) e faça **redeploy**: a tela de
+   login é gerada no build. Nunca registre a chave secreta em issue, PR ou chat.
+7. Depois do deploy, faça um login real e confira as avaliações no console do reCAPTCHA.
+
+Plano gratuito: **10.000 avaliações por mês**. Cada tentativa de login conta uma avaliação.
+Atenção: acima da cota, o `siteverify` passa a responder `success: true` com score 0.9
+(_fail open_ do Google), ou seja, a proteção deixa de filtrar. Se o volume crescer, ative o
+faturamento no projeto.
+
+### Comportamento quando algo falta ou falha (fail closed)
+
+| Situação                                                                | Desenvolvimento                         | Produção (`NODE_ENV=production`)                      |
+| ----------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------- |
+| Sem `RECAPTCHA_SECRET_KEY`                                              | Verificação desligada, aviso no log     | Login recusado; log `[recaptcha] ... não configurada` |
+| Sem `RECAPTCHA_SITE_KEY`                                                | Tela sem reCAPTCHA                      | Tela não envia token; login recusado                  |
+| Google fora do ar / timeout                                             | Login recusado, log `[recaptcha] Falha` | Login recusado, log `[recaptcha] Falha`               |
+| Token ausente, inválido, reutilizado, action/host errado ou score baixo | Recusado                                | Recusado ("A verificação de segurança falhou")        |
+
+`pnpm start` local também roda em modo produção: sem as chaves, o login fica bloqueado.
+
+**Login travado em produção?** Abra os logs da função (Vercel → _Logs_, filtro `[recaptcha]`):
+
+- `não configurada`: a variável foi apagada ou não está em Production. Grave de novo a chave
+  secreta e faça redeploy.
+- `Falha ao consultar o Google`: indisponibilidade do Google. Aguarde; não há contorno seguro.
+- `hostname inesperado`: o domínio mudou. Inclua o novo domínio na chave do Google e em
+  `RECAPTCHA_ALLOWED_HOSTNAMES` (se definida).
+- `score ... abaixo de`: pessoas reais sendo recusadas com frequência. Reduza
+  `RECAPTCHA_MIN_SCORE` (por exemplo para `0.3`) e faça redeploy.
+
+Complementos recomendados (fora desta issue): limite de tentativas por usuário/IP e regras de
+firewall da Vercel.
