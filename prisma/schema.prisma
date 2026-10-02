@@ -1,6 +1,9 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Neon/Vercel: DATABASE_URL com pooler (app) e DIRECT_URL sem pooler (migrations).
+  // Local: as duas podem apontar para o mesmo banco.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 generator client {
