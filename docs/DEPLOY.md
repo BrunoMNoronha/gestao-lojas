@@ -27,12 +27,12 @@ Só existe o ambiente de **produção** (`main`). Não há previews nem banco de
 
 Variáveis do reCAPTCHA do login (passo a passo na seção 9):
 
-| Variável                         | Ambiente   | Tipo      | Valor                                                                               |
-| -------------------------------- | ---------- | --------- | ----------------------------------------------------------------------------------- |
-| `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | Production | Plain     | Chave do site (pública). Entra no bundle no build: mudou, redeploy                  |
-| `RECAPTCHA_SECRET_KEY`           | Production | Sensitive | Chave secreta (só no servidor). Sem ela o login é recusado                          |
-| `RECAPTCHA_MIN_SCORE`            | Production | Plain     | Opcional. Score mínimo de 0 a 1 (padrão `0.5`)                                      |
-| `RECAPTCHA_ALLOWED_HOSTNAMES`    | Production | Plain     | Opcional. Recomendado: `gestao-lojas-dpv.vercel.app` (padrão: o host da requisição) |
+| Variável                      | Ambiente   | Tipo               | Valor                                                                               |
+| ----------------------------- | ---------- | ------------------ | ----------------------------------------------------------------------------------- |
+| `RECAPTCHA_SITE_KEY`          | Production | Plain ou Sensitive | Chave do site (pública, enviada à tela de login). Mudou, redeploy                   |
+| `RECAPTCHA_SECRET_KEY`        | Production | Sensitive          | Chave secreta (só no servidor). Sem ela o login é recusado                          |
+| `RECAPTCHA_MIN_SCORE`         | Production | Plain              | Opcional. Score mínimo de 0 a 1 (padrão `0.5`)                                      |
+| `RECAPTCHA_ALLOWED_HOSTNAMES` | Production | Plain              | Opcional. Recomendado: `gestao-lojas-dpv.vercel.app` (padrão: o host da requisição) |
 
 ## 2. Configuração do projeto na Vercel
 
@@ -148,11 +148,11 @@ Os nomes abaixo são os da documentação oficial em 2026-10; confira no console
 2. _Display name_ à escolha; tipo **Web**; deixe **Disable domain verification** desligado.
 3. **Add a domain**: `gestao-lojas-dpv.vercel.app` e `localhost`. Mantenha a opção padrão (por
    score, sem checkbox). Mudanças de domínio levam até 30 minutos para valer.
-4. Copie o **ID da chave** (chave do site) → `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`.
+4. Copie o **ID da chave** (chave do site) → `RECAPTCHA_SITE_KEY`.
 5. Na chave criada: **Key Details** → aba **Integration** → **Use Legacy Key** → copie a chave
    secreta legada → `RECAPTCHA_SECRET_KEY` (é a usada pelo `siteverify`).
-6. Grave as duas na Vercel (Production; a secreta como **Sensitive**) e faça **redeploy**: a chave
-   pública só entra no bundle num build novo. Nunca registre a chave secreta em issue, PR ou chat.
+6. Grave as duas na Vercel (Production; a secreta como **Sensitive**) e faça **redeploy**: a tela de
+   login é gerada no build. Nunca registre a chave secreta em issue, PR ou chat.
 7. Depois do deploy, faça um login real e confira as avaliações no console do reCAPTCHA.
 
 Plano gratuito: **10.000 avaliações por mês**. Cada tentativa de login conta uma avaliação.
@@ -165,7 +165,7 @@ faturamento no projeto.
 | Situação                                                                | Desenvolvimento                         | Produção (`NODE_ENV=production`)                      |
 | ----------------------------------------------------------------------- | --------------------------------------- | ----------------------------------------------------- |
 | Sem `RECAPTCHA_SECRET_KEY`                                              | Verificação desligada, aviso no log     | Login recusado; log `[recaptcha] ... não configurada` |
-| Sem `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`                                    | Tela sem reCAPTCHA                      | Tela não envia token; login recusado                  |
+| Sem `RECAPTCHA_SITE_KEY`                                                | Tela sem reCAPTCHA                      | Tela não envia token; login recusado                  |
 | Google fora do ar / timeout                                             | Login recusado, log `[recaptcha] Falha` | Login recusado, log `[recaptcha] Falha`               |
 | Token ausente, inválido, reutilizado, action/host errado ou score baixo | Recusado                                | Recusado ("A verificação de segurança falhou")        |
 
