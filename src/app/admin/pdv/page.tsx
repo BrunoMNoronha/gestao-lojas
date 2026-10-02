@@ -7,14 +7,16 @@ import Link from "next/link";
 import { Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdvTerminal } from "@/components/pdv-terminal";
+import { requirePageAccess } from "@/lib/authz";
 
 export const metadata = {
-  title: "Frente de Caixa (PDV) | Gestão de Lojas",
+  title: "Frente de Caixa (PDV)",
 };
 
 export default async function PdvPage() {
   // O caixa precisa de produtos, preços e estoque atuais: renderiza a cada requisição
   await connection();
+  await requirePageAccess("pdv.use");
 
   let data: Awaited<ReturnType<typeof loadPdvData>> | null = null;
   try {

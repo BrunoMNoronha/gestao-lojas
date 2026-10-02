@@ -44,6 +44,8 @@ interface StockManagerProps {
   suppliers: SupplierItem[];
   lowStock: LowStockItem[];
   initialMovements: StockMovementPage;
+  // Entradas e ajustes restritos por perfil (stock.manage)
+  canManage: boolean;
 }
 
 interface Filters {
@@ -101,6 +103,7 @@ export function StockManager({
   suppliers,
   lowStock,
   initialMovements,
+  canManage,
 }: StockManagerProps) {
   const router = useRouter();
 
@@ -176,6 +179,7 @@ export function StockManager({
           </p>
         </div>
 
+        {canManage && (
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -190,6 +194,7 @@ export function StockManager({
             Registrar Entrada
           </Button>
         </div>
+        )}
       </div>
 
       {/* Summary */}
@@ -277,7 +282,7 @@ export function StockManager({
                     <TableHead className="text-right">Saldo</TableHead>
                     <TableHead className="text-right">Mínimo</TableHead>
                     <TableHead className="text-right">Déficit</TableHead>
-                    <TableHead className="text-center">Ações</TableHead>
+                    {canManage && <TableHead className="text-center">Ações</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -307,17 +312,19 @@ export function StockManager({
                       <TableCell className="text-destructive text-right font-mono font-semibold">
                         {formatQuantity(p.deficit, p.unit)} {p.unit}
                       </TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEntryDialog(p.id)}
-                          className="gap-1"
-                        >
-                          <PackagePlus className="h-3.5 w-3.5" />
-                          Entrada
-                        </Button>
-                      </TableCell>
+                      {canManage && (
+                        <TableCell className="text-center">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEntryDialog(p.id)}
+                            className="gap-1"
+                          >
+                            <PackagePlus className="h-3.5 w-3.5" />
+                            Entrada
+                          </Button>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>

@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 
 export interface CategoryData {
@@ -13,6 +14,9 @@ export interface CategoryData {
 
 export async function getCategories(): Promise<CategoryData[]> {
   try {
+    const authz = await authorize("catalog.view");
+    if (!authz.ok) return [];
+
     const categories = await prisma.category.findMany({
       orderBy: { name: "asc" },
       include: {
@@ -31,6 +35,9 @@ export async function getCategories(): Promise<CategoryData[]> {
 
 export async function createCategory(name: string) {
   try {
+    const authz = await authorize("catalog.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const trimmedName = name.trim();
     if (!trimmedName) {
       return { success: false, error: "O nome da categoria é obrigatório." };
@@ -58,6 +65,9 @@ export async function createCategory(name: string) {
 
 export async function updateCategory(id: string, name: string) {
   try {
+    const authz = await authorize("catalog.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const trimmedName = name.trim();
     if (!trimmedName) {
       return { success: false, error: "O nome da categoria é obrigatório." };
@@ -89,6 +99,9 @@ export async function updateCategory(id: string, name: string) {
 
 export async function deleteCategory(id: string) {
   try {
+    const authz = await authorize("catalog.manage");
+    if (!authz.ok) return { success: false, error: authz.error };
+
     const productsCount = await prisma.product.count({
       where: { categoryId: id },
     });

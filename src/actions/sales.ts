@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
+import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 import { PaymentMethod, MovementType, Prisma, Unit } from "@prisma/client";
 import { lockOpenCashRegister } from "@/lib/cash-register";
@@ -34,14 +34,11 @@ function toNumberOrNaN(value: unknown): number {
 export async function createSale(data: CreateSaleInput) {
   try {
     // 1. Autenticação: a venda é sempre atribuída ao operador logado.
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return {
-        success: false,
-        error: "Sessão expirada. Faça login novamente para registrar a venda.",
-      };
+    const authz = await authorize("pdv.use");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
     }
+    const userId = authz.user.id;
 
     // 2. Validação do payload
     if (!Array.isArray(data?.items) || data.items.length === 0) {

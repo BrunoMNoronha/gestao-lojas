@@ -5,14 +5,16 @@ import {
 } from "@/actions/cash-register";
 import { connection } from "next/server";
 import { CashRegisterManager } from "@/components/cash-register-manager";
+import { requirePageAccess } from "@/lib/authz";
 
 export const metadata = {
-  title: "Caixa | Gestão de Lojas",
+  title: "Caixa",
 };
 
 export default async function CaixaPage() {
   // Saldo do turno muda a cada venda: renderiza a cada requisição
   await connection();
+  await requirePageAccess("cash.own");
 
   let data: Awaited<ReturnType<typeof loadCashData>> | null = null;
   try {

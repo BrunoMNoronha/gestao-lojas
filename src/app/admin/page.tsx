@@ -5,14 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
 import { connection } from "next/server";
 import { DashboardView } from "@/components/dashboard-view";
+import { requirePageAccess } from "@/lib/authz";
 
 export const metadata = {
-  title: "Painel de Controle | Gestão de Lojas",
+  title: "Painel de Controle",
 };
 
 export default async function AdminDashboardPage() {
   // Métricas mudam a cada venda: renderiza a cada requisição em vez de prerenderizar no build
   await connection();
+  await requirePageAccess("dashboard.view");
 
   const [settings, metrics] = await Promise.all([getStoreSettings(), getDashboardMetrics()]);
 

@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { getSession, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Store, Lock, Mail, Loader2, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { isAppRole } from "@/lib/permissions";
+import { landingPathFor, safeInternalPath } from "@/lib/routes";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +32,14 @@ export default function LoginPage() {
       if (res?.error) {
         setError("Credenciais inválidas. Verifique seu e-mail e senha.");
       } else {
-        router.push("/admin");
+        // Vai para a página pedida (callbackUrl interno e permitido ao perfil) ou para a inicial
+        const session = await getSession();
+        const role = isAppRole(session?.user?.role) ? session.user.role : null;
+        const requested = safeInternalPath(
+          new URLSearchParams(window.location.search).get("callbackUrl"),
+          window.location.origin,
+        );
+        router.push(landingPathFor(role, requested));
         router.refresh();
       }
     } catch (err) {

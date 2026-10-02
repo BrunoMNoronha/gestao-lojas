@@ -30,9 +30,11 @@ import { CustomerDialog } from "@/components/customer-dialog";
 
 interface CustomersManagerProps {
   initialCustomers: CustomerItem[];
+  // Exclusão restrita por perfil (customers.delete)
+  canDelete: boolean;
 }
 
-export function CustomersManager({ initialCustomers }: CustomersManagerProps) {
+export function CustomersManager({ initialCustomers, canDelete }: CustomersManagerProps) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -189,14 +191,16 @@ export function CustomersManager({ initialCustomers }: CustomersManagerProps) {
                         >
                           <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
                         </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(c.id, c.name)}
-                          title="Excluir cliente"
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        {canDelete && (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            onClick={() => handleDelete(c.id, c.name)}
+                            title="Excluir cliente"
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

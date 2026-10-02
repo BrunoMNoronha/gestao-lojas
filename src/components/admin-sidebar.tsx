@@ -3,37 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import {
-  LayoutDashboard,
-  ShoppingCart,
-  Package,
-  Boxes,
-  Users,
-  Truck,
-  Settings,
-  Store,
-  LogOut,
-  Wallet,
-  HandCoins,
-  BarChart3,
-} from "lucide-react";
+import { Store, LogOut, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppRole, ROLE_LABELS } from "@/lib/permissions";
+import { routesFor } from "@/lib/routes";
 
-const navItems = [
-  { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { label: "Frente de Caixa (PDV)", href: "/admin/pdv", icon: ShoppingCart },
-  { label: "Caixa", href: "/admin/caixa", icon: Wallet },
-  { label: "Contas a Receber", href: "/admin/contas-a-receber", icon: HandCoins },
-  { label: "Relatórios", href: "/admin/relatorios/vendas", icon: BarChart3 },
-  { label: "Produtos", href: "/admin/produtos", icon: Package },
-  { label: "Estoque", href: "/admin/estoque", icon: Boxes },
-  { label: "Clientes", href: "/admin/clientes", icon: Users },
-  { label: "Fornecedores", href: "/admin/fornecedores", icon: Truck },
-  { label: "Configurações da Loja", href: "/admin/configuracoes", icon: Settings },
-];
+interface AdminSidebarProps {
+  user: { name: string; role: AppRole };
+}
 
-export function AdminSidebar() {
+export function AdminSidebar({ user }: AdminSidebarProps) {
   const pathname = usePathname();
+  // Menu filtrado pela matriz de acesso (src/lib/permissions.ts)
+  const navItems = routesFor(user.role);
 
   return (
     <aside className="w-64 border-r bg-card h-screen sticky top-0 flex flex-col justify-between p-4 shrink-0">
@@ -53,7 +35,9 @@ export function AdminSidebar() {
         <nav className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/admin" && pathname.startsWith(item.href + "/"));
 
             return (
               <Link
@@ -74,6 +58,14 @@ export function AdminSidebar() {
       </div>
 
       <div className="space-y-3">
+        <div className="flex items-center gap-2 rounded-lg border px-3 py-2">
+          <UserRound className="w-4 h-4 text-muted-foreground shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium truncate">{user.name}</p>
+            <p className="text-xs text-muted-foreground">{ROLE_LABELS[user.role]}</p>
+          </div>
+        </div>
+
         <Button
           variant="ghost"
           className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 gap-3"
