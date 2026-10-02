@@ -1,7 +1,9 @@
 # Deploy em produção — Vercel + Neon
 
-Runbook da publicação do sistema (issue #7). Banco: **Neon via Vercel Marketplace** (sucessor do
-"Vercel Postgres"). Hospedagem: **Vercel** (time TechLab).
+Runbook da publicação do sistema (issues #7 e #23). Banco: **Neon via Vercel Marketplace** (sucessor
+do "Vercel Postgres"). Hospedagem: **Vercel** (time TechLab, projeto `gestao-lojas`).
+
+Só existe o ambiente de **produção** (`main`). Não há previews nem banco de desenvolvimento na nuvem.
 
 > Regras de ouro
 >
@@ -23,20 +25,32 @@ Runbook da publicação do sistema (issue #7). Banco: **Neon via Vercel Marketpl
 
 `AUTH_URL` não é necessário na Vercel (o host é detectado automaticamente).
 
-## 2. Criar o projeto e o banco
+## 2. Configuração do projeto na Vercel
+
+| Item                  | Valor                                                                                                                                       | Onde                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| Região das funções    | `gru1` (São Paulo), perto do banco Neon `aws-sa-east-1`                                                                                     | `vercel.json` (`regions`)               |
+| Deploys automáticos   | Só a `main` (produção). Outros branches não geram preview                                                                                   | `vercel.json` (`git.deploymentEnabled`) |
+| Deployment Protection | Vercel Authentication só em previews (`deploymentType: preview`); a URL de produção é pública e o acesso é controlado pelo login do sistema | Settings → Deployment Protection        |
+| Integração Prisma     | Instalada pela importação do projeto, **não usada**                                                                                         | —                                       |
+
+## 3. Criar o banco
 
 1. Vercel → time **TechLab** → _Add New → Project_ → importar `BrunoMNoronha/gestao-lojas`.
    Framework: Next.js. Comandos padrão (`pnpm install` / `next build`). O `postinstall` gera o
    Prisma Client.
-2. _Storage_ → _Create Database_ → **Neon** (plano Free) → conectar ao projeto, ambiente
-   **Production**. A integração cria `DATABASE_URL` e `DATABASE_URL_UNPOOLED`.
+2. _Storage_ → _Create Database_ → **Neon** (plano Free), região **São Paulo (`aws-sa-east-1`)** →
+   conectar ao projeto **somente no ambiente Production** (desmarcar Preview e Development), sem
+   prefixo nas variáveis. A integração cria `DATABASE_URL` e `DATABASE_URL_UNPOOLED`.
+   A org Neon do time é gerida pela Vercel: criar o banco pela API/console da Neon é bloqueado,
+   então o caminho é sempre o Marketplace.
 3. Em _Settings → Environment Variables_ (Production), crie `DIRECT_URL` com o valor de
    `DATABASE_URL_UNPOOLED`, e as variáveis `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`,
    `ADMIN_NAME`.
-4. Preview: não conecte o banco de produção a deploys de preview. Use um branch da Neon próprio
-   para preview ou deixe preview sem banco.
+4. Preview e Development ficam sem banco e sem variáveis: os previews estão desligados no
+   `vercel.json`. Nunca conecte o banco de produção a esses ambientes.
 
-## 3. Aplicar as migrations no banco de produção
+## 4. Aplicar as migrations no banco de produção
 
 ```bash
 # baixa as variáveis de produção para um arquivo local (ignorado pelo Git: .env*)
@@ -58,7 +72,7 @@ pnpm prisma migrate resolve --applied 0001_init
 pnpm db:deploy
 ```
 
-## 4. Deploy de produção e primeiro acesso
+## 5. Deploy de produção e primeiro acesso
 
 1. Faça o deploy de produção (merge no `main` com a integração Git, ou _Redeploy_ no painel).
 2. Acesse `/login` e entre com `ADMIN_EMAIL` / `ADMIN_PASSWORD`. O administrador é criado nesse
@@ -68,7 +82,7 @@ pnpm db:deploy
 Se o login falhar com banco vazio, confira os logs da função: `[bootstrap-admin]` informa se as
 variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 
-## 5. Checklist de fumaça (após cada deploy de produção)
+## 6. Checklist de fumaça (após cada deploy de produção)
 
 - [ ] `/login` abre; `/admin` sem sessão redireciona para `/login`.
 - [ ] Login com o administrador.
@@ -79,8 +93,10 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 - [ ] Contas a Receber: título do fiado aparece; registrar um recebimento.
 - [ ] Caixa: fechar com o valor contado; fechamento aparece no histórico.
 - [ ] Dashboard e Relatório de Vendas mostram as vendas do dia.
+- [ ] `/vendor/zxing/zxing_reader-<versão>.wasm` responde 200 (o `postinstall` rodou no build).
+- [ ] Celular: ler um EAN pela câmera no PDV (HTTPS de produção).
 
-## 6. Usabilidade e performance do PDV
+## 7. Usabilidade e performance do PDV
 
 - [ ] Venda de 3 itens só com teclado (F2 busca → Enter → F10 → F10): medir o tempo total.
 - [ ] Tempo de resposta de `createSale` (aba Network do navegador) — referência: < 1 s.
@@ -88,7 +104,7 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 - [ ] Layout em 1366×768 e 1920×1080: carrinho, totais e botões visíveis sem rolagem horizontal.
 - [ ] Leitor de código de barras: ler um EAN cadastrado adiciona o item ao carrinho.
 
-## 7. Rollback
+## 8. Rollback
 
 - **Código:** Vercel → _Deployments_ → deploy anterior → _Promote to Production_.
 - **Banco:** migrations não são revertidas automaticamente. Se uma migration causar problema,
