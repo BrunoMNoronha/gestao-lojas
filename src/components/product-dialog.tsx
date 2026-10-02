@@ -243,13 +243,16 @@ export function ProductDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-foreground">
-                Estoque Atual
+                {productToEdit ? "Estoque Atual" : "Estoque Inicial"}
               </label>
               <Input
                 type="number"
                 step="0.001"
+                min="0"
                 placeholder="0"
                 value={formData.currentStock || ""}
+                readOnly={!!productToEdit}
+                disabled={!!productToEdit}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
@@ -257,6 +260,11 @@ export function ProductDialog({
                   })
                 }
               />
+              {productToEdit && (
+                <p className="text-[11px] text-muted-foreground">
+                  Altere pelo módulo Estoque (entrada ou ajuste).
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-foreground">

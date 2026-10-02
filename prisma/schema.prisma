@@ -36,14 +36,15 @@ enum MovementType {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(SELLER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  sales     Sale[]
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  password       String
+  role           Role            @default(SELLER)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sales          Sale[]
+  stockMovements StockMovement[]
 }
 
 model Category {
@@ -107,14 +108,23 @@ model SaleItem {
   subtotal  Decimal @db.Decimal(10, 2)
 }
 
+// IN/OUT guardam quantidade positiva; ADJUSTMENT guarda o delta com sinal
+// (saldo contado - saldo anterior). Todo saldo de Product muda via movimentação.
 model StockMovement {
-  id        String       @id @default(cuid())
-  productId String
-  product   Product      @relation(fields: [productId], references: [id])
-  type      MovementType
-  quantity  Decimal      @db.Decimal(10, 3)
-  reason    String?
-  createdAt DateTime     @default(now())
+  id         String       @id @default(cuid())
+  productId  String
+  product    Product      @relation(fields: [productId], references: [id])
+  type       MovementType
+  quantity   Decimal      @db.Decimal(10, 3)
+  reason     String?
+  unitCost   Decimal?     @db.Decimal(10, 2)
+  userId     String?
+  user       User?        @relation(fields: [userId], references: [id])
+  supplierId String?
+  supplier   Supplier?    @relation(fields: [supplierId], references: [id])
+  createdAt  DateTime     @default(now())
+
+  @@index([productId, createdAt])
 }
 
 model StoreSettings {
@@ -140,14 +150,13 @@ model StoreSettings {
 }
 
 model Supplier {
-  id        String   @id @default(cuid())
-  name      String
-  document  String?  @unique
-  phone     String?
-  email     String?
-  address   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String          @id @default(cuid())
+  name           String
+  document       String?         @unique
+  phone          String?
+  email          String?
+  address        String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  stockMovements StockMovement[]
 }
-
-

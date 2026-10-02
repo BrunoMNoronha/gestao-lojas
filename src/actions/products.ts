@@ -1,8 +1,9 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
-import { Unit } from "@prisma/client";
+import { MovementType, Prisma, Unit } from "@prisma/client";
 
 export type UnitType = "UN" | "KG" | "LT" | "CX" | "M";
 
@@ -30,6 +31,7 @@ export interface ProductInput {
   costPrice: number;
   salePrice: number;
   unit?: UnitType;
+  // Usado apenas no cadastro (estoque inicial). Depois, o saldo muda só pelo módulo Estoque.
   currentStock?: number;
   minStock?: number;
   categoryId?: string | null;
@@ -111,22 +113,57 @@ export async function createProduct(data: ProductInput) {
       }
     }
 
-    const newProduct = await prisma.product.create({
-      data: {
-        name,
-        sku,
-        barcode,
-        costPrice: data.costPrice ?? 0,
-        salePrice: data.salePrice ?? 0,
-        unit: (data.unit as Unit) || Unit.UN,
-        currentStock: data.currentStock ?? 0,
-        minStock: data.minStock ?? 0,
-        categoryId: data.categoryId || null,
-      },
+    const unit = (data.unit as Unit) || Unit.UN;
+    const initialStockInput = data.currentStock ?? 0;
+    if (!Number.isFinite(initialStockInput) || initialStockInput < 0) {
+      return { success: false, error: "O estoque inicial não pode ser negativo." };
+    }
+    const initialStock = new Prisma.Decimal(initialStockInput).toDecimalPlaces(3);
+    if ((unit === Unit.UN || unit === Unit.CX) && !initialStock.isInteger()) {
+      return {
+        success: false,
+        error: `Produtos controlados por ${unit} aceitam apenas estoque inicial inteiro.`,
+      };
+    }
+
+    const session = await auth();
+    const userId = session?.user?.id ?? null;
+
+    // O estoque inicial gera a primeira movimentação, mantendo o histórico completo
+    const newProduct = await prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          name,
+          sku,
+          barcode,
+          costPrice: data.costPrice ?? 0,
+          salePrice: data.salePrice ?? 0,
+          unit,
+          currentStock: initialStock,
+          minStock: data.minStock ?? 0,
+          categoryId: data.categoryId || null,
+        },
+      });
+
+      if (initialStock.gt(0)) {
+        await tx.stockMovement.create({
+          data: {
+            productId: product.id,
+            type: MovementType.IN,
+            quantity: initialStock,
+            reason: "Estoque inicial",
+            userId,
+          },
+        });
+      }
+
+      return product;
     });
 
     revalidatePath("/admin/produtos");
-    return { success: true, data: newProduct };
+    revalidatePath("/admin/estoque");
+    // Só o id: objetos Decimal do Prisma não podem ser enviados ao cliente
+    return { success: true, data: { id: newProduct.id } };
   } catch (error) {
     console.error("Erro ao criar produto:", error);
     return { success: false, error: "Falha ao criar o produto." };
@@ -176,14 +213,15 @@ export async function updateProduct(id: string, data: ProductInput) {
         costPrice: data.costPrice ?? 0,
         salePrice: data.salePrice ?? 0,
         unit: (data.unit as Unit) || Unit.UN,
-        currentStock: data.currentStock ?? 0,
+        // currentStock não é alterado aqui: use registerStockEntry/adjustStock (src/actions/stock.ts)
         minStock: data.minStock ?? 0,
         categoryId: data.categoryId || null,
       },
     });
 
     revalidatePath("/admin/produtos");
-    return { success: true, data: updatedProduct };
+    revalidatePath("/admin/estoque");
+    return { success: true, data: { id: updatedProduct.id } };
   } catch (error) {
     console.error("Erro ao atualizar produto:", error);
     return { success: false, error: "Falha ao atualizar o produto." };
@@ -197,9 +235,14 @@ export async function deleteProduct(id: string) {
     });
 
     revalidatePath("/admin/produtos");
+    revalidatePath("/admin/estoque");
     return { success: true };
   } catch (error) {
     console.error("Erro ao excluir produto:", error);
-    return { success: false, error: "Falha ao excluir o produto. Verifique se existem vendas associadas." };
+    return {
+      success: false,
+      error:
+        "Falha ao excluir o produto. Verifique se existem vendas ou movimentações de estoque associadas.",
+    };
   }
 }
