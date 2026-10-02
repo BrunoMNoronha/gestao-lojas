@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { User, Loader2 } from "lucide-react";
 import { CustomerItem, CustomerInput, createCustomer, updateCustomer } from "@/actions/customers";
 import { Label } from "@/components/ui/label";
+import { formatCpfOrCnpj, formatPhone, onlyAlphanumeric, onlyDigits } from "@/lib/masks";
 
 interface CustomerDialogProps {
   open: boolean;
@@ -134,8 +135,14 @@ export function CustomerDialog({
               <Input
                 id="customer-documento-cpf-ou-cnpj"
                 placeholder="000.000.000-00"
-                value={formData.document || ""}
-                onChange={(e) => setFormData({ ...formData, document: e.target.value })}
+                autoComplete="off"
+                value={formatCpfOrCnpj(formData.document)}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    document: onlyAlphanumeric(e.target.value).slice(0, 14),
+                  })
+                }
               />
             </div>
             <div className="space-y-1">
@@ -148,8 +155,13 @@ export function CustomerDialog({
               <Input
                 id="customer-telefone-whatsapp"
                 placeholder="(00) 90000-0000"
-                value={formData.phone || ""}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                type="tel"
+                inputMode="tel"
+                autoComplete="off"
+                value={formatPhone(formData.phone)}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: onlyDigits(e.target.value).slice(0, 11) })
+                }
               />
             </div>
           </div>

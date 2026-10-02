@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { isHttpUrl } from "@/lib/catalog-shared";
 import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
+import { MoneyInput } from "@/components/money-input";
 import { toast } from "sonner";
 
 interface ProductDialogProps {
@@ -254,19 +255,10 @@ export function ProductDialog({
               >
                 Preço de Custo (R$)
               </Label>
-              <Input
+              <MoneyInput
                 id="product-preco-de-custo-r"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={formData.costPrice || ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    costPrice: parseFloat(e.target.value) || 0,
-                  })
-                }
+                value={formData.costPrice || null}
+                onValueChange={(value) => setFormData({ ...formData, costPrice: value ?? 0 })}
               />
             </div>
             <div className="space-y-1">
@@ -276,19 +268,10 @@ export function ProductDialog({
               >
                 Preço de Venda (R$) <span className="text-destructive">*</span>
               </Label>
-              <Input
+              <MoneyInput
                 id="product-preco-de-venda-r"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={formData.salePrice || ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    salePrice: parseFloat(e.target.value) || 0,
-                  })
-                }
+                value={formData.salePrice || null}
+                onValueChange={(value) => setFormData({ ...formData, salePrice: value ?? 0 })}
                 required
               />
             </div>

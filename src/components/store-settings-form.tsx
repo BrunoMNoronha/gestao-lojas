@@ -4,14 +4,37 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { StoreSettingsData, updateStoreSettings } from "@/actions/settings";
+import { PersonTypeValue, StoreSettingsData, updateStoreSettings } from "@/actions/settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Building2, ExternalLink, MapPin, Share2, Receipt, Save, Store } from "lucide-react";
+import {
+  Building2,
+  ExternalLink,
+  MapPin,
+  Share2,
+  Receipt,
+  Save,
+  Store,
+  UserRound,
+} from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { formatWhatsappNumber, normalizeWhatsappNumber } from "@/lib/catalog-shared";
+import {
+  formatCep,
+  formatCnpj,
+  formatCpf,
+  formatPhone,
+  onlyAlphanumeric,
+  onlyDigits,
+} from "@/lib/masks";
+import { cn } from "@/lib/utils";
+
+const PERSON_TYPES: { value: PersonTypeValue; label: string; hint: string }[] = [
+  { value: "COMPANY", label: "Pessoa Jurídica", hint: "Empresa com CNPJ" },
+  { value: "INDIVIDUAL", label: "Pessoa Física", hint: "Loja em nome de uma pessoa, com CPF" },
+];
 
 interface Props {
   initialSettings: StoreSettingsData;
@@ -27,6 +50,15 @@ export function StoreSettingsForm({ initialSettings }: Props) {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const isIndividual = formData.personType === "INDIVIDUAL";
+
+  // Trocar o tipo limpa o documento: um CNPJ não pode ficar salvo como CPF (e vice-versa)
+  const handlePersonTypeChange = (personType: PersonTypeValue) => {
+    setFormData((prev) =>
+      prev.personType === personType ? prev : { ...prev, personType, document: "" },
+    );
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (normalizeWhatsappNumber(formData.whatsappNumber) === null) {
@@ -39,8 +71,14 @@ export function StoreSettingsForm({ initialSettings }: Props) {
     setLoading(false);
 
     if (res.success) {
-      // O servidor guarda o número normalizado (só dígitos, com DDI)
-      setFormData((prev) => ({ ...prev, whatsappNumber: res.data?.whatsappNumber ?? "" }));
+      // O servidor guarda os números normalizados (só dígitos; WhatsApp com DDI)
+      setFormData((prev) => ({
+        ...prev,
+        whatsappNumber: res.data?.whatsappNumber ?? "",
+        document: res.data?.document ?? "",
+        phone: res.data?.phone ?? "",
+        zipCode: res.data?.zipCode ?? "",
+      }));
       toast.success("Configurações da loja salvas com sucesso!");
       // Atualiza o nome da loja exibido na sidebar
       router.refresh();
@@ -51,6 +89,49 @@ export function StoreSettingsForm({ initialSettings }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-4xl space-y-6">
+      {/* Tipo de pessoa: define os campos dos dados básicos */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <UserRound className="text-primary h-5 w-5" />
+            Tipo de Pessoa
+          </CardTitle>
+          <CardDescription>
+            Escolha se a loja está em nome de uma empresa (CNPJ) ou de uma pessoa (CPF).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <fieldset className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <legend className="sr-only">Tipo de pessoa</legend>
+            {PERSON_TYPES.map((option) => {
+              const checked = (formData.personType ?? "COMPANY") === option.value;
+              return (
+                <label
+                  key={option.value}
+                  className={cn(
+                    "has-focus-visible:ring-ring/50 flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors has-focus-visible:ring-3",
+                    checked ? "border-primary bg-primary/5" : "hover:bg-muted/50",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="personType"
+                    value={option.value}
+                    checked={checked}
+                    onChange={() => handlePersonTypeChange(option.value)}
+                    className="accent-primary mt-0.5 size-4"
+                  />
+                  <span className="space-y-0.5">
+                    <span className="block text-sm font-medium">{option.label}</span>
+                    <span className="text-muted-foreground block text-xs">{option.hint}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+        </CardContent>
+      </Card>
+
       {/* Dados Principais */}
       <Card>
         <CardHeader>
@@ -59,27 +140,29 @@ export function StoreSettingsForm({ initialSettings }: Props) {
             Dados Básicos da Loja
           </CardTitle>
           <CardDescription>
-            Identificação jurídica e comercial da empresa exibida nos comprovantes e cabeçalhos.
+            {isIndividual
+              ? "Identificação do responsável e nome da loja exibidos nos comprovantes e cabeçalhos."
+              : "Identificação jurídica e comercial da empresa exibida nos comprovantes e cabeçalhos."}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="store-settings-razao-social" className="text-sm font-medium">
-              Razão Social *
+              {isIndividual ? "Nome Completo *" : "Razão Social *"}
             </Label>
             <Input
               id="store-settings-razao-social"
               name="companyName"
               value={formData.companyName}
               onChange={handleChange}
-              placeholder="Ex: Comercial Silva Ltda"
+              placeholder={isIndividual ? "Ex: João da Silva" : "Ex: Comercial Silva Ltda"}
               required
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="store-settings-nome-fantasia" className="text-sm font-medium">
-              Nome Fantasia *
+              {isIndividual ? "Nome da Loja *" : "Nome Fantasia *"}
             </Label>
             <Input
               id="store-settings-nome-fantasia"
@@ -92,15 +175,24 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="store-settings-cnpj-opcional" className="text-sm font-medium">
-              CNPJ (Opcional)
+            <Label htmlFor="store-settings-documento-opcional" className="text-sm font-medium">
+              {isIndividual ? "CPF (Opcional)" : "CNPJ (Opcional)"}
             </Label>
             <Input
-              id="store-settings-cnpj-opcional"
+              id="store-settings-documento-opcional"
               name="document"
-              value={formData.document || ""}
-              onChange={handleChange}
-              placeholder="00.000.000/0001-00"
+              inputMode={isIndividual ? "numeric" : "text"}
+              autoComplete="off"
+              value={isIndividual ? formatCpf(formData.document) : formatCnpj(formData.document)}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  document: isIndividual
+                    ? onlyDigits(e.target.value).slice(0, 11)
+                    : onlyAlphanumeric(e.target.value).slice(0, 14),
+                }))
+              }
+              placeholder={isIndividual ? "000.000.000-00" : "00.000.000/0000-00"}
             />
           </div>
 
@@ -127,8 +219,13 @@ export function StoreSettingsForm({ initialSettings }: Props) {
             <Input
               id="store-settings-telefone-whatsapp"
               name="phone"
-              value={formData.phone || ""}
-              onChange={handleChange}
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              value={formatPhone(formData.phone)}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, phone: onlyDigits(e.target.value).slice(0, 11) }))
+              }
               placeholder="(00) 90000-0000"
             />
           </div>
@@ -166,8 +263,15 @@ export function StoreSettingsForm({ initialSettings }: Props) {
             <Input
               id="store-settings-cep"
               name="zipCode"
-              value={formData.zipCode || ""}
-              onChange={handleChange}
+              inputMode="numeric"
+              autoComplete="off"
+              value={formatCep(formData.zipCode)}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  zipCode: onlyDigits(e.target.value).slice(0, 8),
+                }))
+              }
               placeholder="00000-000"
             />
           </div>

@@ -24,6 +24,12 @@ enum Unit {
   M
 }
 
+// Tipo de pessoa da loja: define os rótulos dos dados básicos e se o documento é CPF ou CNPJ
+enum PersonType {
+  INDIVIDUAL // Pessoa Física
+  COMPANY // Pessoa Jurídica
+}
+
 enum PaymentMethod {
   MONEY
   PIX
@@ -163,14 +169,15 @@ model StockMovement {
 }
 
 model StoreSettings {
-  id                 String   @id @default("default")
-  companyName        String   // Razão Social
-  tradeName          String   // Nome Fantasia
-  document           String?  // CNPJ (opcional)
+  id                 String     @id @default("default")
+  personType         PersonType @default(COMPANY)
+  companyName        String   // Razão Social (PJ) ou Nome completo (PF)
+  tradeName          String   // Nome Fantasia / Nome da loja
+  document           String?  // CNPJ (PJ) ou CPF (PF), sem pontuação (opcional)
   stateRegistration  String?  // Inscrição Estadual (opcional)
-  phone              String?  // Telefone / WhatsApp
+  phone              String?  // Telefone / WhatsApp, só dígitos com DDD
   email              String?  // E-mail de Contato
-  zipCode            String?  // CEP
+  zipCode            String?  // CEP, só dígitos
   address            String?  // Logradouro (Rua, Av...)
   number             String?  // Número
   neighborhood       String?  // Bairro

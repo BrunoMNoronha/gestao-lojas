@@ -4,8 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 import { normalizeWhatsappNumber } from "@/lib/catalog-shared";
+import { normalizeCep, normalizeDocument, normalizePhone } from "@/lib/masks";
+
+export type PersonTypeValue = "INDIVIDUAL" | "COMPANY";
 
 export interface StoreSettingsData {
+  // Pessoa Física (CPF, nome completo) ou Jurídica (CNPJ, razão social)
+  personType?: PersonTypeValue;
   companyName: string;
   tradeName: string;
   document?: string;
@@ -38,6 +43,7 @@ export async function getStoreSettings(): Promise<StoreSettingsData> {
 
     if (!settings) {
       return {
+        personType: "COMPANY",
         companyName: "Minha Loja Distribuidora",
         tradeName: "Minha Loja",
         document: "",
@@ -60,6 +66,7 @@ export async function getStoreSettings(): Promise<StoreSettingsData> {
     }
 
     return {
+      personType: settings.personType,
       companyName: settings.companyName ?? "",
       tradeName: settings.tradeName ?? "",
       document: settings.document ?? "",
@@ -102,49 +109,52 @@ export async function updateStoreSettings(data: StoreSettingsData) {
     }
     const catalogEnabled = data.catalogEnabled === true;
 
+    const personType: PersonTypeValue = data.personType === "INDIVIDUAL" ? "INDIVIDUAL" : "COMPANY";
+    const companyName = data.companyName?.trim();
+    const tradeName = data.tradeName?.trim();
+    if (!companyName || !tradeName) {
+      return {
+        success: false,
+        error:
+          personType === "INDIVIDUAL"
+            ? "Informe o nome completo e o nome da loja."
+            : "Informe a razão social e o nome fantasia.",
+      };
+    }
+    // CPF/CNPJ, telefone e CEP são gravados sem pontuação
+    const document = normalizeDocument(data.document, personType === "INDIVIDUAL" ? "CPF" : "CNPJ");
+    if (!document.ok) return { success: false, error: document.error };
+    const phone = normalizePhone(data.phone);
+    if (!phone.ok) return { success: false, error: phone.error };
+    const zipCode = normalizeCep(data.zipCode);
+    if (!zipCode.ok) return { success: false, error: zipCode.error };
+
+    const values = {
+      personType,
+      companyName,
+      tradeName,
+      document: document.value,
+      stateRegistration: data.stateRegistration || null,
+      phone: phone.value,
+      email: data.email || null,
+      zipCode: zipCode.value,
+      address: data.address || null,
+      number: data.number || null,
+      neighborhood: data.neighborhood || null,
+      city: data.city || null,
+      state: data.state || null,
+      instagram: data.instagram || null,
+      facebook: data.facebook || null,
+      website: data.website || null,
+      receiptFooterNote: data.receiptFooterNote || null,
+      whatsappNumber: whatsappNumber || null,
+      catalogEnabled,
+    };
+
     const updated = await prisma.storeSettings.upsert({
       where: { id: "default" },
-      update: {
-        companyName: data.companyName,
-        tradeName: data.tradeName,
-        document: data.document || null,
-        stateRegistration: data.stateRegistration || null,
-        phone: data.phone || null,
-        email: data.email || null,
-        zipCode: data.zipCode || null,
-        address: data.address || null,
-        number: data.number || null,
-        neighborhood: data.neighborhood || null,
-        city: data.city || null,
-        state: data.state || null,
-        instagram: data.instagram || null,
-        facebook: data.facebook || null,
-        website: data.website || null,
-        receiptFooterNote: data.receiptFooterNote || null,
-        whatsappNumber: whatsappNumber || null,
-        catalogEnabled,
-      },
-      create: {
-        id: "default",
-        companyName: data.companyName,
-        tradeName: data.tradeName,
-        document: data.document || null,
-        stateRegistration: data.stateRegistration || null,
-        phone: data.phone || null,
-        email: data.email || null,
-        zipCode: data.zipCode || null,
-        address: data.address || null,
-        number: data.number || null,
-        neighborhood: data.neighborhood || null,
-        city: data.city || null,
-        state: data.state || null,
-        instagram: data.instagram || null,
-        facebook: data.facebook || null,
-        website: data.website || null,
-        receiptFooterNote: data.receiptFooterNote || null,
-        whatsappNumber: whatsappNumber || null,
-        catalogEnabled,
-      },
+      update: values,
+      create: { id: "default", ...values },
     });
 
     revalidatePath("/admin/configuracoes");

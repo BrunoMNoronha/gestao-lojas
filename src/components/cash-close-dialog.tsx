@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/money-input";
 import { Button } from "@/components/ui/button";
 import { Lock, Loader2 } from "lucide-react";
 import { closeCashRegister } from "@/actions/cash-register";
@@ -23,7 +24,6 @@ interface CashCloseDialogProps {
   onSuccess: () => void;
 }
 
-const parseMoneyInput = (value: string) => parseFloat(value.replace(",", "."));
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
 // O componente pai troca a `key` a cada abertura, reiniciando o formulário
@@ -33,12 +33,12 @@ export function CashCloseDialog({
   expectedCash,
   onSuccess,
 }: CashCloseDialogProps) {
-  const [counted, setCounted] = useState("");
+  const [counted, setCounted] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const countedValue = counted.trim() ? parseMoneyInput(counted) : Number.NaN;
+  const countedValue = counted ?? Number.NaN;
   const difference = Number.isFinite(countedValue) ? roundMoney(countedValue - expectedCash) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -96,14 +96,10 @@ export function CashCloseDialog({
               <Label htmlFor="cash-close-contado" className="text-foreground text-xs font-medium">
                 Contado <span className="text-destructive">*</span>
               </Label>
-              <Input
+              <MoneyInput
                 id="cash-close-contado"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0,00"
                 value={counted}
-                onChange={(e) => setCounted(e.target.value)}
+                onValueChange={setCounted}
                 required
                 autoFocus
               />
