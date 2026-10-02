@@ -15,6 +15,7 @@ import {
   LogOut,
   Wallet,
   HandCoins,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -23,6 +24,7 @@ const navItems = [
   { label: "Frente de Caixa (PDV)", href: "/admin/pdv", icon: ShoppingCart },
   { label: "Caixa", href: "/admin/caixa", icon: Wallet },
   { label: "Contas a Receber", href: "/admin/contas-a-receber", icon: HandCoins },
+  { label: "Relatórios", href: "/admin/relatorios/vendas", icon: BarChart3 },
   { label: "Produtos", href: "/admin/produtos", icon: Package },
   { label: "Estoque", href: "/admin/estoque", icon: Boxes },
   { label: "Clientes", href: "/admin/clientes", icon: Users },

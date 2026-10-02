@@ -1,15 +1,20 @@
 import Link from "next/link";
 import { getStoreSettings } from "@/actions/settings";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { getDashboardMetrics } from "@/actions/reports";
 import { Button } from "@/components/ui/button";
-import { Building2, Settings, ShoppingCart, Package, Boxes, Users } from "lucide-react";
+import { Settings } from "lucide-react";
 import { connection } from "next/server";
+import { DashboardView } from "@/components/dashboard-view";
+
+export const metadata = {
+  title: "Painel de Controle | Gestão de Lojas",
+};
 
 export default async function AdminDashboardPage() {
-  // Dados da loja vêm do banco: renderiza a cada requisição em vez de prerenderizar no build
+  // Métricas mudam a cada venda: renderiza a cada requisição em vez de prerenderizar no build
   await connection();
 
-  const settings = await getStoreSettings();
+  const [settings, metrics] = await Promise.all([getStoreSettings(), getDashboardMetrics()]);
 
   return (
     <div className="space-y-6">
@@ -28,44 +33,17 @@ export default async function AdminDashboardPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="hover:border-primary/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Frente de Caixa</CardTitle>
-            <ShoppingCart className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">PDV Rápido</div>
-            <CardDescription className="mt-1">Realizar vendas e emitir comprovantes.</CardDescription>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:border-primary/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Produtos</CardTitle>
-            <Package className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Catálogo</div>
-            <CardDescription className="mt-1">Gerenciar itens, preços e categorias.</CardDescription>
-          </CardContent>
-        </Card>
-
-        <Card className="hover:border-primary/50 transition-colors">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Empresa</CardTitle>
-            <Building2 className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-ellipsis overflow-hidden whitespace-nowrap">
-              {settings.tradeName}
-            </div>
-            <CardDescription className="mt-1">
-              {settings.document ? `CNPJ: ${settings.document}` : "CNPJ não cadastrado"}
-            </CardDescription>
-          </CardContent>
-        </Card>
-      </div>
+      {metrics ? (
+        <DashboardView metrics={metrics} />
+      ) : (
+        <div className="bg-card rounded-lg border p-6 text-center">
+          <h2 className="text-lg font-semibold">Métricas indisponíveis</h2>
+          <p className="text-muted-foreground mt-2 text-sm">
+            Não foi possível carregar os indicadores. Verifique a conexão com o banco de dados e
+            recarregue a página.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
