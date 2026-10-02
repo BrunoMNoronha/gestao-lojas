@@ -52,6 +52,9 @@ erDiagram
         enum unit "UN | KG | LT | CX | M"
         decimal currentStock
         decimal minStock
+        boolean showInCatalog
+        string description
+        string imageUrl
     }
 
     StoreSettings {
@@ -63,6 +66,8 @@ erDiagram
         string email
         string address
         string receiptFooterNote
+        string whatsappNumber "só dígitos, com DDI"
+        boolean catalogEnabled
     }
 
     Sale {
@@ -90,6 +95,13 @@ Toda a lógica de negócios e persistência deve ser encapsulada em Server Actio
 ### 3. Componentes da Interface (`src/components/`)
 - **`src/components/ui/`**: Componentes puramente visuais e reutilizáveis do Shadcn UI.
 - **`src/components/`**: Componentes de domínio (formulários, tabelas e visões específicas).
+
+### 4. Catálogo público (`/catalogo`, issue #17)
+Única área sem login além de `/login`. Liberada explicitamente em `src/auth.config.ts`.
+- **Leitura pública:** funções de servidor em `src/lib/catalog.ts` (não são Server Actions). Os `select` trazem só campos de vitrine; o saldo vira apenas "Disponível"/"Indisponível" e custo e estoque mínimo nunca são lidos.
+- **Pedido:** `POST /api/catalogo/pedido` (`src/lib/catalog-order.ts`) valida o carrinho, recalcula preços com `Prisma.Decimal`, exclui itens ocultos ou sem estoque e devolve a mensagem e a URL `wa.me`. Não grava nada no banco.
+- **Carrinho:** `src/lib/catalog-cart.ts`, no `localStorage` do navegador; regras de unidade e quantidade compartilhadas em `src/lib/catalog-shared.ts`.
+- **Painel:** produtos entram no catálogo por opt-in (`catalog.manage`); WhatsApp e liga/desliga ficam nas Configurações (`settings.manage`).
 
 ---
 

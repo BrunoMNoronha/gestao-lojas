@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { StoreSettingsData, updateStoreSettings } from "@/actions/settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Building2, MapPin, Share2, Receipt, Save } from "lucide-react";
+import { Building2, ExternalLink, MapPin, Share2, Receipt, Save, Store } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { formatWhatsappNumber, normalizeWhatsappNumber } from "@/lib/catalog-shared";
 
 interface Props {
   initialSettings: StoreSettingsData;
@@ -26,12 +29,18 @@ export function StoreSettingsForm({ initialSettings }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (normalizeWhatsappNumber(formData.whatsappNumber) === null) {
+      toast.error("Número do WhatsApp inválido. Informe DDD e número, ex.: (11) 99999-8888.");
+      return;
+    }
     setLoading(true);
 
     const res = await updateStoreSettings(formData);
     setLoading(false);
 
     if (res.success) {
+      // O servidor guarda o número normalizado (só dígitos, com DDI)
+      setFormData((prev) => ({ ...prev, whatsappNumber: res.data?.whatsappNumber ?? "" }));
       toast.success("Configurações da loja salvas com sucesso!");
       // Atualiza o nome da loja exibido na sidebar
       router.refresh();
@@ -281,6 +290,71 @@ export function StoreSettingsForm({ initialSettings }: Props) {
               onChange={handleChange}
               placeholder="www.minhaloja.com.br"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Catálogo público */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Store className="text-primary h-5 w-5" />
+            Catálogo Público
+          </CardTitle>
+          <CardDescription>
+            Vitrine sem login em que o cliente monta o carrinho e envia o pedido pelo WhatsApp. Os
+            produtos exibidos são escolhidos no cadastro de cada produto.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="store-settings-catalogo-ativo" className="text-sm font-medium">
+                Catálogo público ativo
+              </Label>
+              <p className="text-muted-foreground text-xs">
+                Desligado, o endereço mostra &quot;catálogo indisponível&quot;.
+              </p>
+              <Link
+                href="/catalogo"
+                target="_blank"
+                className="text-primary inline-flex items-center gap-1 text-xs font-medium hover:underline"
+              >
+                Abrir /catalogo <ExternalLink className="size-3" aria-hidden />
+              </Link>
+            </div>
+            <Switch
+              id="store-settings-catalogo-ativo"
+              checked={!!formData.catalogEnabled}
+              onCheckedChange={(checked) =>
+                setFormData((prev) => ({ ...prev, catalogEnabled: checked }))
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="store-settings-whatsapp-do-catalogo" className="text-sm font-medium">
+              WhatsApp para pedidos
+            </Label>
+            <Input
+              id="store-settings-whatsapp-do-catalogo"
+              type="tel"
+              inputMode="tel"
+              autoComplete="off"
+              value={formatWhatsappNumber(formData.whatsappNumber || "")}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  whatsappNumber: e.target.value.replace(/\D/g, "").slice(0, 15),
+                }))
+              }
+              placeholder="+55 (11) 99999-8888"
+              aria-describedby="store-settings-whatsapp-ajuda"
+            />
+            <p id="store-settings-whatsapp-ajuda" className="text-muted-foreground text-xs">
+              Com DDD; sem o código do país, assume +55. Sem número, o catálogo funciona, mas o
+              envio do pedido fica desabilitado.
+            </p>
           </div>
         </CardContent>
       </Card>

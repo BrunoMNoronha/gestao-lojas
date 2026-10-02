@@ -11,6 +11,7 @@ import {
   Trash2,
   AlertTriangle,
   Boxes,
+  Store,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,8 @@ export function ProductsManager({
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
+  // Filtro do catálogo público: todos, só os exibidos ou só os ocultos
+  const [catalogFilter, setCatalogFilter] = useState("ALL");
 
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
@@ -70,7 +73,9 @@ export function ProductsManager({
 
     const matchesCategory = selectedCategory === "ALL" || p.categoryId === selectedCategory;
 
-    return matchesSearch && matchesCategory;
+    const matchesCatalog = catalogFilter === "ALL" || (catalogFilter === "IN") === p.showInCatalog;
+
+    return matchesSearch && matchesCategory && matchesCatalog;
   });
 
   const handleOpenNewProduct = (barcode?: string) => {
@@ -83,6 +88,7 @@ export function ProductsManager({
   const handleScannedCode = (code: string) => {
     setSearchQuery(code);
     setSelectedCategory("ALL");
+    setCatalogFilter("ALL");
     const q = code.toLowerCase();
     const found = initialProducts.some(
       (p) => p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q,
@@ -172,6 +178,19 @@ export function ProductsManager({
             />
           </div>
 
+          <div className="w-full sm:w-48">
+            <OptionSelect
+              aria-label="Filtrar pelo catálogo público"
+              value={catalogFilter}
+              onValueChange={setCatalogFilter}
+              options={[
+                { value: "ALL", label: "Catálogo: todos" },
+                { value: "IN", label: "No catálogo" },
+                { value: "OUT", label: "Fora do catálogo" },
+              ]}
+            />
+          </div>
+
           <div className="w-full sm:w-64">
             <OptionSelect
               aria-label="Filtrar por categoria"
@@ -198,14 +217,15 @@ export function ProductsManager({
               icon={Boxes}
               title="Nenhum produto encontrado"
               description={
-                searchQuery || selectedCategory !== "ALL"
+                searchQuery || selectedCategory !== "ALL" || catalogFilter !== "ALL"
                   ? "Tente ajustar os filtros de busca para encontrar o produto desejado."
                   : "Cadastre seu primeiro produto para começar a gerenciar o estoque."
               }
               action={
                 canManage &&
                 !searchQuery &&
-                selectedCategory === "ALL" && (
+                selectedCategory === "ALL" &&
+                catalogFilter === "ALL" && (
                   <Button onClick={() => handleOpenNewProduct()}>
                     <Plus /> Cadastrar Produto
                   </Button>
@@ -234,8 +254,13 @@ export function ProductsManager({
                   return (
                     <TableRow key={p.id}>
                       <TableCell className="min-w-40 font-medium whitespace-normal">
-                        <div>
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span>{p.name}</span>
+                          {p.showInCatalog && (
+                            <Badge variant="info" className="gap-1 text-[11px] font-normal">
+                              <Store aria-hidden /> Catálogo
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
 

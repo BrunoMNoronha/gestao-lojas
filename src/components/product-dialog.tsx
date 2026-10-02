@@ -22,6 +22,9 @@ import {
 } from "@/actions/products";
 import { OptionSelect } from "@/components/option-select";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { isHttpUrl } from "@/lib/catalog-shared";
 import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
 import { toast } from "sonner";
 
@@ -53,6 +56,9 @@ export function ProductDialog({
     currentStock: 0,
     minStock: 0,
     categoryId: "",
+    showInCatalog: false,
+    description: "",
+    imageUrl: "",
   });
 
   const [loading, setLoading] = useState(false);
@@ -71,6 +77,9 @@ export function ProductDialog({
         currentStock: productToEdit.currentStock,
         minStock: productToEdit.minStock,
         categoryId: productToEdit.categoryId || "",
+        showInCatalog: productToEdit.showInCatalog,
+        description: productToEdit.description || "",
+        imageUrl: productToEdit.imageUrl || "",
       });
     } else {
       setFormData({
@@ -83,6 +92,9 @@ export function ProductDialog({
         currentStock: 0,
         minStock: 0,
         categoryId: "",
+        showInCatalog: false,
+        description: "",
+        imageUrl: "",
       });
     }
     setError(null);
@@ -92,6 +104,11 @@ export function ProductDialog({
     e.preventDefault();
     if (!formData.name?.trim()) {
       setError("O nome do produto é obrigatório.");
+      return;
+    }
+    const imageUrl = formData.imageUrl?.trim();
+    if (imageUrl && !isHttpUrl(imageUrl)) {
+      setError("A URL da imagem deve começar com http:// ou https://.");
       return;
     }
 
@@ -114,7 +131,7 @@ export function ProductDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Package className="text-primary h-5 w-5" />
@@ -326,6 +343,54 @@ export function ProductDialog({
               />
             </div>
           </div>
+
+          <fieldset className="space-y-3 rounded-lg border p-3">
+            <legend className="text-foreground px-1 text-xs font-semibold">Catálogo público</legend>
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="product-exibir-no-catalogo" className="text-xs font-medium">
+                  Exibir no catálogo
+                </Label>
+                <p className="text-muted-foreground text-[11px]">
+                  O cliente vê nome, preço, unidade e se está disponível, nunca o custo ou o saldo.
+                </p>
+              </div>
+              <Switch
+                id="product-exibir-no-catalogo"
+                checked={!!formData.showInCatalog}
+                onCheckedChange={(checked) => setFormData({ ...formData, showInCatalog: checked })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="product-descricao" className="text-foreground text-xs font-medium">
+                Descrição
+              </Label>
+              <Textarea
+                id="product-descricao"
+                placeholder="Detalhes exibidos no catálogo (opcional)"
+                maxLength={2000}
+                value={formData.description || ""}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label
+                htmlFor="product-url-da-imagem"
+                className="text-foreground text-xs font-medium"
+              >
+                URL da imagem
+              </Label>
+              <Input
+                id="product-url-da-imagem"
+                type="url"
+                inputMode="url"
+                placeholder="https://..."
+                maxLength={2048}
+                value={formData.imageUrl || ""}
+                onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+              />
+            </div>
+          </fieldset>
 
           <DialogFooter className="pt-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
