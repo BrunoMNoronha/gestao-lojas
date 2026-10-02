@@ -2,16 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Truck,
-  Plus,
-  Search,
-  Edit2,
-  Trash2,
-  Phone,
-  Mail,
-  MapPin,
-} from "lucide-react";
+import { Truck, Plus, Search, Edit2, Trash2, Phone, Mail, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -25,6 +16,11 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { SupplierItem, deleteSupplier } from "@/actions/suppliers";
 import { SupplierDialog } from "@/components/supplier-dialog";
+import { useConfirm } from "@/components/confirm-dialog";
+import { EmptyState } from "@/components/empty-state";
+import { IconButton } from "@/components/icon-button";
+import { PageHeader } from "@/components/page-header";
+import { toast } from "sonner";
 
 interface SuppliersManagerProps {
   initialSuppliers: SupplierItem[];
@@ -32,6 +28,7 @@ interface SuppliersManagerProps {
 
 export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
   const router = useRouter();
+  const [askConfirm, confirmDialog] = useConfirm();
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [supplierToEdit, setSupplierToEdit] = useState<SupplierItem | null>(null);
@@ -58,42 +55,44 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Deseja realmente excluir o fornecedor "${name}"?`)) return;
+    const confirmed = await askConfirm({
+      title: "Excluir fornecedor?",
+      description: `O fornecedor "${name}" será removido. Esta ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      destructive: true,
+    });
+    if (!confirmed) return;
 
     const res = await deleteSupplier(id);
     if (res.success) {
+      toast.success("Fornecedor excluído.");
       router.refresh();
     } else {
-      alert(res.error || "Erro ao excluir fornecedor.");
+      toast.error(res.error || "Erro ao excluir fornecedor.");
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Truck className="w-6 h-6 text-primary" />
-            Gestão de Fornecedores
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Cadastre e gerencie a lista de distribuidores e fornecedores da loja.
-          </p>
-        </div>
-
-        <Button onClick={handleOpenNew} className="flex items-center gap-1.5">
-          <Plus className="w-4 h-4" />
-          Novo Fornecedor
-        </Button>
-      </div>
+      <PageHeader
+        title="Fornecedores"
+        icon={Truck}
+        description="Cadastre e gerencie a lista de distribuidores e fornecedores da loja."
+        actions={
+          <Button onClick={handleOpenNew}>
+            <Plus />
+            Novo Fornecedor
+          </Button>
+        }
+      />
 
       {/* Filter / Search */}
       <Card>
         <CardContent className="p-4">
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
             <Input
+              aria-label="Buscar fornecedor"
               placeholder="Buscar fornecedor por razão social, CNPJ/CPF, telefone ou e-mail..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -107,28 +106,31 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
       <Card>
         <CardContent className="p-0">
           {filteredSuppliers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center p-12 text-center">
-              <Truck className="w-12 h-12 text-muted-foreground/50 mb-3" />
-              <h3 className="font-semibold text-base">Nenhum fornecedor encontrado</h3>
-              <p className="text-sm text-muted-foreground max-w-sm mt-1">
-                {searchQuery
+            <EmptyState
+              className="border-0"
+              icon={Truck}
+              title="Nenhum fornecedor encontrado"
+              description={
+                searchQuery
                   ? "Nenhum resultado para os termos da busca."
-                  : "Cadastre seu primeiro fornecedor para organizar os pedidos e compras."}
-              </p>
-              {!searchQuery && (
-                <Button onClick={handleOpenNew} className="mt-4">
-                  <Plus className="w-4 h-4 mr-1.5" /> Cadastrar Fornecedor
-                </Button>
-              )}
-            </div>
+                  : "Cadastre seu primeiro fornecedor para organizar os pedidos e compras."
+              }
+              action={
+                !searchQuery && (
+                  <Button onClick={handleOpenNew}>
+                    <Plus /> Cadastrar Fornecedor
+                  </Button>
+                )
+              }
+            />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Fornecedor / Razão Social</TableHead>
-                  <TableHead>CNPJ / CPF</TableHead>
+                  <TableHead className="hidden md:table-cell">CNPJ / CPF</TableHead>
                   <TableHead>Contato</TableHead>
-                  <TableHead>Endereço</TableHead>
+                  <TableHead className="hidden lg:table-cell">Endereço</TableHead>
                   <TableHead className="text-center">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -141,28 +143,28 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
                       </div>
                     </TableCell>
 
-                    <TableCell className="text-muted-foreground text-xs font-mono">
+                    <TableCell className="text-muted-foreground hidden font-mono text-xs md:table-cell">
                       {s.document || "-"}
                     </TableCell>
 
-                    <TableCell className="text-xs space-y-0.5">
+                    <TableCell className="space-y-0.5 text-xs">
                       {s.phone && (
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Phone className="w-3 h-3 shrink-0" /> {s.phone}
+                        <div className="text-muted-foreground flex items-center gap-1">
+                          <Phone className="h-3 w-3 shrink-0" /> {s.phone}
                         </div>
                       )}
                       {s.email && (
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Mail className="w-3 h-3 shrink-0" /> {s.email}
+                        <div className="text-muted-foreground flex items-center gap-1">
+                          <Mail className="h-3 w-3 shrink-0" /> {s.email}
                         </div>
                       )}
                       {!s.phone && !s.email && <span className="text-muted-foreground">-</span>}
                     </TableCell>
 
-                    <TableCell className="text-xs text-muted-foreground max-w-xs truncate">
+                    <TableCell className="text-muted-foreground hidden max-w-xs truncate text-xs lg:table-cell">
                       {s.address ? (
                         <span className="flex items-center gap-1" title={s.address}>
-                          <MapPin className="w-3 h-3 shrink-0" /> {s.address}
+                          <MapPin className="h-3 w-3 shrink-0" /> {s.address}
                         </span>
                       ) : (
                         "-"
@@ -171,22 +173,15 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
 
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1">
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          onClick={() => handleOpenEdit(s)}
-                          title="Editar fornecedor"
-                        >
-                          <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
+                        <IconButton label="Editar fornecedor" onClick={() => handleOpenEdit(s)}>
+                          <Edit2 className="text-muted-foreground" />
+                        </IconButton>
+                        <IconButton
+                          label="Excluir fornecedor"
                           onClick={() => handleDelete(s.id, s.name)}
-                          title="Excluir fornecedor"
                         >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                          <Trash2 className="text-destructive" />
+                        </IconButton>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -203,6 +198,7 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
         supplierToEdit={supplierToEdit}
         onSuccess={() => router.refresh()}
       />
+      {confirmDialog}
     </div>
   );
 }

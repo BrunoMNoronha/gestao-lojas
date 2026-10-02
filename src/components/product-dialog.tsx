@@ -20,6 +20,8 @@ import {
   updateProduct,
   UnitType,
 } from "@/actions/products";
+import { OptionSelect } from "@/components/option-select";
+import { Label } from "@/components/ui/label";
 
 interface ProductDialogProps {
   open: boolean;
@@ -110,10 +112,8 @@ export function ProductDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <Package className="w-5 h-5 text-primary" />
-            <DialogTitle>
-              {productToEdit ? "Editar Produto" : "Novo Produto"}
-            </DialogTitle>
+            <Package className="text-primary h-5 w-5" />
+            <DialogTitle>{productToEdit ? "Editar Produto" : "Novo Produto"}</DialogTitle>
           </div>
           <DialogDescription>
             {productToEdit
@@ -123,17 +123,21 @@ export function ProductDialog({
         </DialogHeader>
 
         {error && (
-          <div className="p-2.5 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+          <div className="text-destructive bg-destructive/10 border-destructive/20 rounded-md border p-2.5 text-xs">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-foreground">
+            <Label
+              htmlFor="product-nome-do-produto"
+              className="text-foreground text-xs font-medium"
+            >
               Nome do Produto <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="product-nome-do-produto"
               placeholder="Ex: Refrigerante Guaraná 2L"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -143,20 +147,28 @@ export function ProductDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="product-codigo-de-barras-ean"
+                className="text-foreground text-xs font-medium"
+              >
                 Código de Barras (EAN)
-              </label>
+              </Label>
               <Input
+                id="product-codigo-de-barras-ean"
                 placeholder="7891234567890"
                 value={formData.barcode || ""}
                 onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="product-sku-codigo-interno"
+                className="text-foreground text-xs font-medium"
+              >
                 SKU / Código Interno
-              </label>
+              </Label>
               <Input
+                id="product-sku-codigo-interno"
                 placeholder="REF-001"
                 value={formData.sku || ""}
                 onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
@@ -166,46 +178,51 @@ export function ProductDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">Categoria</label>
-              <select
-                className="w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              <Label htmlFor="product-categoria" className="text-foreground text-xs font-medium">
+                Categoria
+              </Label>
+              <OptionSelect
+                id="product-categoria"
                 value={formData.categoryId || ""}
-                onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
-              >
-                <option value="">Sem Categoria</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
+                onValueChange={(v) => setFormData({ ...formData, categoryId: v })}
+                options={[
+                  { value: "", label: "Sem Categoria" },
+                  ...categories.map((cat) => ({ value: cat.id, label: cat.name })),
+                ]}
+              />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
-                Unidade de Medida
-              </label>
-              <select
-                className="w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
-                value={formData.unit || "UN"}
-                onChange={(e) =>
-                  setFormData({ ...formData, unit: e.target.value as UnitType })
-                }
+              <Label
+                htmlFor="product-unidade-de-medida"
+                className="text-foreground text-xs font-medium"
               >
-                <option value="UN">Unidade (UN)</option>
-                <option value="KG">Quilograma (KG)</option>
-                <option value="LT">Litro (LT)</option>
-                <option value="CX">Caixa (CX)</option>
-                <option value="M">Metro (M)</option>
-              </select>
+                Unidade de Medida
+              </Label>
+              <OptionSelect
+                id="product-unidade-de-medida"
+                value={formData.unit || "UN"}
+                onValueChange={(v) => setFormData({ ...formData, unit: v as UnitType })}
+                options={[
+                  { value: "UN", label: "Unidade (UN)" },
+                  { value: "KG", label: "Quilograma (KG)" },
+                  { value: "LT", label: "Litro (LT)" },
+                  { value: "CX", label: "Caixa (CX)" },
+                  { value: "M", label: "Metro (M)" },
+                ]}
+              />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="product-preco-de-custo-r"
+                className="text-foreground text-xs font-medium"
+              >
                 Preço de Custo (R$)
-              </label>
+              </Label>
               <Input
+                id="product-preco-de-custo-r"
                 type="number"
                 step="0.01"
                 min="0"
@@ -220,10 +237,14 @@ export function ProductDialog({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="product-preco-de-venda-r"
+                className="text-foreground text-xs font-medium"
+              >
                 Preço de Venda (R$) <span className="text-destructive">*</span>
-              </label>
+              </Label>
               <Input
+                id="product-preco-de-venda-r"
                 type="number"
                 step="0.01"
                 min="0"
@@ -242,10 +263,11 @@ export function ProductDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label htmlFor="product-campo" className="text-foreground text-xs font-medium">
                 {productToEdit ? "Estoque Atual" : "Estoque Inicial"}
-              </label>
+              </Label>
               <Input
+                id="product-campo"
                 type="number"
                 step="0.001"
                 min="0"
@@ -261,16 +283,20 @@ export function ProductDialog({
                 }
               />
               {productToEdit && (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-muted-foreground text-[11px]">
                   Altere pelo módulo Estoque (entrada ou ajuste).
                 </p>
               )}
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="product-estoque-minimo"
+                className="text-foreground text-xs font-medium"
+              >
                 Estoque Mínimo
-              </label>
+              </Label>
               <Input
+                id="product-estoque-minimo"
                 type="number"
                 step="0.001"
                 placeholder="0"
@@ -286,17 +312,13 @@ export function ProductDialog({
           </div>
 
           <DialogFooter className="pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={loading}>
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...
                 </>
               ) : productToEdit ? (
                 "Atualizar Produto"

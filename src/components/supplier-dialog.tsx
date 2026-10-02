@@ -12,12 +12,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Truck, Loader2 } from "lucide-react";
-import {
-  SupplierItem,
-  SupplierInput,
-  createSupplier,
-  updateSupplier,
-} from "@/actions/suppliers";
+import { SupplierItem, SupplierInput, createSupplier, updateSupplier } from "@/actions/suppliers";
+import { Label } from "@/components/ui/label";
 
 interface SupplierDialogProps {
   open: boolean;
@@ -94,10 +90,8 @@ export function SupplierDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <Truck className="w-5 h-5 text-primary" />
-            <DialogTitle>
-              {supplierToEdit ? "Editar Fornecedor" : "Novo Fornecedor"}
-            </DialogTitle>
+            <Truck className="text-primary h-5 w-5" />
+            <DialogTitle>{supplierToEdit ? "Editar Fornecedor" : "Novo Fornecedor"}</DialogTitle>
           </div>
           <DialogDescription>
             {supplierToEdit
@@ -107,17 +101,21 @@ export function SupplierDialog({
         </DialogHeader>
 
         {error && (
-          <div className="p-2.5 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+          <div className="text-destructive bg-destructive/10 border-destructive/20 rounded-md border p-2.5 text-xs">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-foreground">
+            <Label
+              htmlFor="supplier-razao-social-nome-fantasia"
+              className="text-foreground text-xs font-medium"
+            >
               Razão Social / Nome Fantasia <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="supplier-razao-social-nome-fantasia"
               placeholder="Ex: Distribuidora de Bebidas Brasil Ltda"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -127,20 +125,28 @@ export function SupplierDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="supplier-documento-cnpj-ou-cpf"
+                className="text-foreground text-xs font-medium"
+              >
                 Documento (CNPJ ou CPF)
-              </label>
+              </Label>
               <Input
+                id="supplier-documento-cnpj-ou-cpf"
                 placeholder="00.000.000/0001-00"
                 value={formData.document || ""}
                 onChange={(e) => setFormData({ ...formData, document: e.target.value })}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-foreground">
+              <Label
+                htmlFor="supplier-telefone-contato"
+                className="text-foreground text-xs font-medium"
+              >
                 Telefone / Contato
-              </label>
+              </Label>
               <Input
+                id="supplier-telefone-contato"
                 placeholder="(00) 3000-0000"
                 value={formData.phone || ""}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
@@ -149,8 +155,14 @@ export function SupplierDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-foreground">E-mail Comercial</label>
+            <Label
+              htmlFor="supplier-e-mail-comercial"
+              className="text-foreground text-xs font-medium"
+            >
+              E-mail Comercial
+            </Label>
             <Input
+              id="supplier-e-mail-comercial"
               type="email"
               placeholder="contato@fornecedor.com"
               value={formData.email || ""}
@@ -159,8 +171,14 @@ export function SupplierDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-foreground">Endereço Completo</label>
+            <Label
+              htmlFor="supplier-endereco-completo"
+              className="text-foreground text-xs font-medium"
+            >
+              Endereço Completo
+            </Label>
             <Input
+              id="supplier-endereco-completo"
               placeholder="Rua, Número, Bairro, Cidade - UF"
               value={formData.address || ""}
               onChange={(e) => setFormData({ ...formData, address: e.target.value })}
@@ -168,17 +186,13 @@ export function SupplierDialog({
           </div>
 
           <DialogFooter className="pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button type="submit" disabled={loading}>
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...
                 </>
               ) : supplierToEdit ? (
                 "Atualizar Fornecedor"

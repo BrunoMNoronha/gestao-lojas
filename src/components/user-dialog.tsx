@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Loader2, UserCog } from "lucide-react";
 import { UserItem, createUser, updateUser } from "@/actions/users";
 import { type AppRole, ROLE_LABELS } from "@/lib/permissions";
+import { OptionSelect } from "@/components/option-select";
+import { Label } from "@/components/ui/label";
 
 interface UserDialogProps {
   open: boolean;
@@ -25,9 +27,6 @@ interface UserDialogProps {
 }
 
 const ROLES: AppRole[] = ["ADMIN", "MANAGER", "SELLER"];
-const selectClassName =
-  "w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60";
-
 // O componente pai troca a `key` a cada abertura, reiniciando o formulário
 export function UserDialog({ open, onOpenChange, userToEdit, isSelf, onSuccess }: UserDialogProps) {
   const [name, setName] = useState(userToEdit?.name ?? "");
@@ -85,10 +84,11 @@ export function UserDialog({ open, onOpenChange, userToEdit, isSelf, onSuccess }
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">
+            <Label htmlFor="user-nome" className="text-foreground text-xs font-medium">
               Nome <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="user-nome"
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
@@ -97,10 +97,11 @@ export function UserDialog({ open, onOpenChange, userToEdit, isSelf, onSuccess }
           </div>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">
+            <Label htmlFor="user-e-mail" className="text-foreground text-xs font-medium">
               E-mail <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="user-e-mail"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -110,19 +111,16 @@ export function UserDialog({ open, onOpenChange, userToEdit, isSelf, onSuccess }
           </div>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">Perfil de acesso</label>
-            <select
-              className={selectClassName}
+            <Label htmlFor="user-perfil-de-acesso" className="text-foreground text-xs font-medium">
+              Perfil de acesso
+            </Label>
+            <OptionSelect
+              id="user-perfil-de-acesso"
               value={role}
-              onChange={(e) => setRole(e.target.value as AppRole)}
+              onValueChange={(v) => setRole(v as AppRole)}
+              options={[...ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))]}
               disabled={isSelf}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABELS[r]}
-                </option>
-              ))}
-            </select>
+            />
             {isSelf && (
               <p className="text-muted-foreground text-[11px]">
                 Você não pode alterar o seu próprio perfil.
@@ -132,10 +130,11 @@ export function UserDialog({ open, onOpenChange, userToEdit, isSelf, onSuccess }
 
           {!isEdit && (
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">
+              <Label htmlFor="user-senha-inicial" className="text-foreground text-xs font-medium">
                 Senha inicial <span className="text-destructive">*</span>
-              </label>
+              </Label>
               <Input
+                id="user-senha-inicial"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

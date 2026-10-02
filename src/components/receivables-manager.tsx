@@ -25,6 +25,10 @@ import { ReceivablePaymentDialog } from "@/components/receivable-payment-dialog"
 import { PAYMENT_METHOD_LABELS, RECEIVABLE_STATUS_LABELS } from "@/lib/payments";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { cn, formatCurrency } from "@/lib/utils";
+import { OptionSelect } from "@/components/option-select";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/page-header";
+import { IconButton } from "@/components/icon-button";
 
 interface ReceivablesManagerProps {
   customers: CustomerItem[];
@@ -41,15 +45,11 @@ interface Filters {
 const PAGE_SIZE = 50;
 const EMPTY_FILTERS: Filters = { customerId: "", status: "" };
 
-const selectClassName =
-  "w-full h-8 px-2.5 text-sm rounded-lg border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring";
-
 function StatusBadge({ status }: { status: ReceivableStatusValue }) {
   const className = {
     OPEN: "text-destructive border-destructive/30 bg-destructive/5",
-    PARTIAL:
-      "text-amber-600 border-amber-600/30 bg-amber-50/50 dark:bg-amber-950/20 dark:text-amber-400",
-    PAID: "text-emerald-600 border-emerald-600/30 bg-emerald-50/50 dark:bg-emerald-950/20 dark:text-emerald-400",
+    PARTIAL: "text-warning border-warning/30 bg-warning/10",
+    PAID: "text-success border-success/30 bg-success/10",
   }[status];
   return (
     <Badge variant="outline" className={cn("text-[11px]", className)}>
@@ -111,14 +111,11 @@ export function ReceivablesManager({
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-          <HandCoins className="text-primary h-6 w-6" />
-          Contas a Receber
-        </h1>
-        <p className="text-muted-foreground text-sm">Vendas no Fiado e recebimentos de clientes.</p>
-      </div>
+      <PageHeader
+        title="Contas a Receber"
+        icon={HandCoins}
+        description="Vendas no Fiado e recebimentos de clientes."
+      />
 
       {/* Summary */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -157,32 +154,40 @@ export function ReceivablesManager({
       <Card>
         <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-[2fr_1fr_auto]">
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs font-medium">Cliente</label>
-            <select
-              className={selectClassName}
-              value={filters.customerId}
-              onChange={(e) => updateFilters({ customerId: e.target.value })}
+            <Label
+              htmlFor="receivables-manager-cliente"
+              className="text-muted-foreground text-xs font-medium"
             >
-              <option value="">Todos os clientes</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              Cliente
+            </Label>
+            <OptionSelect
+              id="receivables-manager-cliente"
+              value={filters.customerId}
+              onValueChange={(v) => updateFilters({ customerId: v })}
+              options={[
+                { value: "", label: "Todos os clientes" },
+                ...customers.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+            />
           </div>
           <div className="space-y-1">
-            <label className="text-muted-foreground text-xs font-medium">Situação</label>
-            <select
-              className={selectClassName}
-              value={filters.status}
-              onChange={(e) => updateFilters({ status: e.target.value as Filters["status"] })}
+            <Label
+              htmlFor="receivables-manager-situacao"
+              className="text-muted-foreground text-xs font-medium"
             >
-              <option value="">Todas</option>
-              <option value="OPEN">Em aberto</option>
-              <option value="PARTIAL">Parcial</option>
-              <option value="PAID">Quitado</option>
-            </select>
+              Situação
+            </Label>
+            <OptionSelect
+              id="receivables-manager-situacao"
+              value={filters.status}
+              onValueChange={(v) => updateFilters({ status: v as Filters["status"] })}
+              options={[
+                { value: "", label: "Todas" },
+                { value: "OPEN", label: "Em aberto" },
+                { value: "PARTIAL", label: "Parcial" },
+                { value: "PAID", label: "Quitado" },
+              ]}
+            />
           </div>
           <Button
             variant="ghost"
@@ -241,18 +246,13 @@ export function ReceivablesManager({
                         <TableRow>
                           <TableCell>
                             {r.payments.length > 0 && (
-                              <Button
-                                size="icon-sm"
-                                variant="ghost"
+                              <IconButton
+                                label={expanded ? "Ocultar recebimentos" : "Ver recebimentos"}
+                                aria-expanded={expanded}
                                 onClick={() => setExpandedId(expanded ? null : r.id)}
-                                title="Ver recebimentos"
                               >
-                                {expanded ? (
-                                  <ChevronDown className="h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="h-4 w-4" />
-                                )}
-                              </Button>
+                                {expanded ? <ChevronDown /> : <ChevronRight />}
+                              </IconButton>
                             )}
                           </TableCell>
                           <TableCell className="font-medium">{r.customerName}</TableCell>

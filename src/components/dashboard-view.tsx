@@ -11,7 +11,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -183,20 +183,14 @@ export function DashboardView({ metrics }: { metrics: DashboardMetrics }) {
 
       {/* Atalhos */}
       <div className="flex flex-wrap gap-2">
-        <Link href="/admin/pdv">
-          <Button variant="outline" className="gap-2">
-            <ShoppingCart className="h-4 w-4" /> Frente de Caixa
-          </Button>
+        <Link href="/admin/pdv" className={buttonVariants({ variant: "outline" })}>
+          <ShoppingCart /> Frente de Caixa
         </Link>
-        <Link href="/admin/caixa">
-          <Button variant="outline" className="gap-2">
-            <Wallet className="h-4 w-4" /> Caixa
-          </Button>
+        <Link href="/admin/caixa" className={buttonVariants({ variant: "outline" })}>
+          <Wallet /> Caixa
         </Link>
-        <Link href="/admin/relatorios/vendas">
-          <Button variant="outline" className="gap-2">
-            <BarChart3 className="h-4 w-4" /> Relatório de Vendas
-          </Button>
+        <Link href="/admin/relatorios/vendas" className={buttonVariants({ variant: "outline" })}>
+          <BarChart3 /> Relatório de Vendas
         </Link>
       </div>
     </div>

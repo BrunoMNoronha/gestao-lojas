@@ -1,11 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { StoreSettingsData, updateStoreSettings } from "@/actions/settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Building2, MapPin, Share2, Receipt, Save, CheckCircle2, AlertCircle } from "lucide-react";
+import { Building2, MapPin, Share2, Receipt, Save } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 interface Props {
   initialSettings: StoreSettingsData;
@@ -14,7 +17,7 @@ interface Props {
 export function StoreSettingsForm({ initialSettings }: Props) {
   const [formData, setFormData] = useState<StoreSettingsData>(initialSettings);
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const router = useRouter();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -24,52 +27,39 @@ export function StoreSettingsForm({ initialSettings }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setMessage(null);
 
     const res = await updateStoreSettings(formData);
     setLoading(false);
 
     if (res.success) {
-      setMessage({ type: "success", text: "Configurações da loja salvas com sucesso!" });
+      toast.success("Configurações da loja salvas com sucesso!");
+      // Atualiza o nome da loja exibido na sidebar
+      router.refresh();
     } else {
-      setMessage({ type: "error", text: res.error || "Erro ao salvar configurações." });
+      toast.error(res.error || "Erro ao salvar configurações.");
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
-      {message && (
-        <div
-          className={`p-4 rounded-lg flex items-center gap-3 border ${
-            message.type === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-200"
-              : "bg-red-50 border-red-200 text-red-800 dark:bg-red-950/40 dark:border-red-800 dark:text-red-200"
-          }`}
-        >
-          {message.type === "success" ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          ) : (
-            <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 shrink-0" />
-          )}
-          <span className="text-sm font-medium">{message.text}</span>
-        </div>
-      )}
-
+    <form onSubmit={handleSubmit} className="max-w-4xl space-y-6">
       {/* Dados Principais */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Building2 className="w-5 h-5 text-primary" />
+            <Building2 className="text-primary h-5 w-5" />
             Dados Básicos da Loja
           </CardTitle>
           <CardDescription>
             Identificação jurídica e comercial da empresa exibida nos comprovantes e cabeçalhos.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Razão Social *</label>
+            <Label htmlFor="store-settings-razao-social" className="text-sm font-medium">
+              Razão Social *
+            </Label>
             <Input
+              id="store-settings-razao-social"
               name="companyName"
               value={formData.companyName}
               onChange={handleChange}
@@ -79,8 +69,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Nome Fantasia *</label>
+            <Label htmlFor="store-settings-nome-fantasia" className="text-sm font-medium">
+              Nome Fantasia *
+            </Label>
             <Input
+              id="store-settings-nome-fantasia"
               name="tradeName"
               value={formData.tradeName}
               onChange={handleChange}
@@ -90,8 +83,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">CNPJ (Opcional)</label>
+            <Label htmlFor="store-settings-cnpj-opcional" className="text-sm font-medium">
+              CNPJ (Opcional)
+            </Label>
             <Input
+              id="store-settings-cnpj-opcional"
               name="document"
               value={formData.document || ""}
               onChange={handleChange}
@@ -100,8 +96,14 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Inscrição Estadual (Opcional)</label>
+            <Label
+              htmlFor="store-settings-inscricao-estadual-opcional"
+              className="text-sm font-medium"
+            >
+              Inscrição Estadual (Opcional)
+            </Label>
             <Input
+              id="store-settings-inscricao-estadual-opcional"
               name="stateRegistration"
               value={formData.stateRegistration || ""}
               onChange={handleChange}
@@ -110,8 +112,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Telefone / WhatsApp</label>
+            <Label htmlFor="store-settings-telefone-whatsapp" className="text-sm font-medium">
+              Telefone / WhatsApp
+            </Label>
             <Input
+              id="store-settings-telefone-whatsapp"
               name="phone"
               value={formData.phone || ""}
               onChange={handleChange}
@@ -120,8 +125,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">E-mail de Contato</label>
+            <Label htmlFor="store-settings-e-mail-de-contato" className="text-sm font-medium">
+              E-mail de Contato
+            </Label>
             <Input
+              id="store-settings-e-mail-de-contato"
               type="email"
               name="email"
               value={formData.email || ""}
@@ -136,15 +144,18 @@ export function StoreSettingsForm({ initialSettings }: Props) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <MapPin className="w-5 h-5 text-primary" />
+            <MapPin className="text-primary h-5 w-5" />
             Endereço Comercial
           </CardTitle>
           <CardDescription>Localização física para emissão de documentos e notas.</CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="space-y-2">
-            <label className="text-sm font-medium">CEP</label>
+            <Label htmlFor="store-settings-cep" className="text-sm font-medium">
+              CEP
+            </Label>
             <Input
+              id="store-settings-cep"
               name="zipCode"
               value={formData.zipCode || ""}
               onChange={handleChange}
@@ -153,8 +164,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2 md:col-span-2">
-            <label className="text-sm font-medium">Logradouro (Rua, Av.)</label>
+            <Label htmlFor="store-settings-logradouro-rua-av" className="text-sm font-medium">
+              Logradouro (Rua, Av.)
+            </Label>
             <Input
+              id="store-settings-logradouro-rua-av"
               name="address"
               value={formData.address || ""}
               onChange={handleChange}
@@ -163,8 +177,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Número</label>
+            <Label htmlFor="store-settings-numero" className="text-sm font-medium">
+              Número
+            </Label>
             <Input
+              id="store-settings-numero"
               name="number"
               value={formData.number || ""}
               onChange={handleChange}
@@ -173,8 +190,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Bairro</label>
+            <Label htmlFor="store-settings-bairro" className="text-sm font-medium">
+              Bairro
+            </Label>
             <Input
+              id="store-settings-bairro"
               name="neighborhood"
               value={formData.neighborhood || ""}
               onChange={handleChange}
@@ -184,8 +204,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Cidade</label>
+              <Label htmlFor="store-settings-cidade" className="text-sm font-medium">
+                Cidade
+              </Label>
               <Input
+                id="store-settings-cidade"
                 name="city"
                 value={formData.city || ""}
                 onChange={handleChange}
@@ -193,8 +216,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">UF</label>
+              <Label htmlFor="store-settings-uf" className="text-sm font-medium">
+                UF
+              </Label>
               <Input
+                id="store-settings-uf"
                 name="state"
                 value={formData.state || ""}
                 onChange={handleChange}
@@ -210,15 +236,20 @@ export function StoreSettingsForm({ initialSettings }: Props) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Share2 className="w-5 h-5 text-primary" />
+            <Share2 className="text-primary h-5 w-5" />
             Redes Sociais & Links
           </CardTitle>
-          <CardDescription>Links e arrobas exibidos no rodapé do recibo do cliente.</CardDescription>
+          <CardDescription>
+            Links e arrobas exibidos no rodapé do recibo do cliente.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Instagram</label>
+            <Label htmlFor="store-settings-instagram" className="text-sm font-medium">
+              Instagram
+            </Label>
             <Input
+              id="store-settings-instagram"
               name="instagram"
               value={formData.instagram || ""}
               onChange={handleChange}
@@ -227,8 +258,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Facebook</label>
+            <Label htmlFor="store-settings-facebook" className="text-sm font-medium">
+              Facebook
+            </Label>
             <Input
+              id="store-settings-facebook"
               name="facebook"
               value={formData.facebook || ""}
               onChange={handleChange}
@@ -237,8 +271,11 @@ export function StoreSettingsForm({ initialSettings }: Props) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Website</label>
+            <Label htmlFor="store-settings-website" className="text-sm font-medium">
+              Website
+            </Label>
             <Input
+              id="store-settings-website"
               name="website"
               value={formData.website || ""}
               onChange={handleChange}
@@ -252,15 +289,20 @@ export function StoreSettingsForm({ initialSettings }: Props) {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Receipt className="w-5 h-5 text-primary" />
+            <Receipt className="text-primary h-5 w-5" />
             Parametrização de Comprovantes (PDV)
           </CardTitle>
-          <CardDescription>Mensagens personalizadas exibidas aos clientes na venda.</CardDescription>
+          <CardDescription>
+            Mensagens personalizadas exibidas aos clientes na venda.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Mensagem do Rodapé do Recibo</label>
+            <Label htmlFor="store-settings-mensagem-do-rodape-do" className="text-sm font-medium">
+              Mensagem do Rodapé do Recibo
+            </Label>
             <Input
+              id="store-settings-mensagem-do-rodape-do"
               name="receiptFooterNote"
               value={formData.receiptFooterNote || ""}
               onChange={handleChange}
@@ -272,8 +314,8 @@ export function StoreSettingsForm({ initialSettings }: Props) {
 
       {/* Botão de Salvar */}
       <div className="flex justify-end pt-2">
-        <Button type="submit" disabled={loading} className="gap-2 min-w-[160px]">
-          <Save className="w-4 h-4" />
+        <Button type="submit" disabled={loading} className="min-w-[160px] gap-2">
+          <Save className="h-4 w-4" />
           {loading ? "Salvando..." : "Salvar Configurações"}
         </Button>
       </div>

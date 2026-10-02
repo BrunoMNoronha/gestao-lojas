@@ -32,7 +32,11 @@ function Brand({ storeName }: { storeName: string }) {
 }
 
 // Conteúdo comum da navegação: usado na sidebar fixa (desktop) e no drawer (celular/tablet)
-function SidebarContent({ user, storeName, onNavigate }: AdminNavProps & { onNavigate?: () => void }) {
+function SidebarContent({
+  user,
+  storeName,
+  onNavigate,
+}: AdminNavProps & { onNavigate?: () => void }) {
   const pathname = usePathname();
   // Menu filtrado pela matriz de acesso (src/lib/permissions.ts)
   const navItems = routesFor(user.role);
@@ -61,7 +65,7 @@ function SidebarContent({ user, storeName, onNavigate }: AdminNavProps & { onNav
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
               )}
             >
               <Icon className="size-4 shrink-0" />
@@ -79,7 +83,7 @@ function SidebarContent({ user, storeName, onNavigate }: AdminNavProps & { onNav
             aria-current={accountActive ? "page" : undefined}
             className={cn(
               "hover:bg-sidebar-accent flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 transition-colors",
-              accountActive && "bg-sidebar-accent"
+              accountActive && "bg-sidebar-accent",
             )}
           >
             <span className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full">
@@ -129,7 +133,9 @@ export function AdminMobileHeader(props: AdminNavProps) {
         </Button>
         <SheetContent side="left" className="bg-sidebar text-sidebar-foreground w-72 gap-0 p-0">
           <SheetTitle className="sr-only">Menu</SheetTitle>
-          <SheetDescription className="sr-only">Navegação do painel administrativo</SheetDescription>
+          <SheetDescription className="sr-only">
+            Navegação do painel administrativo
+          </SheetDescription>
           <SidebarContent {...props} onNavigate={() => setOpen(false)} />
         </SheetContent>
       </Sheet>

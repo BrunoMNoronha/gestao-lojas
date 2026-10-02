@@ -71,7 +71,7 @@
   --accent: oklch(0.955 0.012 195);
   --accent-foreground: oklch(0.25 0.03 210);
   --destructive: oklch(0.53 0.22 27);
-  /* Estados semânticos: use text-*, bg-*/10 e border-*/30 em vez de cores cruas do Tailwind */
+  /* Estados semânticos: use text-success, bg-success/10, border-success/30 (idem warning/info) em vez de cores cruas do Tailwind */
   --success: oklch(0.5 0.12 155);
   --success-foreground: oklch(0.985 0 0);
   --warning: oklch(0.53 0.12 60);

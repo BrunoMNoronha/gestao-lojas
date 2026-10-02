@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Lock, Loader2 } from "lucide-react";
 import { closeCashRegister } from "@/actions/cash-register";
 import { cn, formatCurrency } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 interface CashCloseDialogProps {
   open: boolean;
@@ -86,16 +87,17 @@ export function CashCloseDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">Esperado</label>
+              <span className="text-foreground block text-xs font-medium">Esperado</span>
               <div className="border-input bg-muted/50 flex h-8 items-center rounded-lg border px-2.5 font-mono text-sm">
                 {formatCurrency(expectedCash)}
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">
+              <Label htmlFor="cash-close-contado" className="text-foreground text-xs font-medium">
                 Contado <span className="text-destructive">*</span>
-              </label>
+              </Label>
               <Input
+                id="cash-close-contado"
                 type="number"
                 step="0.01"
                 min="0"
@@ -107,12 +109,12 @@ export function CashCloseDialog({
               />
             </div>
             <div className="space-y-1">
-              <label className="text-foreground text-xs font-medium">Diferença</label>
+              <span className="text-foreground block text-xs font-medium">Diferença</span>
               <div
                 className={cn(
                   "border-input bg-muted/50 flex h-8 items-center rounded-lg border px-2.5 font-mono text-sm font-semibold",
-                  difference === 0 && "text-emerald-600 dark:text-emerald-400",
-                  difference !== null && difference > 0 && "text-amber-600 dark:text-amber-400",
+                  difference === 0 && "text-success",
+                  difference !== null && difference > 0 && "text-warning",
                   difference !== null && difference < 0 && "text-destructive",
                 )}
               >
@@ -124,13 +126,14 @@ export function CashCloseDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">
+            <Label htmlFor="cash-close-observacao" className="text-foreground text-xs font-medium">
               Observação{" "}
               {difference !== null && difference !== 0 && (
                 <span className="text-destructive">*</span>
               )}
-            </label>
+            </Label>
             <Input
+              id="cash-close-observacao"
               placeholder="Obrigatória quando houver diferença"
               maxLength={200}
               value={note}

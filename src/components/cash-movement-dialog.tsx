@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react";
 import { CashMovementTypeValue, registerCashMovement } from "@/actions/cash-register";
 import { formatCurrency } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
 
 interface CashMovementDialogProps {
   open: boolean;
@@ -100,10 +101,11 @@ export function CashMovementDialog({
           </p>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">
+            <Label htmlFor="cash-movement-valor-r" className="text-foreground text-xs font-medium">
               Valor (R$) <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="cash-movement-valor-r"
               type="number"
               step="0.01"
               min="0"
@@ -116,10 +118,11 @@ export function CashMovementDialog({
           </div>
 
           <div className="space-y-1">
-            <label className="text-foreground text-xs font-medium">
+            <Label htmlFor="cash-movement-motivo" className="text-foreground text-xs font-medium">
               Motivo <span className="text-destructive">*</span>
-            </label>
+            </Label>
             <Input
+              id="cash-movement-motivo"
               placeholder={isWithdrawal ? "Ex: Depósito bancário" : "Ex: Reforço de troco"}
               maxLength={200}
               value={reason}

@@ -37,7 +37,7 @@ export function EmptyState({
     <div
       className={cn(
         "bg-card mx-auto flex max-w-md flex-col items-center rounded-xl border p-6 text-center",
-        className
+        className,
       )}
     >
       {Icon && (

@@ -11,12 +11,18 @@ interface PageHeaderProps {
 }
 
 // Cabeçalho padrão das páginas do painel (título, ícone, descrição e ações)
-export function PageHeader({ title, description, icon: Icon, actions, className }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  description,
+  icon: Icon,
+  actions,
+  className,
+}: PageHeaderProps) {
   return (
     <div
       className={cn(
         "flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between",
-        className
+        className,
       )}
     >
       <div className="min-w-0 space-y-1">
