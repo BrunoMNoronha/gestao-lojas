@@ -3,8 +3,12 @@ import { getStoreSettings } from "@/actions/settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Building2, Settings, ShoppingCart, Package, Boxes, Users } from "lucide-react";
+import { connection } from "next/server";
 
 export default async function AdminDashboardPage() {
+  // Dados da loja vêm do banco: renderiza a cada requisição em vez de prerenderizar no build
+  await connection();
+
   const settings = await getStoreSettings();
 
   return (

@@ -1,5 +1,6 @@
 import { getStoreSettings } from "@/actions/settings";
 import { StoreSettingsForm } from "@/components/store-settings-form";
+import { connection } from "next/server";
 
 export const metadata = {
   title: "Configurações da Loja | Gestão de Lojas",
@@ -7,6 +8,9 @@ export const metadata = {
 };
 
 export default async function SettingsPage() {
+  // Configurações da loja vêm do banco: renderiza a cada requisição em vez de prerenderizar no build
+  await connection();
+
   const settings = await getStoreSettings();
 
   return (
