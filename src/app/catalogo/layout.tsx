@@ -5,6 +5,7 @@ import { AtSign, Mail, MapPin, MessageCircle, Phone, Store } from "lucide-react"
 import { CatalogCartButton } from "@/components/catalog-cart-button";
 import { getCatalogStore } from "@/lib/catalog";
 import { formatWhatsappNumber } from "@/lib/catalog-shared";
+import { displayPhone } from "@/lib/masks";
 
 export async function generateMetadata(): Promise<Metadata> {
   await connection();
@@ -59,7 +60,7 @@ export default async function CatalogLayout({ children }: LayoutProps<"/catalogo
               ) : (
                 store.phone && (
                   <p className="flex items-center gap-2">
-                    <Phone className="size-4 shrink-0" aria-hidden /> {store.phone}
+                    <Phone className="size-4 shrink-0" aria-hidden /> {displayPhone(store.phone)}
                   </p>
                 )
               )}

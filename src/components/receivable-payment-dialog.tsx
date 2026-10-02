@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/money-input";
 import { Button } from "@/components/ui/button";
 import { HandCoins, Loader2 } from "lucide-react";
 import { ReceivableItem, registerReceivablePayment } from "@/actions/receivables";
@@ -29,8 +29,6 @@ interface ReceivablePaymentDialogProps {
   onSuccess: () => void;
 }
 
-const parseMoneyInput = (value: string) => parseFloat(value.replace(",", "."));
-
 // O componente pai troca a `key` a cada abertura, reiniciando o formulário
 export function ReceivablePaymentDialog({
   open,
@@ -39,7 +37,7 @@ export function ReceivablePaymentDialog({
   hasOpenCashRegister,
   onSuccess,
 }: ReceivablePaymentDialogProps) {
-  const [amount, setAmount] = useState(receivable ? String(receivable.balance) : "");
+  const [amount, setAmount] = useState<number | null>(receivable ? receivable.balance : null);
   const [method, setMethod] = useState<PaymentMethodValue>("MONEY");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +45,7 @@ export function ReceivablePaymentDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!receivable) return;
-    const value = parseMoneyInput(amount);
+    const value = amount ?? Number.NaN;
     if (!Number.isFinite(value) || value <= 0) {
       setError("Informe um valor de recebimento maior que zero.");
       return;
@@ -155,14 +153,10 @@ export function ReceivablePaymentDialog({
               >
                 Valor recebido (R$) <span className="text-destructive">*</span>
               </Label>
-              <Input
+              <MoneyInput
                 id="receivable-payment-valor-recebido-r"
-                type="number"
-                step="0.01"
-                min="0"
-                max={receivable.balance}
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onValueChange={setAmount}
                 required
                 autoFocus
               />

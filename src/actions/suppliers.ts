@@ -3,6 +3,12 @@
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
+import {
+  documentLookupValues,
+  maskedSearchTerms,
+  normalizeDocument,
+  normalizePhone,
+} from "@/lib/masks";
 
 export interface SupplierItem {
   id: string;
@@ -33,10 +39,12 @@ export async function getSuppliers(searchQuery?: string): Promise<SupplierItem[]
 
     if (searchQuery && searchQuery.trim() !== "") {
       const q = searchQuery.trim();
+      // Documento e telefone ficam sem pontuação: busca pelo texto digitado e pela versão sem máscara
+      const terms = maskedSearchTerms(q);
       whereClause.OR = [
         { name: { contains: q, mode: "insensitive" } },
-        { document: { contains: q, mode: "insensitive" } },
-        { phone: { contains: q, mode: "insensitive" } },
+        ...terms.map((term) => ({ document: { contains: term, mode: "insensitive" } })),
+        ...terms.map((term) => ({ phone: { contains: term, mode: "insensitive" } })),
         { email: { contains: q, mode: "insensitive" } },
       ];
     }
@@ -72,14 +80,19 @@ export async function createSupplier(data: SupplierInput) {
       return { success: false, error: "O nome/razão social do fornecedor é obrigatório." };
     }
 
-    const document = data.document?.trim() || null;
-    const phone = data.phone?.trim() || null;
+    // CPF/CNPJ e telefone são gravados sem pontuação
+    const normalizedDocument = normalizeDocument(data.document);
+    if (!normalizedDocument.ok) return { success: false, error: normalizedDocument.error };
+    const normalizedPhone = normalizePhone(data.phone);
+    if (!normalizedPhone.ok) return { success: false, error: normalizedPhone.error };
+    const document = normalizedDocument.value;
+    const phone = normalizedPhone.value;
     const email = data.email?.trim() || null;
     const address = data.address?.trim() || null;
 
     if (document) {
-      const existingDocument = await prisma.supplier.findUnique({
-        where: { document },
+      const existingDocument = await prisma.supplier.findFirst({
+        where: { document: { in: documentLookupValues(document) } },
       });
       if (existingDocument) {
         return { success: false, error: "Já existe um fornecedor cadastrado com este documento (CNPJ/CPF)." };
@@ -114,15 +127,20 @@ export async function updateSupplier(id: string, data: SupplierInput) {
       return { success: false, error: "O nome/razão social do fornecedor é obrigatório." };
     }
 
-    const document = data.document?.trim() || null;
-    const phone = data.phone?.trim() || null;
+    // CPF/CNPJ e telefone são gravados sem pontuação
+    const normalizedDocument = normalizeDocument(data.document);
+    if (!normalizedDocument.ok) return { success: false, error: normalizedDocument.error };
+    const normalizedPhone = normalizePhone(data.phone);
+    if (!normalizedPhone.ok) return { success: false, error: normalizedPhone.error };
+    const document = normalizedDocument.value;
+    const phone = normalizedPhone.value;
     const email = data.email?.trim() || null;
     const address = data.address?.trim() || null;
 
     if (document) {
       const existingDocument = await prisma.supplier.findFirst({
         where: {
-          document,
+          document: { in: documentLookupValues(document) },
           NOT: { id },
         },
       });

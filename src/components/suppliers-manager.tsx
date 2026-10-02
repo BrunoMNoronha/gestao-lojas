@@ -17,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SupplierItem, deleteSupplier } from "@/actions/suppliers";
 import { SupplierDialog } from "@/components/supplier-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
+import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
 import { EmptyState } from "@/components/empty-state";
 import { IconButton } from "@/components/icon-button";
 import { PageHeader } from "@/components/page-header";
@@ -38,8 +39,8 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
     const q = searchQuery.toLowerCase();
     return (
       s.name.toLowerCase().includes(q) ||
-      s.document?.toLowerCase().includes(q) ||
-      s.phone?.toLowerCase().includes(q) ||
+      matchesMaskedValue(s.document, q) ||
+      matchesMaskedValue(s.phone, q) ||
       s.email?.toLowerCase().includes(q)
     );
   });
@@ -144,13 +145,13 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
                     </TableCell>
 
                     <TableCell className="text-muted-foreground hidden font-mono text-xs md:table-cell">
-                      {s.document || "-"}
+                      {displayDocument(s.document) || "-"}
                     </TableCell>
 
                     <TableCell className="space-y-0.5 text-xs">
                       {s.phone && (
                         <div className="text-muted-foreground flex items-center gap-1">
-                          <Phone className="h-3 w-3 shrink-0" /> {s.phone}
+                          <Phone className="h-3 w-3 shrink-0" /> {displayPhone(s.phone)}
                         </div>
                       )}
                       {s.email && (

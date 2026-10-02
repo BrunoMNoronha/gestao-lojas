@@ -18,6 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CustomerItem, deleteCustomer } from "@/actions/customers";
 import { CustomerDialog } from "@/components/customer-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
+import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
 import { EmptyState } from "@/components/empty-state";
 import { IconButton } from "@/components/icon-button";
 import { PageHeader } from "@/components/page-header";
@@ -41,8 +42,8 @@ export function CustomersManager({ initialCustomers, canDelete }: CustomersManag
     const q = searchQuery.toLowerCase();
     return (
       c.name.toLowerCase().includes(q) ||
-      c.document?.toLowerCase().includes(q) ||
-      c.phone?.toLowerCase().includes(q) ||
+      matchesMaskedValue(c.document, q) ||
+      matchesMaskedValue(c.phone, q) ||
       c.email?.toLowerCase().includes(q)
     );
   });
@@ -148,13 +149,13 @@ export function CustomersManager({ initialCustomers, canDelete }: CustomersManag
                     </TableCell>
 
                     <TableCell className="text-muted-foreground hidden font-mono text-xs md:table-cell">
-                      {c.document || "-"}
+                      {displayDocument(c.document) || "-"}
                     </TableCell>
 
                     <TableCell className="space-y-0.5 text-xs">
                       {c.phone && (
                         <div className="text-muted-foreground flex items-center gap-1">
-                          <Phone className="h-3 w-3 shrink-0" /> {c.phone}
+                          <Phone className="h-3 w-3 shrink-0" /> {displayPhone(c.phone)}
                         </div>
                       )}
                       {c.email && (

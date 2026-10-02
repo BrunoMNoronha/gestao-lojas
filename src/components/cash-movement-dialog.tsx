@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/money-input";
 import { Button } from "@/components/ui/button";
 import { ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react";
 import { CashMovementTypeValue, registerCashMovement } from "@/actions/cash-register";
@@ -24,8 +25,6 @@ interface CashMovementDialogProps {
   onSuccess: () => void;
 }
 
-const parseMoneyInput = (value: string) => parseFloat(value.replace(",", "."));
-
 // O componente pai troca a `key` a cada abertura, reiniciando o formulário
 export function CashMovementDialog({
   open,
@@ -34,7 +33,7 @@ export function CashMovementDialog({
   expectedCash,
   onSuccess,
 }: CashMovementDialogProps) {
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +43,7 @@ export function CashMovementDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const value = parseMoneyInput(amount);
+    const value = amount ?? Number.NaN;
     if (!Number.isFinite(value) || value <= 0) {
       setError("Informe um valor maior que zero.");
       return;
@@ -104,14 +103,10 @@ export function CashMovementDialog({
             <Label htmlFor="cash-movement-valor-r" className="text-foreground text-xs font-medium">
               Valor (R$) <span className="text-destructive">*</span>
             </Label>
-            <Input
+            <MoneyInput
               id="cash-movement-valor-r"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0,00"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onValueChange={setAmount}
               required
               autoFocus
             />

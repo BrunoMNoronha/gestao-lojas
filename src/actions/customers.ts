@@ -3,6 +3,12 @@
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
+import {
+  documentLookupValues,
+  maskedSearchTerms,
+  normalizeDocument,
+  normalizePhone,
+} from "@/lib/masks";
 
 export interface CustomerItem {
   id: string;
@@ -36,10 +42,12 @@ export async function getCustomers(searchQuery?: string): Promise<CustomerItem[]
 
     if (searchQuery && searchQuery.trim() !== "") {
       const q = searchQuery.trim();
+      // Documento e telefone ficam sem pontuação: busca pelo texto digitado e pela versão sem máscara
+      const terms = maskedSearchTerms(q);
       whereClause.OR = [
         { name: { contains: q, mode: "insensitive" } },
-        { document: { contains: q, mode: "insensitive" } },
-        { phone: { contains: q, mode: "insensitive" } },
+        ...terms.map((term) => ({ document: { contains: term, mode: "insensitive" } })),
+        ...terms.map((term) => ({ phone: { contains: term, mode: "insensitive" } })),
         { email: { contains: q, mode: "insensitive" } },
       ];
     }
@@ -81,14 +89,19 @@ export async function createCustomer(data: CustomerInput) {
       return { success: false, error: "O nome do cliente é obrigatório." };
     }
 
-    const document = data.document?.trim() || null;
-    const phone = data.phone?.trim() || null;
+    // CPF/CNPJ e telefone são gravados sem pontuação
+    const normalizedDocument = normalizeDocument(data.document);
+    if (!normalizedDocument.ok) return { success: false, error: normalizedDocument.error };
+    const normalizedPhone = normalizePhone(data.phone);
+    if (!normalizedPhone.ok) return { success: false, error: normalizedPhone.error };
+    const document = normalizedDocument.value;
+    const phone = normalizedPhone.value;
     const email = data.email?.trim() || null;
     const address = data.address?.trim() || null;
 
     if (document) {
-      const existingDocument = await prisma.customer.findUnique({
-        where: { document },
+      const existingDocument = await prisma.customer.findFirst({
+        where: { document: { in: documentLookupValues(document) } },
       });
       if (existingDocument) {
         return { success: false, error: "Já existe um cliente cadastrado com este documento (CPF/CNPJ)." };
@@ -123,15 +136,20 @@ export async function updateCustomer(id: string, data: CustomerInput) {
       return { success: false, error: "O nome do cliente é obrigatório." };
     }
 
-    const document = data.document?.trim() || null;
-    const phone = data.phone?.trim() || null;
+    // CPF/CNPJ e telefone são gravados sem pontuação
+    const normalizedDocument = normalizeDocument(data.document);
+    if (!normalizedDocument.ok) return { success: false, error: normalizedDocument.error };
+    const normalizedPhone = normalizePhone(data.phone);
+    if (!normalizedPhone.ok) return { success: false, error: normalizedPhone.error };
+    const document = normalizedDocument.value;
+    const phone = normalizedPhone.value;
     const email = data.email?.trim() || null;
     const address = data.address?.trim() || null;
 
     if (document) {
       const existingDocument = await prisma.customer.findFirst({
         where: {
-          document,
+          document: { in: documentLookupValues(document) },
           NOT: { id },
         },
       });

@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/money-input";
 import { Button } from "@/components/ui/button";
 import { PackagePlus, Loader2 } from "lucide-react";
 import { ProductItem } from "@/actions/products";
@@ -43,7 +44,7 @@ export function StockEntryDialog({
   const [productId, setProductId] = useState(initialProductId || "");
   const [quantity, setQuantity] = useState("");
   const [supplierId, setSupplierId] = useState("");
-  const [unitCost, setUnitCost] = useState("");
+  const [unitCost, setUnitCost] = useState<number | null>(null);
   const [reason, setReason] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -66,7 +67,7 @@ export function StockEntryDialog({
       setError(`"${product.name}" aceita apenas quantidades inteiras (${product.unit}).`);
       return;
     }
-    const cost = unitCost.trim() ? parseDecimal(unitCost) : null;
+    const cost = unitCost;
     if (cost !== null && (!Number.isFinite(cost) || cost < 0)) {
       setError("O custo unitário não pode ser negativo.");
       return;
@@ -150,14 +151,11 @@ export function StockEntryDialog({
               >
                 Custo Unitário (R$)
               </Label>
-              <Input
+              <MoneyInput
                 id="stock-entry-custo-unitario-r"
-                type="number"
-                step="0.01"
-                min="0"
                 placeholder="Opcional"
                 value={unitCost}
-                onChange={(e) => setUnitCost(e.target.value)}
+                onValueChange={setUnitCost}
               />
             </div>
           </div>

@@ -41,6 +41,8 @@ import { Label } from "@/components/ui/label";
 import { IconButton } from "@/components/icon-button";
 import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
 import { toast } from "sonner";
+import { MoneyInput } from "@/components/money-input";
+import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
 
 interface CartItem {
   productId: string;
@@ -196,8 +198,8 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
         const q = customerSearch.toLowerCase();
         return (
           c.name.toLowerCase().includes(q) ||
-          c.document?.toLowerCase().includes(q) ||
-          c.phone?.toLowerCase().includes(q)
+          matchesMaskedValue(c.document, q) ||
+          matchesMaskedValue(c.phone, q)
         );
       })
     : customers;
@@ -643,7 +645,9 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                 <div className="text-sm">
                   <div className="font-medium">{selectedCustomer.name}</div>
                   {selectedCustomer.document && (
-                    <div className="text-muted-foreground text-xs">{selectedCustomer.document}</div>
+                    <div className="text-muted-foreground text-xs">
+                      {displayDocument(selectedCustomer.document)}
+                    </div>
                   )}
                 </div>
                 <IconButton
@@ -688,20 +692,12 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                 {/* Discount Input */}
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground shrink-0 text-sm">Desconto R$ (F8):</span>
-                  <Input
+                  <MoneyInput
                     ref={discountInputRef}
                     aria-label="Desconto em reais"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={subtotal}
-                    value={effectiveDiscount || ""}
-                    onChange={(e) =>
-                      setDiscount(
-                        roundMoney(
-                          Math.min(Math.max(parseFloat(e.target.value) || 0, 0), subtotal),
-                        ),
-                      )
+                    value={effectiveDiscount || null}
+                    onValueChange={(value) =>
+                      setDiscount(roundMoney(Math.min(Math.max(value ?? 0, 0), subtotal)))
                     }
                     className="h-7 text-right text-xs"
                   />
@@ -808,7 +804,8 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
                 <div>
                   <div className="font-medium">{c.name}</div>
                   <div className="text-muted-foreground text-xs">
-                    {c.document || "Sem documento"} {c.phone ? `· ${c.phone}` : ""}
+                    {displayDocument(c.document) || "Sem documento"}{" "}
+                    {c.phone ? `· ${displayPhone(c.phone)}` : ""}
                   </div>
                 </div>
               </button>
@@ -900,13 +897,10 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
               >
                 Valor Recebido (R$)
               </Label>
-              <Input
+              <MoneyInput
                 id="pdv-terminal-valor-recebido-r"
-                type="number"
-                step="0.01"
-                min={0}
-                value={amountPaid || ""}
-                onChange={(e) => setAmountPaid(parseFloat(e.target.value) || 0)}
+                value={amountPaid || null}
+                onValueChange={(value) => setAmountPaid(value ?? 0)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") finalizeSale();
                 }}

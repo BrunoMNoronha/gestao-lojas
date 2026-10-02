@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/money-input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
   Table,
@@ -60,13 +61,13 @@ const PAGE_SIZE = 30;
 const EMPTY_FILTERS: HistoryFilters = { userId: "", from: "", to: "" };
 
 function OpenCashRegisterCard({ onOpened }: { onOpened: () => void }) {
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const value = amount.trim() ? parseFloat(amount.replace(",", ".")) : 0;
+    const value = amount ?? 0;
     if (!Number.isFinite(value) || value < 0) {
       setError("Informe um valor de abertura válido (zero ou mais).");
       return;
@@ -108,14 +109,10 @@ function OpenCashRegisterCard({ onOpened }: { onOpened: () => void }) {
             >
               Suprimento inicial (R$)
             </Label>
-            <Input
+            <MoneyInput
               id="cash-register-manager-suprimento-inicial-r"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0,00"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onValueChange={setAmount}
               autoFocus
             />
           </div>

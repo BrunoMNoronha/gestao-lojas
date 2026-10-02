@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Printer, CheckCircle, ShoppingBag } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { StoreSettingsData } from "@/actions/settings";
+import { displayCep, displayDocument, displayPhone } from "@/lib/masks";
 
 export interface CompletedSale {
   id: string;
@@ -87,7 +88,12 @@ export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: Receip
             {storeSettings.companyName && (
               <p className="text-[10px] text-gray-600">{storeSettings.companyName}</p>
             )}
-            {storeSettings.document && <p>CNPJ/CPF: {storeSettings.document}</p>}
+            {storeSettings.document && (
+              <p>
+                {storeSettings.personType === "INDIVIDUAL" ? "CPF" : "CNPJ"}:{" "}
+                {displayDocument(storeSettings.document)}
+              </p>
+            )}
             {storeSettings.address && (
               <p>
                 {storeSettings.address}
@@ -99,10 +105,10 @@ export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: Receip
               <p>
                 {storeSettings.city}
                 {storeSettings.state ? `/${storeSettings.state}` : ""}
-                {storeSettings.zipCode ? ` - CEP ${storeSettings.zipCode}` : ""}
+                {storeSettings.zipCode ? ` - CEP ${displayCep(storeSettings.zipCode)}` : ""}
               </p>
             )}
-            {storeSettings.phone && <p>Tel: {storeSettings.phone}</p>}
+            {storeSettings.phone && <p>Tel: {displayPhone(storeSettings.phone)}</p>}
           </div>
 
           {/* Sale Metadata */}
@@ -119,7 +125,7 @@ export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: Receip
             </div>
             <div className="flex justify-between text-gray-600">
               <span>Cliente: {sale.customerName}</span>
-              {sale.customerDocument && <span>({sale.customerDocument})</span>}
+              {sale.customerDocument && <span>({displayDocument(sale.customerDocument)})</span>}
             </div>
           </div>
 
