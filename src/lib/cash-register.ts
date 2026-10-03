@@ -42,6 +42,20 @@ export async function lockOpenCashRegister(tx: Db, userId: string) {
 }
 
 /**
+ * Como lockOpenCashRegister, mas pelo id do caixa em que a venda começou (o caixa original,
+ * docs/OFFLINE.md seção 3.3). Só devolve o caixa se ele ainda estiver aberto e for do
+ * operador: uma venda reenviada depois do fechamento nunca cai no caixa aberto em seguida.
+ */
+export async function lockOwnOpenCashRegisterById(tx: Db, cashRegisterId: string, userId: string) {
+  const locked = await tx.cashRegister.updateMany({
+    where: { id: cashRegisterId, openUserId: userId, status: CashRegisterStatus.OPEN },
+    data: { status: CashRegisterStatus.OPEN },
+  });
+  if (locked.count === 0) return null;
+  return tx.cashRegister.findUnique({ where: { id: cashRegisterId } });
+}
+
+/**
  * Regra única do dinheiro esperado na gaveta:
  * abertura + vendas em dinheiro + suprimentos − sangrias + recebimentos de fiado em dinheiro.
  * O troco sai da própria gaveta, por isso conta o total da venda (não o valor recebido).

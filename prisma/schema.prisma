@@ -54,6 +54,11 @@ enum CashMovementType {
   WITHDRAWAL // Sangria
 }
 
+// Tipos de operação com chave de idempotência (docs/OFFLINE.md, seção 5)
+enum SyncOperationKind {
+  SALE_CREATE // "sale.create" no protocolo
+}
+
 enum ReceivableStatus {
   OPEN
   PARTIAL
@@ -75,6 +80,7 @@ model User {
   cashRegisters      CashRegister[]
   cashMovements      CashMovement[]
   receivablePayments ReceivablePayment[]
+  syncOperations     SyncOperation[]
 }
 
 model Category {
@@ -131,10 +137,15 @@ model Sale {
   // Opcional: vendas anteriores ao controle de caixa não têm turno
   cashRegisterId String?
   cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  // Quando a venda aconteceu (vale para relatórios, dashboard e vencimento do Fiado) e quando o
+  // servidor a recebeu. Na venda online são iguais; na offline (#38) occurredAt vem do aparelho.
+  occurredAt     DateTime
   createdAt      DateTime      @default(now())
   items          SaleItem[]
   receivable     Receivable?
+  syncOperation  SyncOperation?
 
+  @@index([occurredAt])
   @@index([createdAt])
 }
 
@@ -229,6 +240,7 @@ model CashRegister {
   sales              Sale[]
   movements          CashMovement[]
   receivablePayments ReceivablePayment[]
+  syncOperations     SyncOperation[]
 
   @@index([userId, openedAt])
 }
@@ -275,4 +287,24 @@ model ReceivablePayment {
   cashRegisterId String?
   cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
   createdAt      DateTime      @default(now())
+}
+
+// Chave de idempotência das operações (issue #35, docs/OFFLINE.md seção 5). A linha é gravada na
+// mesma transação dos efeitos: rollback não deixa registro, e a mesma chave nunca produz dois
+// conjuntos de efeitos. Mesma chave com payload diferente (outro hash) é recusada.
+model SyncOperation {
+  id             String            @id @db.Uuid // operationId gerado no PDV / aparelho
+  kind           SyncOperationKind
+  payloadHash    String // SHA-256 (hex) do payload canônico
+  userId         String // Operador original
+  user           User              @relation(fields: [userId], references: [id])
+  deviceId       String? // Aparelho registrado (#37); nulo no PDV online
+  cashRegisterId String? // Caixa original
+  cashRegister   CashRegister?     @relation(fields: [cashRegisterId], references: [id])
+  saleId         String?           @unique
+  sale           Sale?             @relation(fields: [saleId], references: [id])
+  occurredAt     DateTime // Instante da operação no aparelho
+  receivedAt     DateTime          @default(now()) // Instante de recebimento no servidor
+
+  @@index([userId, receivedAt])
 }
