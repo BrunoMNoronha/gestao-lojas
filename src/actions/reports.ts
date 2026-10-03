@@ -60,7 +60,7 @@ export interface SalesReportFilters {
 export interface SalesReportRow {
   id: string;
   code: number;
-  createdAt: string;
+  occurredAt: string;
   userName: string;
   customerName: string | null;
   paymentMethod: PaymentMethodValue;
@@ -136,7 +136,7 @@ async function topProducts(range: DateRange): Promise<TopProduct[]> {
     FROM "SaleItem" si
     JOIN "Sale" s ON s.id = si."saleId"
     JOIN "Product" p ON p.id = si."productId"
-    WHERE s."createdAt" >= ${range.from} AND s."createdAt" <= ${range.to}
+    WHERE s."occurredAt" >= ${range.from} AND s."occurredAt" <= ${range.to}
     GROUP BY si."productId", p.name, p.unit
     ORDER BY revenue DESC, p.name ASC
     LIMIT ${TOP_PRODUCTS_LIMIT}
@@ -157,7 +157,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics | null> {
 
     const periods = getStorePeriods();
     const inRange = (r: DateRange): Prisma.SaleWhereInput => ({
-      createdAt: { gte: r.from, lte: r.to },
+      occurredAt: { gte: r.from, lte: r.to },
     });
 
     const [today, week, month, monthByMethod, top, receivables, lowStockCount] = await Promise.all([
@@ -231,14 +231,14 @@ export async function getSalesReport(
 
     const range = storeDayRange(fromDay, toDay);
     const where: Prisma.SaleWhereInput = {
-      createdAt: { gte: range.from, lte: range.to },
+      occurredAt: { gte: range.from, lte: range.to },
       ...(method ? { paymentMethod: method } : {}),
       ...(userId ? { userId } : {}),
     };
 
     const conditions = [
-      Prisma.sql`s."createdAt" >= ${range.from}`,
-      Prisma.sql`s."createdAt" <= ${range.to}`,
+      Prisma.sql`s."occurredAt" >= ${range.from}`,
+      Prisma.sql`s."occurredAt" <= ${range.to}`,
     ];
     if (method) conditions.push(Prisma.sql`s."paymentMethod"::text = ${method}`);
     if (userId) conditions.push(Prisma.sql`s."userId" = ${userId}`);
@@ -252,9 +252,9 @@ export async function getSalesReport(
     const [totals, byMethod, daily, sales] = await Promise.all([
       salesTotals(where),
       salesByMethod(where),
-      // Agrupa pelo dia no relógio da loja ("createdAt" é gravado em UTC)
+      // Agrupa pelo dia no relógio da loja ("occurredAt" é gravado em UTC)
       prisma.$queryRaw<{ day: string; total: Prisma.Decimal; count: bigint }[]>(Prisma.sql`
-        SELECT to_char((s."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${STORE_TIME_ZONE}, 'YYYY-MM-DD') AS day,
+        SELECT to_char((s."occurredAt" AT TIME ZONE 'UTC') AT TIME ZONE ${STORE_TIME_ZONE}, 'YYYY-MM-DD') AS day,
                SUM(s.total) AS total, COUNT(*) AS count
         FROM "Sale" s
         WHERE ${Prisma.join(conditions, " AND ")}
@@ -267,7 +267,7 @@ export async function getSalesReport(
           user: { select: { name: true } },
           customer: { select: { name: true } },
         },
-        orderBy: [{ createdAt: "desc" }, { code: "desc" }],
+        orderBy: [{ occurredAt: "desc" }, { code: "desc" }],
         take,
         skip,
       }),
@@ -286,7 +286,7 @@ export async function getSalesReport(
         sales: sales.map((s) => ({
           id: s.id,
           code: s.code,
-          createdAt: s.createdAt.toISOString(),
+          occurredAt: s.occurredAt.toISOString(),
           userName: s.user.name,
           customerName: s.customer?.name ?? null,
           paymentMethod: s.paymentMethod as PaymentMethodValue,

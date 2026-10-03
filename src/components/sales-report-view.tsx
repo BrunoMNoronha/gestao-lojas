@@ -278,7 +278,7 @@ export function SalesReportView({
                       <TableRow key={s.id}>
                         <TableCell className="font-mono">#{s.code}</TableCell>
                         <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                          {formatStoreDateTime(s.createdAt)}
+                          {formatStoreDateTime(s.occurredAt)}
                         </TableCell>
                         <TableCell className="text-sm">{s.userName}</TableCell>
                         <TableCell className="text-sm">
