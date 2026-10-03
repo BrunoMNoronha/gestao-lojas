@@ -33,6 +33,7 @@ erDiagram
     Category ||--o{ Product : "possui"
     Product ||--o{ SaleItem : "pertence"
     Sale ||--|{ SaleItem : "contém"
+    Sale ||--o| SyncOperation : "chave de idempotência"
     Product ||--o{ StockMovement : "possui"
 
     User {
@@ -80,6 +81,17 @@ erDiagram
         decimal total
         decimal discount
         enum paymentMethod "MONEY | PIX | CREDIT_CARD | DEBIT_CARD | ON_ACCOUNT"
+        datetime occurredAt "quando aconteceu (relatórios e vencimento)"
+        datetime createdAt "quando o servidor recebeu"
+    }
+
+    SyncOperation {
+        uuid id PK "operationId gerado no cliente"
+        enum kind "SALE_CREATE"
+        string payloadHash "SHA-256 do payload canônico"
+        string userId FK
+        string cashRegisterId FK
+        string saleId UK
     }
 ```
 
@@ -109,14 +121,23 @@ Toda a lógica de negócios e persistência deve ser encapsulada em Server Actio
 
 ### 5. Venda no Fiado (issue #29)
 Parâmetros em `StoreSettings`, editados nas Configurações (`settings.manage`) e lidos no servidor por `src/lib/on-account.ts`.
-- **Venda:** `createSale` aplica as regras dentro da transação: fiado desligado recusa `ON_ACCOUNT`; com bloqueio de vencidos ou limite, trava a linha do cliente e recusa se houver título vencido não quitado ou se *saldo em aberto + venda* passar do limite. O prazo preenche `Receivable.dueDate` com 00:00 (fuso da loja) do dia da venda + N; o título fica vencido a partir do dia seguinte (`src/lib/store-time.ts`).
+- **Venda:** a transação da venda (`registerSale`, em `src/lib/create-sale.ts`) aplica as regras: fiado desligado recusa `ON_ACCOUNT`; com bloqueio de vencidos ou limite, trava a linha do cliente e recusa se houver título vencido não quitado ou se *saldo em aberto + venda* passar do limite. O prazo preenche `Receivable.dueDate` com 00:00 (fuso da loja) do dia da venda + N; o título fica vencido a partir do dia seguinte (`src/lib/store-time.ts`).
+- **Data:** o vencimento parte de `Sale.occurredAt` (dia em que a venda aconteceu), a mesma data usada nos relatórios e no dashboard.
 - **Menu:** `AppRoute.feature = "onAccount"` esconde "Contas a Receber" (e o card do Dashboard) só quando o fiado está desligado **e** não há títulos a receber. É só exibição: a página continua protegida por `receivables.view` e, pela URL, mostra um estado vazio informativo.
+
+### 6. Idempotência da venda (issue #35)
+`createSale` (`src/actions/sales.ts`) só autoriza (`pdv.use`) e revalida as telas; as regras ficam em `registerSale` (`src/lib/create-sale.ts`), que a sincronização offline (#38) vai reaproveitar.
+- **Chave:** o PDV gera um `operationId` (UUID, `src/lib/operation-id.ts`) por tentativa de finalização e o reaproveita enquanto o carrinho, o cliente e o pagamento não mudam.
+- **Mesma transação:** a `SyncOperation` é gravada logo após travar o caixa e antes de qualquer efeito, junto com a venda, os itens, o estoque e o título. Mesma chave e mesmo hash devolvem a venda gravada; hash, operador ou tipo diferentes são recusados; rollback não deixa registro. A garantia é o índice único da chave (violação P2002 → devolve o resultado gravado), inclusive com chamadas simultâneas.
+- **Caixa original:** a venda leva o id do caixa aberto quando o PDV carregou e trava esse caixa (`lockOwnOpenCashRegisterById`). Se ele foi fechado, a venda é recusada, nunca vai para o caixa aberto depois.
+- **Datas:** `Sale.occurredAt` é quando a venda aconteceu e vale para relatórios, dashboard e vencimento do Fiado; `createdAt` é quando o servidor a recebeu. Na venda online as duas são iguais.
 
 ---
 
 ## 🧪 Boas Práticas & Validações
 
 - **Execução do Build:** Sempre valide alterações executando `pnpm build`.
+- **Testes de integração:** `pnpm test:integration` (vitest, `tests/integration/`) roda contra um PostgreSQL real e descartável em `TEST_DATABASE_URL`; ver o README.
 - **Regeneração de Tipos:** Execute `pnpm prisma generate` após qualquer modificação em `prisma/schema.prisma`.
 - **Migrations:** Toda mudança de schema gera uma migration versionada em `prisma/migrations/` (`pnpm db:migrate --name <descricao>`). Em produção as migrations são aplicadas por passo explícito (`pnpm db:deploy`, conexão direta via `DIRECT_URL`), nunca no build. Ver `docs/DEPLOY.md`.
 - **Primeiro administrador:** Criado por `src/lib/bootstrap-admin.ts` apenas quando o banco não tem usuários, a partir de `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Não há credenciais fixas em produção.

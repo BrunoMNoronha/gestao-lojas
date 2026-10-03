@@ -33,7 +33,7 @@ levantamento da #34. Base conferida: `main` em `eab97bc`, Next.js 16.3.8.
 | Sessão                     | JWT do Auth.js, validade padrão (30 dias); `authorize()` confere usuário ativo e perfil no banco a cada chamada    | O login exige internet (reCAPTCHA no servidor)                                          |
 | Fuso                       | Servidor usa `America/Sao_Paulo` (`src/lib/store-time.ts`); recibo e `src/lib/dates.ts` usam o fuso do navegador   | O recibo offline deve usar o fuso da loja                                               |
 | Service Worker / IndexedDB | Não existem. `localStorage` só no carrinho do catálogo público (`src/lib/catalog-cart.ts`)                         | Toda a infraestrutura é nova                                                            |
-| Testes                     | Não há ferramenta de testes no projeto                                                                             | Integração (#35) e navegador (#39) montam a infraestrutura                              |
+| Testes                     | Integração com vitest e PostgreSQL descartável (`pnpm test:integration`, #35); navegador ainda não                 | Navegador (#39) monta o Playwright                                                      |
 
 Já corrigido durante o levantamento: o preço de custo deixou de ser enviado a quem não tem
 `catalog.manage` (#41), e o PDV passou a tratar falha ao finalizar a venda (#42).

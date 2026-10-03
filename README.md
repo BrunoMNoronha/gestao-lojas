@@ -33,6 +33,22 @@ descrito em `.env.example`).
 | `pnpm build`                    | Build de produção e checagem de tipos         |
 | `pnpm db:migrate --name <nome>` | Cria e aplica uma migration (desenvolvimento) |
 | `pnpm db:deploy`                | Aplica migrations pendentes (produção)        |
+| `pnpm test:integration`         | Testes de integração com PostgreSQL real      |
+
+## Testes
+
+Os testes de integração (`tests/integration/`) usam um PostgreSQL real e **descartável**: o
+`TEST_DATABASE_URL` precisa apontar para um banco local com `test` no nome (outros são recusados),
+porque as tabelas são apagadas entre os testes. As migrations são aplicadas automaticamente.
+
+```bash
+docker run --rm -d --name gestao-lojas-test -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=gestao_lojas_test -p 127.0.0.1:55432:5432 postgres:17-alpine
+TEST_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55432/gestao_lojas_test" pnpm test:integration
+docker stop gestao-lojas-test
+```
+
+No PowerShell, defina antes `$env:TEST_DATABASE_URL = "postgresql://..."` e rode
+`pnpm test:integration`.
 
 ## Documentação
 
