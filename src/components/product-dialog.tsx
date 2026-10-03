@@ -61,7 +61,7 @@ function toFormData(product?: ProductItem | null, initialBarcode?: string): Prod
     name: product.name,
     sku: product.sku || "",
     barcode: product.barcode || "",
-    costPrice: product.costPrice,
+    costPrice: product.costPrice ?? 0,
     salePrice: product.salePrice,
     unit: product.unit,
     currentStock: product.currentStock,

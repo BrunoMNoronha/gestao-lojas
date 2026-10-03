@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
 import type { UnitType } from "@/actions/products";
@@ -17,7 +18,8 @@ export interface StockMovementItem {
   // IN/OUT: quantidade positiva. ADJUSTMENT: delta com sinal.
   quantity: number;
   reason: string | null;
-  unitCost: number | null;
+  // Custo da entrada: omitido para quem não tem `catalog.manage` (mesma regra do preço de custo)
+  unitCost?: number | null;
   userName: string | null;
   supplierName: string | null;
   createdAt: string;
@@ -93,6 +95,7 @@ export async function getStockMovements(
   try {
     const authz = await authorize("stock.view");
     if (!authz.ok) return { items: [], total: 0 };
+    const canSeeCost = can(authz.user.role, "catalog.manage");
 
     const where: Prisma.StockMovementWhereInput = {};
     if (filters.productId) where.productId = filters.productId;
@@ -138,7 +141,7 @@ export async function getStockMovements(
         type: m.type as MovementTypeValue,
         quantity: Number(m.quantity),
         reason: m.reason,
-        unitCost: m.unitCost === null ? null : Number(m.unitCost),
+        ...(canSeeCost ? { unitCost: m.unitCost === null ? null : Number(m.unitCost) } : {}),
         userName: m.user?.name ?? null,
         supplierName: m.supplier?.name ?? null,
         createdAt: m.createdAt.toISOString(),

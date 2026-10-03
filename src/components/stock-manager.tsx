@@ -49,6 +49,8 @@ interface StockManagerProps {
   initialMovements: StockMovementPage;
   // Entradas e ajustes restritos por perfil (stock.manage)
   canManage: boolean;
+  // Coluna de custo unitário só para quem vê preço de custo (catalog.manage)
+  canSeeCost: boolean;
 }
 
 interface Filters {
@@ -103,6 +105,7 @@ export function StockManager({
   lowStock,
   initialMovements,
   canManage,
+  canSeeCost,
 }: StockManagerProps) {
   const router = useRouter();
 
@@ -434,7 +437,7 @@ export function StockManager({
                         <TableHead>Produto</TableHead>
                         <TableHead className="text-center">Tipo</TableHead>
                         <TableHead className="text-right">Quantidade</TableHead>
-                        <TableHead className="text-right">Custo Unit.</TableHead>
+                        {canSeeCost && <TableHead className="text-right">Custo Unit.</TableHead>}
                         <TableHead>Fornecedor</TableHead>
                         <TableHead>Motivo</TableHead>
                         <TableHead>Usuário</TableHead>
@@ -464,9 +467,11 @@ export function StockManager({
                           >
                             {signedQuantity(m)} {m.unit}
                           </TableCell>
-                          <TableCell className="text-muted-foreground text-right">
-                            {m.unitCost !== null ? formatCurrency(m.unitCost) : "-"}
-                          </TableCell>
+                          {canSeeCost && (
+                            <TableCell className="text-muted-foreground text-right">
+                              {m.unitCost != null ? formatCurrency(m.unitCost) : "-"}
+                            </TableCell>
+                          )}
                           <TableCell className="text-sm">{m.supplierName ?? "-"}</TableCell>
                           <TableCell className="text-muted-foreground max-w-56 truncate text-sm">
                             {m.reason ?? "-"}
