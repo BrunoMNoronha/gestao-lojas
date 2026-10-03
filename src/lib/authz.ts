@@ -13,7 +13,10 @@ export interface SessionUser {
   role: AppRole;
 }
 
-export type AuthResult = { ok: true; user: SessionUser } | { ok: false; error: string };
+// `code` permite aos Route Handlers responder 401 (sem sessão) ou 403 (sem permissão)
+export type AuthResult =
+  | { ok: true; user: SessionUser }
+  | { ok: false; error: string; code: "unauthenticated" | "forbidden" };
 
 const SESSION_ERROR = "Sessão expirada. Faça login novamente.";
 const PERMISSION_ERROR = "Você não tem permissão para realizar esta ação.";
@@ -37,13 +40,15 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 });
 
 /**
- * Para Server Actions: exige sessão e, se informada, a permissão.
+ * Para Server Actions e Route Handlers: exige sessão e, se informada, a permissão.
  * Uso: `const authz = await authorize("catalog.manage"); if (!authz.ok) return { success: false, error: authz.error };`
  */
 export async function authorize(permission?: Permission): Promise<AuthResult> {
   const user = await getSessionUser();
-  if (!user) return { ok: false, error: SESSION_ERROR };
-  if (permission && !can(user.role, permission)) return { ok: false, error: PERMISSION_ERROR };
+  if (!user) return { ok: false, error: SESSION_ERROR, code: "unauthenticated" };
+  if (permission && !can(user.role, permission)) {
+    return { ok: false, error: PERMISSION_ERROR, code: "forbidden" };
+  }
   return { ok: true, user };
 }
 

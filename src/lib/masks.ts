@@ -55,6 +55,18 @@ export function displayDocument(value: string | null | undefined): string {
   return value ?? "";
 }
 
+/**
+ * Documento de cliente mascarado para guardar no aparelho do PDV offline (docs/OFFLINE.md seção
+ * 3.8): CPF `***.456.789-**`, CNPJ `**.345.678/0001-**`. Formato não reconhecido vira null, para
+ * nunca expor um documento antigo que não foi normalizado.
+ */
+export function maskDocument(value: string | null | undefined): string | null {
+  const raw = onlyAlphanumeric(value);
+  if (/^\d{11}$/.test(raw)) return `***${formatCpf(raw).slice(3, 12)}**`;
+  if (/^[0-9A-Z]{12}\d{2}$/.test(raw)) return `**${formatCnpj(raw).slice(2, 16)}**`;
+  return null;
+}
+
 export function displayPhone(value: string | null | undefined): string {
   const digits = onlyDigits(value);
   return digits.length === 10 || digits.length === 11 ? formatPhone(digits) : (value ?? "");
