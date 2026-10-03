@@ -39,3 +39,4 @@ descrito em `.env.example`).
 - [`AGENTS.md`](AGENTS.md) — convenções para agentes de IA e desenvolvedores
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — arquitetura e modelo de dados
 - [`docs/DEPLOY.md`](docs/DEPLOY.md) — deploy em produção (Vercel + Neon)
+- [`docs/OFFLINE.md`](docs/OFFLINE.md) — decisões e arquitetura da operação offline (#33)
