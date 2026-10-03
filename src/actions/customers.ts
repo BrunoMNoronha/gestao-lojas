@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import {
   documentLookupValues,
   maskedSearchTerms,
@@ -38,7 +39,7 @@ export async function getCustomers(searchQuery?: string): Promise<CustomerItem[]
     const authz = await authorize("customers.view");
     if (!authz.ok) return [];
 
-    const whereClause: any = {};
+    const whereClause: Prisma.CustomerWhereInput = {};
 
     if (searchQuery && searchQuery.trim() !== "") {
       const q = searchQuery.trim();
@@ -46,8 +47,8 @@ export async function getCustomers(searchQuery?: string): Promise<CustomerItem[]
       const terms = maskedSearchTerms(q);
       whereClause.OR = [
         { name: { contains: q, mode: "insensitive" } },
-        ...terms.map((term) => ({ document: { contains: term, mode: "insensitive" } })),
-        ...terms.map((term) => ({ phone: { contains: term, mode: "insensitive" } })),
+        ...terms.map((term) => ({ document: { contains: term, mode: "insensitive" as const } })),
+        ...terms.map((term) => ({ phone: { contains: term, mode: "insensitive" as const } })),
         { email: { contains: q, mode: "insensitive" } },
       ];
     }
@@ -104,7 +105,10 @@ export async function createCustomer(data: CustomerInput) {
         where: { document: { in: documentLookupValues(document) } },
       });
       if (existingDocument) {
-        return { success: false, error: "Já existe um cliente cadastrado com este documento (CPF/CNPJ)." };
+        return {
+          success: false,
+          error: "Já existe um cliente cadastrado com este documento (CPF/CNPJ).",
+        };
       }
     }
 

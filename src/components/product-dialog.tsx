@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,40 @@ interface ProductDialogProps {
   onSuccess: () => void;
 }
 
+function toFormData(product?: ProductItem | null, initialBarcode?: string): ProductInput {
+  if (!product) {
+    return {
+      name: "",
+      sku: "",
+      barcode: initialBarcode ?? "",
+      costPrice: 0,
+      salePrice: 0,
+      unit: "UN",
+      currentStock: 0,
+      minStock: 0,
+      categoryId: "",
+      showInCatalog: false,
+      description: "",
+      imageUrl: "",
+    };
+  }
+  return {
+    id: product.id,
+    name: product.name,
+    sku: product.sku || "",
+    barcode: product.barcode || "",
+    costPrice: product.costPrice ?? 0,
+    salePrice: product.salePrice,
+    unit: product.unit,
+    currentStock: product.currentStock,
+    minStock: product.minStock,
+    categoryId: product.categoryId || "",
+    showInCatalog: product.showInCatalog,
+    description: product.description || "",
+    imageUrl: product.imageUrl || "",
+  };
+}
+
 export function ProductDialog({
   open,
   onOpenChange,
@@ -47,59 +81,24 @@ export function ProductDialog({
   categories,
   onSuccess,
 }: ProductDialogProps) {
-  const [formData, setFormData] = useState<ProductInput>({
-    name: "",
-    sku: "",
-    barcode: "",
-    costPrice: 0,
-    salePrice: 0,
-    unit: "UN",
-    currentStock: 0,
-    minStock: 0,
-    categoryId: "",
-    showInCatalog: false,
-    description: "",
-    imageUrl: "",
-  });
+  const [formData, setFormData] = useState<ProductInput>(() =>
+    toFormData(productToEdit, initialBarcode),
+  );
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (productToEdit) {
-      setFormData({
-        id: productToEdit.id,
-        name: productToEdit.name,
-        sku: productToEdit.sku || "",
-        barcode: productToEdit.barcode || "",
-        costPrice: productToEdit.costPrice ?? 0,
-        salePrice: productToEdit.salePrice,
-        unit: productToEdit.unit,
-        currentStock: productToEdit.currentStock,
-        minStock: productToEdit.minStock,
-        categoryId: productToEdit.categoryId || "",
-        showInCatalog: productToEdit.showInCatalog,
-        description: productToEdit.description || "",
-        imageUrl: productToEdit.imageUrl || "",
-      });
-    } else {
-      setFormData({
-        name: "",
-        sku: "",
-        barcode: initialBarcode ?? "",
-        costPrice: 0,
-        salePrice: 0,
-        unit: "UN",
-        currentStock: 0,
-        minStock: 0,
-        categoryId: "",
-        showInCatalog: false,
-        description: "",
-        imageUrl: "",
-      });
-    }
+  // Reinicia o formulário ao abrir ou trocar o produto editado (ajuste durante o render, sem efeito)
+  const [syncedWith, setSyncedWith] = useState({ productToEdit, initialBarcode, open });
+  if (
+    syncedWith.productToEdit !== productToEdit ||
+    syncedWith.initialBarcode !== initialBarcode ||
+    syncedWith.open !== open
+  ) {
+    setSyncedWith({ productToEdit, initialBarcode, open });
+    setFormData(toFormData(productToEdit, initialBarcode));
     setError(null);
-  }, [productToEdit, initialBarcode, open]);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

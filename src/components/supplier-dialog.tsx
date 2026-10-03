@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -23,44 +23,38 @@ interface SupplierDialogProps {
   onSuccess: () => void;
 }
 
+function toFormData(supplier?: SupplierItem | null): SupplierInput {
+  if (!supplier) {
+    return { name: "", document: "", phone: "", email: "", address: "" };
+  }
+  return {
+    id: supplier.id,
+    name: supplier.name,
+    document: supplier.document || "",
+    phone: supplier.phone || "",
+    email: supplier.email || "",
+    address: supplier.address || "",
+  };
+}
+
 export function SupplierDialog({
   open,
   onOpenChange,
   supplierToEdit,
   onSuccess,
 }: SupplierDialogProps) {
-  const [formData, setFormData] = useState<SupplierInput>({
-    name: "",
-    document: "",
-    phone: "",
-    email: "",
-    address: "",
-  });
+  const [formData, setFormData] = useState<SupplierInput>(() => toFormData(supplierToEdit));
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (supplierToEdit) {
-      setFormData({
-        id: supplierToEdit.id,
-        name: supplierToEdit.name,
-        document: supplierToEdit.document || "",
-        phone: supplierToEdit.phone || "",
-        email: supplierToEdit.email || "",
-        address: supplierToEdit.address || "",
-      });
-    } else {
-      setFormData({
-        name: "",
-        document: "",
-        phone: "",
-        email: "",
-        address: "",
-      });
-    }
+  // Reinicia o formulário ao abrir ou trocar o fornecedor editado (ajuste durante o render, sem efeito)
+  const [syncedWith, setSyncedWith] = useState({ supplierToEdit, open });
+  if (syncedWith.supplierToEdit !== supplierToEdit || syncedWith.open !== open) {
+    setSyncedWith({ supplierToEdit, open });
+    setFormData(toFormData(supplierToEdit));
     setError(null);
-  }, [supplierToEdit, open]);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

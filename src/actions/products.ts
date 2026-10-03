@@ -86,7 +86,7 @@ export async function getProducts(
     if (!authz.ok) return [];
     const canSeeCost = can(authz.user.role, "catalog.manage");
 
-    const whereClause: any = {};
+    const whereClause: Prisma.ProductWhereInput = {};
 
     if (searchQuery && searchQuery.trim() !== "") {
       const q = searchQuery.trim();
