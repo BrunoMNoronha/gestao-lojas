@@ -161,7 +161,7 @@ export async function getLowStockProducts(): Promise<LowStockItem[]> {
 
     // Mesma regra de isStockLow (src/lib/stock.ts): saldo atual <= estoque mínimo
     const products = await prisma.product.findMany({
-      where: { currentStock: { lte: prisma.product.fields.minStock } },
+      where: { deletedAt: null, currentStock: { lte: prisma.product.fields.minStock } },
       include: { category: { select: { name: true } } },
       orderBy: { name: "asc" },
     });
@@ -225,8 +225,8 @@ export async function registerStockEntry(data: StockEntryInput) {
     const supplierId = data.supplierId || null;
 
     await prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({
-        where: { id: data.productId },
+      const product = await tx.product.findFirst({
+        where: { id: data.productId, deletedAt: null },
         select: { id: true, name: true, unit: true },
       });
       if (!product) {
@@ -307,8 +307,8 @@ export async function adjustStock(data: StockAdjustmentInput) {
     }
 
     await prisma.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({
-        where: { id: data.productId },
+      const product = await tx.product.findFirst({
+        where: { id: data.productId, deletedAt: null },
         select: { id: true, name: true, unit: true, currentStock: true },
       });
       if (!product) {

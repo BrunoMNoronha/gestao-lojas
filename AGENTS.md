@@ -89,7 +89,7 @@ gestao-lojas/
    - Utilize Tailwind CSS com classes semânticas e o componente `cn()` de `@/lib/utils` para mesclar classes.
 6. **Autorização (obrigatório):**
    - A matriz de acesso por perfil (ADMIN / MANAGER / SELLER) fica em `src/lib/permissions.ts`, e o mapa de rotas e menu em `src/lib/routes.ts`.
-   - Toda Server Action exportada começa com `const authz = await authorize("<permissão>")` (`src/lib/authz.ts`) e retorna erro ou vazio quando `!authz.ok`. Confira com `pnpm check:actions`.
+   - Toda Server Action exportada começa com `const authz = await authorize("<permissão>")` (`src/lib/authz.ts`) e retorna erro ou vazio quando `!authz.ok`. Os Route Handlers de `src/app/api/offline/` também começam com `authorize(...)` (o proxy não atua em `/api`). Confira com `pnpm check:actions`.
    - Toda página de `/admin` chama `await requirePageAccess("<permissão>")`. Nova rota no menu = nova entrada em `APP_ROUTES`.
    - O `src/proxy.ts` só redireciona quem não está logado; nunca dependa dele para permissão.
 

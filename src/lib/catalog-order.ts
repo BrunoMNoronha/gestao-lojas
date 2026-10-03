@@ -139,7 +139,7 @@ export async function buildCatalogOrder(
   const { items: requested, customer } = parsed.value;
 
   const products = await prisma.product.findMany({
-    where: { id: { in: requested.map((item) => item.productId) } },
+    where: { id: { in: requested.map((item) => item.productId) }, deletedAt: null },
     select: {
       id: true,
       name: true,

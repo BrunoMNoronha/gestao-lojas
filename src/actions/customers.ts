@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@prisma/client";
+import { Prisma, ReceivableStatus } from "@prisma/client";
 import {
   documentLookupValues,
   maskedSearchTerms,
@@ -34,12 +34,30 @@ export interface CustomerInput {
   address?: string | null;
 }
 
+// Campos devolvidos ao cliente após criar/editar (sem deletedAt e syncVersion)
+const CUSTOMER_SELECT = {
+  id: true,
+  name: true,
+  document: true,
+  phone: true,
+  email: true,
+  address: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+const CUSTOMER_NOT_FOUND = "Cliente não encontrado. Ele pode ter sido excluído; atualize a tela.";
+
+// update com `where: { id, deletedAt: null }` lança P2025 quando o cliente não existe ou foi excluído
+const isNotFound = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025";
+
 export async function getCustomers(searchQuery?: string): Promise<CustomerItem[]> {
   try {
     const authz = await authorize("customers.view");
     if (!authz.ok) return [];
 
-    const whereClause: Prisma.CustomerWhereInput = {};
+    // Clientes excluídos (exclusão lógica) não aparecem nas listagens
+    const whereClause: Prisma.CustomerWhereInput = { deletedAt: null };
 
     if (searchQuery && searchQuery.trim() !== "") {
       const q = searchQuery.trim();
@@ -102,7 +120,7 @@ export async function createCustomer(data: CustomerInput) {
 
     if (document) {
       const existingDocument = await prisma.customer.findFirst({
-        where: { document: { in: documentLookupValues(document) } },
+        where: { document: { in: documentLookupValues(document) }, deletedAt: null },
       });
       if (existingDocument) {
         return {
@@ -120,6 +138,7 @@ export async function createCustomer(data: CustomerInput) {
         email,
         address,
       },
+      select: CUSTOMER_SELECT,
     });
 
     revalidatePath("/admin/clientes");
@@ -154,6 +173,7 @@ export async function updateCustomer(id: string, data: CustomerInput) {
       const existingDocument = await prisma.customer.findFirst({
         where: {
           document: { in: documentLookupValues(document) },
+          deletedAt: null,
           NOT: { id },
         },
       });
@@ -163,7 +183,7 @@ export async function updateCustomer(id: string, data: CustomerInput) {
     }
 
     const updatedCustomer = await prisma.customer.update({
-      where: { id },
+      where: { id, deletedAt: null },
       data: {
         name,
         document,
@@ -171,11 +191,13 @@ export async function updateCustomer(id: string, data: CustomerInput) {
         email,
         address,
       },
+      select: CUSTOMER_SELECT,
     });
 
     revalidatePath("/admin/clientes");
     return { success: true, data: updatedCustomer };
   } catch (error) {
+    if (isNotFound(error)) return { success: false, error: CUSTOMER_NOT_FOUND };
     console.error("Erro ao atualizar cliente:", error);
     return { success: false, error: "Falha ao atualizar o cliente." };
   }
@@ -186,24 +208,31 @@ export async function deleteCustomer(id: string) {
     const authz = await authorize("customers.delete");
     if (!authz.ok) return { success: false, error: authz.error };
 
-    const salesCount = await prisma.sale.count({
-      where: { customerId: id },
+    // Vendas antigas não impedem mais a exclusão (o histórico é mantido); Fiado em aberto, sim
+    const openReceivables = await prisma.receivable.count({
+      where: {
+        customerId: id,
+        status: { in: [ReceivableStatus.OPEN, ReceivableStatus.PARTIAL] },
+      },
     });
 
-    if (salesCount > 0) {
+    if (openReceivables > 0) {
       return {
         success: false,
-        error: `Não é possível excluir este cliente pois existem ${salesCount} venda(s) associadas a ele.`,
+        error: `Não é possível excluir este cliente pois existem ${openReceivables} título(s) de Fiado em aberto.`,
       };
     }
 
-    await prisma.customer.delete({
-      where: { id },
+    // Exclusão lógica: o PDV offline recebe a exclusão na próxima sincronização
+    await prisma.customer.update({
+      where: { id, deletedAt: null },
+      data: { deletedAt: new Date() },
     });
 
     revalidatePath("/admin/clientes");
     return { success: true };
   } catch (error) {
+    if (isNotFound(error)) return { success: false, error: CUSTOMER_NOT_FOUND };
     console.error("Erro ao excluir cliente:", error);
     return { success: false, error: "Falha ao excluir o cliente." };
   }

@@ -19,21 +19,21 @@ levantamento da #34. Base conferida: `main` em `eab97bc`, Next.js 16.3.8.
 
 ## 1. Situação atual (o que muda com o offline)
 
-| Ponto                      | Hoje                                                                                                               | Consequência para o offline                                                             |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| Tela do PDV                | `src/app/admin/pdv/page.tsx` usa `connection()` e recebe produtos e clientes do servidor a cada acesso             | Não existe tela que abra sem rede; o layout `/admin` também consulta o banco            |
-| Venda (`createSale`)       | Cliente envia só produto e quantidade; o servidor recalcula o preço a partir de `salePrice`                        | A venda offline precisa levar o preço praticado                                         |
-| Estoque                    | Baixa com `currentStock >= quantidade`; se faltar saldo, a venda inteira é recusada. Estoque negativo é impossível | Dois terminais podem vender o mesmo saldo                                               |
-| Caixa                      | A venda vai para o caixa **aberto** do operador no momento do envio; o fechamento grava um resumo imutável         | Uma venda que chega depois do fechamento iria para o caixa errado                       |
-| Data da venda              | `Sale.createdAt` é gravado pelo servidor e usado em relatórios, dashboard e vencimento do fiado                    | Uma venda sincronizada no dia seguinte cairia no dia errado                             |
-| Identificação              | `Sale.code` é uma sequência (`SERIAL`) **sem** índice único; não há chave de operação                              | Não há como deduplicar um reenvio                                                       |
-| Exclusões                  | `Product`, `Customer`, `Category` (e `Supplier`) são excluídos fisicamente                                         | Um aparelho desconectado nunca fica sabendo da exclusão                                 |
-| Datas de alteração         | `Category` não tem `createdAt`/`updatedAt`; `Sale`, `CashRegister` e outros não têm `updatedAt`                    | Falta cursor para sincronização incremental                                             |
-| Cancelamento               | Não existe estorno/cancelamento de venda                                                                           | A conciliação não pode "desfazer" uma venda; trabalha com aprovação, descarte ou ajuste |
-| Sessão                     | JWT do Auth.js, validade padrão (30 dias); `authorize()` confere usuário ativo e perfil no banco a cada chamada    | O login exige internet (reCAPTCHA no servidor)                                          |
-| Fuso                       | Servidor usa `America/Sao_Paulo` (`src/lib/store-time.ts`); recibo e `src/lib/dates.ts` usam o fuso do navegador   | O recibo offline deve usar o fuso da loja                                               |
-| Service Worker / IndexedDB | Não existem. `localStorage` só no carrinho do catálogo público (`src/lib/catalog-cart.ts`)                         | Toda a infraestrutura é nova                                                            |
-| Testes                     | Integração com vitest e PostgreSQL descartável (`pnpm test:integration`, #35); navegador ainda não                 | Navegador (#39) monta o Playwright                                                      |
+| Ponto                      | Hoje                                                                                                               | Consequência para o offline                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Tela do PDV                | `src/app/admin/pdv/page.tsx` usa `connection()` e recebe produtos e clientes do servidor a cada acesso             | Não existe tela que abra sem rede; o layout `/admin` também consulta o banco                |
+| Venda (`createSale`)       | Cliente envia só produto e quantidade; o servidor recalcula o preço a partir de `salePrice`                        | A venda offline precisa levar o preço praticado                                             |
+| Estoque                    | Baixa com `currentStock >= quantidade`; se faltar saldo, a venda inteira é recusada. Estoque negativo é impossível | Dois terminais podem vender o mesmo saldo                                                   |
+| Caixa                      | A venda vai para o caixa **aberto** do operador no momento do envio; o fechamento grava um resumo imutável         | Uma venda que chega depois do fechamento iria para o caixa errado                           |
+| Data da venda              | `Sale.createdAt` é gravado pelo servidor e usado em relatórios, dashboard e vencimento do fiado                    | Uma venda sincronizada no dia seguinte cairia no dia errado                                 |
+| Identificação              | `Sale.code` é uma sequência (`SERIAL`) **sem** índice único; não há chave de operação                              | Não há como deduplicar um reenvio                                                           |
+| Exclusões                  | `Product`, `Customer`, `Category` (e `Supplier`) são excluídos fisicamente                                         | Um aparelho desconectado nunca fica sabendo da exclusão (exclusão lógica na #36, seção 3.7) |
+| Datas de alteração         | `Category` não tem `createdAt`/`updatedAt`; `Sale`, `CashRegister` e outros não têm `updatedAt`                    | Falta cursor para sincronização incremental (resolvido na #36 com `syncVersion`, seção 5)   |
+| Cancelamento               | Não existe estorno/cancelamento de venda                                                                           | A conciliação não pode "desfazer" uma venda; trabalha com aprovação, descarte ou ajuste     |
+| Sessão                     | JWT do Auth.js, validade padrão (30 dias); `authorize()` confere usuário ativo e perfil no banco a cada chamada    | O login exige internet (reCAPTCHA no servidor)                                              |
+| Fuso                       | Servidor usa `America/Sao_Paulo` (`src/lib/store-time.ts`); recibo e `src/lib/dates.ts` usam o fuso do navegador   | O recibo offline deve usar o fuso da loja                                                   |
+| Service Worker / IndexedDB | Não existem. `localStorage` só no carrinho do catálogo público (`src/lib/catalog-cart.ts`)                         | Toda a infraestrutura é nova                                                                |
+| Testes                     | Integração com vitest e PostgreSQL descartável (`pnpm test:integration`, #35); navegador ainda não                 | Navegador (#39) monta o Playwright                                                          |
 
 Já corrigido durante o levantamento: o preço de custo deixou de ser enviado a quem não tem
 `catalog.manage` (#41), e o PDV passou a tratar falha ao finalizar a venda (#42).
@@ -71,6 +71,10 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
   preparação** (ver 3.5). Para isso, as alterações de `salePrice` passam a ser registradas em um
   histórico de preços. Preço que nunca existiu no período vira **conflito** (proteção contra cliente
   adulterado).
+- Histórico (#36): tabela `ProductPrice` (`productId`, `salePrice`, `validFrom` em UTC), gravada por
+  gatilho no banco no cadastro e a cada mudança de `salePrice`, por qualquer caminho. O preço vigente
+  num instante é o da linha mais recente com `validFrom` anterior ou igual a ele. Os produtos que já
+  existiam recebem o preço atual com `validFrom` na data da migration (não há histórico anterior).
 - Diferença entre o preço praticado e o preço atual é gravada na venda para auditoria
   (pendência informativa, sem bloquear).
 - Vendas online continuam com o preço calculado no servidor, como hoje.
@@ -143,7 +147,19 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
   válidas (a venda aconteceu).
 - `Category` ganha `createdAt` e `updatedAt`, necessários ao cursor de sincronização.
 - Unicidade de SKU, código de barras, documento e nome de categoria passa a valer **só entre
-  registros ativos** (índice único parcial criado na migration). O detalhe é tratado na #36.
+  registros ativos**: índices únicos parciais (`WHERE "deletedAt" IS NULL`) criados em SQL na
+  migration `0007_offline_local_copy`. O Prisma 6 não declara índice parcial no schema, mas também o
+  ignora ao comparar (`prisma migrate diff` fica vazio), então nenhuma migration futura tenta
+  removê-lo. Por isso o schema não tem mais `@unique` nesses campos, e as checagens de duplicidade
+  nas actions filtram `deletedAt: null`.
+- **Regras de exclusão** (aprovadas na #36):
+  - Produto: pode ser excluído mesmo com vendas, movimentações ou saldo (antes, a chave estrangeira
+    impedia). O histórico de vendas e de estoque continua com o nome do produto.
+  - Cliente: vendas antigas não impedem mais a exclusão; título do Fiado em aberto (`OPEN` ou
+    `PARTIAL`) impede.
+  - Categoria: só produtos **ativos** impedem a exclusão e entram na contagem.
+  - Registro excluído não pode ser editado nem usado em venda online, entrada ou ajuste de estoque,
+    e some do catálogo público. Não há restauração pela interface.
 - `Supplier` fica como está (fora do PDV).
 
 ### 3.8 Campos gravados no aparelho
@@ -222,7 +238,27 @@ O servidor grava `receivedAt` e o resultado.
 
 ### Recebimento (servidor → aparelho)
 
-- Cópia mínima (3.8) com cursor por `(updatedAt, id)`, incluindo registros com `deletedAt`.
+- `GET /api/offline/snapshot?cursor=<cursor>&limit=<1..1000>` (padrão 500), com
+  `authorize("pdv.use")` e `Cache-Control: no-store`. Sem cursor é a carga completa (`reset: true`:
+  o aparelho substitui a cópia local); com o `cursor` da resposta anterior, só o que mudou. Com
+  `hasMore`, o aparelho pede a próxima página na hora. Respostas: 401 sem sessão, 403 sem permissão,
+  400 para cursor ou limite inválido, 503 se o banco falhar.
+- Cada resposta traz produtos, categorias e clientes alterados (campos de 3.8; decimais como texto
+  para não perder precisão) e, completos, os dados da loja do recibo, o caixa aberto do operador e o
+  usuário. Exclusões chegam só com o id: `{ "id": "...", "deleted": true }`.
+- **Cursor sem perdas (aprovado na #36, substitui o cursor por `(updatedAt, id)`):** o `updatedAt` é
+  gravado com o horário da consulta, não o da confirmação. Uma transação lenta (ex.: venda com vários
+  itens) que grava `updatedAt = T1` e confirma em T3 seria pulada por uma leitura em T2 que já tivesse
+  avançado o cursor além de T1. Por isso:
+  - `Product`, `Category` e `Customer` têm `syncVersion BIGINT`, preenchida por gatilho no banco em
+    todo `INSERT`/`UPDATE` com `pg_current_xact_id()` (id da transação, 64 bits, nunca reinicia).
+    Vale também para `updateMany` (baixa de estoque da venda e ajuste) e para SQL direto.
+  - A leitura roda em `REPEATABLE READ` e só entrega versões abaixo de
+    `pg_snapshot_xmin(pg_current_snapshot())`: toda transação com id menor já terminou. O que está
+    acima desse limite chega na leitura seguinte.
+  - O cursor é a posição `(syncVersion, id)` de cada tabela, opaco para o aparelho (base64url).
+  - Limite conhecido: uma transação muito longa e aberta no banco segura o limite e atrasa a
+    sincronização (não perde dados).
 - Ao aplicar mudanças recebidas, o aparelho preserva as operações pendentes e recalcula o saldo local
   (saldo recebido menos pendentes).
 

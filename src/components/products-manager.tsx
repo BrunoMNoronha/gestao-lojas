@@ -113,7 +113,7 @@ export function ProductsManager({
   const handleDeleteProduct = async (id: string, name: string) => {
     const confirmed = await askConfirm({
       title: "Excluir produto?",
-      description: `O produto "${name}" será removido do catálogo. Esta ação não pode ser desfeita.`,
+      description: `O produto "${name}" sairá do cadastro, do PDV e do catálogo. O histórico de vendas e de estoque é mantido. Esta ação não pode ser desfeita.`,
       confirmLabel: "Excluir",
       destructive: true,
     });

@@ -169,7 +169,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics | null> {
       getReceivablesSummary(),
       // Mesma regra de getLowStockProducts / isStockLow: saldo atual <= estoque mínimo
       prisma.product.count({
-        where: { currentStock: { lte: prisma.product.fields.minStock } },
+        where: { deletedAt: null, currentStock: { lte: prisma.product.fields.minStock } },
       }),
     ]);
 
