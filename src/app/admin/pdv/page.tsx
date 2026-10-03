@@ -36,7 +36,7 @@ export default async function PdvPage() {
   }
 
   // Vendas exigem caixa aberto do operador (o servidor também bloqueia em createSale)
-  if (!data.hasOpenCashRegister) {
+  if (!data.cashRegisterId) {
     return (
       <EmptyState
         fullPage
@@ -59,6 +59,7 @@ export default async function PdvPage() {
       products={data.products}
       customers={data.customers}
       storeSettings={data.storeSettings}
+      cashRegisterId={data.cashRegisterId}
     />
   );
 }
@@ -71,5 +72,6 @@ async function loadPdvData() {
     getStoreSettings(),
     getCurrentCashRegister(),
   ]);
-  return { products, customers, storeSettings, hasOpenCashRegister: !!cashRegister };
+  // A venda leva o id do caixa em que começou: se ele for fechado antes do envio, o servidor recusa
+  return { products, customers, storeSettings, cashRegisterId: cashRegister?.id ?? null };
 }

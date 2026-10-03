@@ -44,6 +44,7 @@ import { toast } from "sonner";
 import { MoneyInput } from "@/components/money-input";
 import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
 import { formatStoreDate, storeDueDate } from "@/lib/store-time";
+import { newOperationId } from "@/lib/operation-id";
 
 interface CartItem {
   productId: string;
@@ -133,9 +134,15 @@ interface PdvTerminalProps {
   products: ProductItem[];
   customers: CustomerItem[];
   storeSettings: StoreSettingsData;
+  cashRegisterId: string;
 }
 
-export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalProps) {
+export function PdvTerminal({
+  products,
+  customers,
+  storeSettings,
+  cashRegisterId,
+}: PdvTerminalProps) {
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
@@ -160,6 +167,9 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
   const [amountPaid, setAmountPaid] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Chave da tentativa de venda (issue #35): reaproveitada nos reenvios da mesma venda, para
+  // que o servidor nunca grave duas vezes; muda quando o carrinho ou o pagamento mudam.
+  const pendingOperation = useRef<{ id: string; signature: string } | null>(null);
 
   // Receipt modal
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -390,25 +400,32 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
     setLoading(true);
     setError(null);
 
+    const payload = {
+      cashRegisterId,
+      customerId: selectedCustomer?.id || null,
+      paymentMethod: selectedPayment,
+      discount: effectiveDiscount,
+      amountPaid: selectedPayment === "MONEY" ? amountPaid : undefined,
+      items: cart.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    };
+    const signature = JSON.stringify(payload);
+    if (pendingOperation.current?.signature !== signature) {
+      pendingOperation.current = { id: newOperationId(), signature };
+    }
+
     let res: Awaited<ReturnType<typeof createSale>>;
     try {
-      res = await createSale({
-        customerId: selectedCustomer?.id || null,
-        paymentMethod: selectedPayment,
-        discount: effectiveDiscount,
-        amountPaid: selectedPayment === "MONEY" ? amountPaid : undefined,
-        items: cart.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-        })),
-      });
+      res = await createSale({ operationId: pendingOperation.current.id, ...payload });
     } catch (err) {
       // The action call itself failed (network drop, server unreachable, deploy
-      // mid-request). The server may have committed before the response was lost,
-      // so keep the cart and tell the operator to check the history before retrying.
+      // mid-request). The server may have committed before the response was lost;
+      // retrying the same cart reuses the operation key, so it never records twice.
       console.error("Falha ao chamar createSale:", err);
       setError(
-        "Não foi possível confirmar a venda. Verifique a conexão. A venda pode ter sido registrada: confira o histórico antes de tentar de novo.",
+        "Não foi possível confirmar a venda. Verifique a conexão e tente de novo sem alterar o carrinho: o reenvio não duplica a venda.",
       );
       return;
     } finally {
@@ -416,6 +433,7 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
     }
 
     if (res.success && res.data) {
+      pendingOperation.current = null;
       setCompletedSale(res.data as CompletedSale);
       setCheckoutDialogOpen(false);
       setReceiptOpen(true);
