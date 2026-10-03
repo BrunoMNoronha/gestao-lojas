@@ -239,7 +239,9 @@ export function ProductsManager({
                   <TableHead>Produto</TableHead>
                   <TableHead className="hidden lg:table-cell">Código / SKU</TableHead>
                   <TableHead className="hidden md:table-cell">Categoria</TableHead>
-                  <TableHead className="hidden text-right md:table-cell">P. Custo</TableHead>
+                  {canManage && (
+                    <TableHead className="hidden text-right md:table-cell">P. Custo</TableHead>
+                  )}
                   <TableHead className="text-right">P. Venda</TableHead>
                   <TableHead className="hidden text-center sm:table-cell">Un.</TableHead>
                   <TableHead className="text-right">Estoque</TableHead>
@@ -284,9 +286,11 @@ export function ProductsManager({
                         )}
                       </TableCell>
 
-                      <TableCell className="text-muted-foreground hidden text-right md:table-cell">
-                        {formatCurrency(p.costPrice)}
-                      </TableCell>
+                      {canManage && (
+                        <TableCell className="text-muted-foreground hidden text-right md:table-cell">
+                          {p.costPrice !== undefined ? formatCurrency(p.costPrice) : "-"}
+                        </TableCell>
+                      )}
 
                       <TableCell className="text-right font-semibold">
                         {formatCurrency(p.salePrice)}

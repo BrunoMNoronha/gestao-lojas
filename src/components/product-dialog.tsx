@@ -72,7 +72,7 @@ export function ProductDialog({
         name: productToEdit.name,
         sku: productToEdit.sku || "",
         barcode: productToEdit.barcode || "",
-        costPrice: productToEdit.costPrice,
+        costPrice: productToEdit.costPrice ?? 0,
         salePrice: productToEdit.salePrice,
         unit: productToEdit.unit,
         currentStock: productToEdit.currentStock,

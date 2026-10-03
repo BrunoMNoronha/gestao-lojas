@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
 import { isHttpUrl } from "@/lib/catalog-shared";
@@ -13,7 +14,9 @@ export interface ProductItem {
   name: string;
   sku: string | null;
   barcode: string | null;
-  costPrice: number;
+  // Preço de custo: só vem do servidor para quem tem `catalog.manage` (ADMIN / MANAGER).
+  // Para os demais perfis o campo é omitido da resposta, não apenas escondido na tela.
+  costPrice?: number;
   salePrice: number;
   unit: UnitType;
   currentStock: number;
@@ -81,6 +84,7 @@ export async function getProducts(
   try {
     const authz = await authorize("catalog.view");
     if (!authz.ok) return [];
+    const canSeeCost = can(authz.user.role, "catalog.manage");
 
     const whereClause: any = {};
 
@@ -112,7 +116,7 @@ export async function getProducts(
       name: p.name,
       sku: p.sku,
       barcode: p.barcode,
-      costPrice: Number(p.costPrice),
+      ...(canSeeCost ? { costPrice: Number(p.costPrice) } : {}),
       salePrice: Number(p.salePrice),
       unit: p.unit as UnitType,
       currentStock: Number(p.currentStock),
