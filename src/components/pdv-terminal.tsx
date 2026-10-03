@@ -390,18 +390,30 @@ export function PdvTerminal({ products, customers, storeSettings }: PdvTerminalP
     setLoading(true);
     setError(null);
 
-    const res = await createSale({
-      customerId: selectedCustomer?.id || null,
-      paymentMethod: selectedPayment,
-      discount: effectiveDiscount,
-      amountPaid: selectedPayment === "MONEY" ? amountPaid : undefined,
-      items: cart.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-      })),
-    });
-
-    setLoading(false);
+    let res: Awaited<ReturnType<typeof createSale>>;
+    try {
+      res = await createSale({
+        customerId: selectedCustomer?.id || null,
+        paymentMethod: selectedPayment,
+        discount: effectiveDiscount,
+        amountPaid: selectedPayment === "MONEY" ? amountPaid : undefined,
+        items: cart.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity,
+        })),
+      });
+    } catch (err) {
+      // The action call itself failed (network drop, server unreachable, deploy
+      // mid-request). The server may have committed before the response was lost,
+      // so keep the cart and tell the operator to check the history before retrying.
+      console.error("Falha ao chamar createSale:", err);
+      setError(
+        "Não foi possível confirmar a venda. Verifique a conexão. A venda pode ter sido registrada: confira o histórico antes de tentar de novo.",
+      );
+      return;
+    } finally {
+      setLoading(false);
+    }
 
     if (res.success && res.data) {
       setCompletedSale(res.data as CompletedSale);
