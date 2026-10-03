@@ -82,7 +82,7 @@ export async function getProducts(
     const authz = await authorize("catalog.view");
     if (!authz.ok) return [];
 
-    const whereClause: any = {};
+    const whereClause: Prisma.ProductWhereInput = {};
 
     if (searchQuery && searchQuery.trim() !== "") {
       const q = searchQuery.trim();

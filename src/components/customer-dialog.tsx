@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -23,44 +23,38 @@ interface CustomerDialogProps {
   onSuccess: () => void;
 }
 
+function toFormData(customer?: CustomerItem | null): CustomerInput {
+  if (!customer) {
+    return { name: "", document: "", phone: "", email: "", address: "" };
+  }
+  return {
+    id: customer.id,
+    name: customer.name,
+    document: customer.document || "",
+    phone: customer.phone || "",
+    email: customer.email || "",
+    address: customer.address || "",
+  };
+}
+
 export function CustomerDialog({
   open,
   onOpenChange,
   customerToEdit,
   onSuccess,
 }: CustomerDialogProps) {
-  const [formData, setFormData] = useState<CustomerInput>({
-    name: "",
-    document: "",
-    phone: "",
-    email: "",
-    address: "",
-  });
+  const [formData, setFormData] = useState<CustomerInput>(() => toFormData(customerToEdit));
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (customerToEdit) {
-      setFormData({
-        id: customerToEdit.id,
-        name: customerToEdit.name,
-        document: customerToEdit.document || "",
-        phone: customerToEdit.phone || "",
-        email: customerToEdit.email || "",
-        address: customerToEdit.address || "",
-      });
-    } else {
-      setFormData({
-        name: "",
-        document: "",
-        phone: "",
-        email: "",
-        address: "",
-      });
-    }
+  // Reinicia o formulário ao abrir ou trocar o cliente editado (ajuste durante o render, sem efeito)
+  const [syncedWith, setSyncedWith] = useState({ customerToEdit, open });
+  if (syncedWith.customerToEdit !== customerToEdit || syncedWith.open !== open) {
+    setSyncedWith({ customerToEdit, open });
+    setFormData(toFormData(customerToEdit));
     setError(null);
-  }, [customerToEdit, open]);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
