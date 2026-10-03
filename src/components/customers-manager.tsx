@@ -61,7 +61,7 @@ export function CustomersManager({ initialCustomers, canDelete }: CustomersManag
   const handleDelete = async (id: string, name: string) => {
     const confirmed = await askConfirm({
       title: "Excluir cliente?",
-      description: `O cliente "${name}" será removido. Esta ação não pode ser desfeita.`,
+      description: `O cliente "${name}" sairá do cadastro. O histórico de vendas é mantido. Esta ação não pode ser desfeita.`,
       confirmLabel: "Excluir",
       destructive: true,
     });

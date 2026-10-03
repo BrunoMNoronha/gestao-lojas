@@ -272,8 +272,8 @@ async function persistSale(userId: string, sale: ParsedSale): Promise<string> {
 
     let customer: { id: string; name: string } | null = null;
     if (sale.customerId) {
-      customer = await tx.customer.findUnique({
-        where: { id: sale.customerId },
+      customer = await tx.customer.findFirst({
+        where: { id: sale.customerId, deletedAt: null },
         select: { id: true, name: true },
       });
       if (!customer) {
@@ -283,7 +283,7 @@ async function persistSale(userId: string, sale: ParsedSale): Promise<string> {
 
     const productIds = [...sale.quantities.keys()];
     const products = await tx.product.findMany({
-      where: { id: { in: productIds } },
+      where: { id: { in: productIds }, deletedAt: null },
       select: { id: true, name: true, unit: true, salePrice: true },
     });
     const productsById = new Map(products.map((p) => [p.id, p]));

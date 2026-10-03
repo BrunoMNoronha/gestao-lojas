@@ -83,17 +83,28 @@ model User {
   syncOperations     SyncOperation[]
 }
 
+// Exclusão lógica (deletedAt) e versão de sincronização (syncVersion) em Category, Product e
+// Customer: issue #36, docs/OFFLINE.md seções 3.7 e 5. A unicidade de nome, SKU, código de barras e
+// documento vale só entre registros ativos, por índices únicos parciais criados na migration 0007
+// (o Prisma 6 não os declara e também não tenta removê-los). syncVersion é preenchida por gatilho
+// no banco com o id da transação que gravou a linha; nunca é definida pela aplicação.
 model Category {
-  id       String    @id @default(cuid())
-  name     String    @unique
-  products Product[]
+  id          String    @id @default(cuid())
+  name        String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  syncVersion BigInt    @default(0)
+  products    Product[]
+
+  @@index([syncVersion, id])
 }
 
 model Product {
   id             String          @id @default(cuid())
   name           String
-  sku            String?         @unique
-  barcode        String?         @unique
+  sku            String?
+  barcode        String?
   costPrice      Decimal         @db.Decimal(10, 2)
   salePrice      Decimal         @db.Decimal(10, 2)
   unit           Unit            @default(UN)
@@ -107,21 +118,43 @@ model Product {
   imageUrl       String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+  syncVersion    BigInt          @default(0)
   saleItems      SaleItem[]
   stockMovements StockMovement[]
+  priceHistory   ProductPrice[]
+
+  @@index([syncVersion, id])
+}
+
+// Histórico do preço de venda (issue #36, docs/OFFLINE.md seção 3.1): uma linha por preço, gravada
+// por gatilho no banco a cada cadastro ou alteração de salePrice. O preço vigente num instante é o
+// da linha mais recente com validFrom <= instante. Usado na sincronização de vendas offline (#38).
+model ProductPrice {
+  id        BigInt   @id @default(autoincrement())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  salePrice Decimal  @db.Decimal(10, 2)
+  validFrom DateTime @default(now())
+
+  @@index([productId, validFrom])
 }
 
 model Customer {
   id          String       @id @default(cuid())
   name        String
-  document    String?      @unique
+  document    String?
   phone       String?
   email       String?
   address     String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  deletedAt   DateTime?
+  syncVersion BigInt       @default(0)
   sales       Sale[]
   receivables Receivable[]
+
+  @@index([syncVersion, id])
 }
 
 model Sale {

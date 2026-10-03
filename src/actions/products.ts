@@ -71,6 +71,12 @@ function parseCatalogFields(data: ProductInput): CatalogFields {
   return { ok: true, showInCatalog: data.showInCatalog === true, description, imageUrl };
 }
 
+const PRODUCT_NOT_FOUND = "Produto não encontrado. Ele pode ter sido excluído; atualize a tela.";
+
+// update com `where: { id, deletedAt: null }` lança P2025 quando o produto não existe ou foi excluído
+const isNotFound = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025";
+
 function revalidateProductPaths() {
   revalidatePath("/admin/produtos");
   revalidatePath("/admin/estoque");
@@ -86,7 +92,8 @@ export async function getProducts(
     if (!authz.ok) return [];
     const canSeeCost = can(authz.user.role, "catalog.manage");
 
-    const whereClause: Prisma.ProductWhereInput = {};
+    // Produtos excluídos (exclusão lógica) não aparecem nas listagens
+    const whereClause: Prisma.ProductWhereInput = { deletedAt: null };
 
     if (searchQuery && searchQuery.trim() !== "") {
       const q = searchQuery.trim();
@@ -152,8 +159,8 @@ export async function createProduct(data: ProductInput) {
     const barcode = data.barcode?.trim() || null;
 
     if (barcode) {
-      const existingBarcode = await prisma.product.findUnique({
-        where: { barcode },
+      const existingBarcode = await prisma.product.findFirst({
+        where: { barcode, deletedAt: null },
       });
       if (existingBarcode) {
         return { success: false, error: "Já existe um produto com este Código de Barras." };
@@ -161,8 +168,8 @@ export async function createProduct(data: ProductInput) {
     }
 
     if (sku) {
-      const existingSku = await prisma.product.findUnique({
-        where: { sku },
+      const existingSku = await prisma.product.findFirst({
+        where: { sku, deletedAt: null },
       });
       if (existingSku) {
         return { success: false, error: "Já existe um produto com este SKU." };
@@ -247,6 +254,7 @@ export async function updateProduct(id: string, data: ProductInput) {
       const existingBarcode = await prisma.product.findFirst({
         where: {
           barcode,
+          deletedAt: null,
           NOT: { id },
         },
       });
@@ -259,6 +267,7 @@ export async function updateProduct(id: string, data: ProductInput) {
       const existingSku = await prisma.product.findFirst({
         where: {
           sku,
+          deletedAt: null,
           NOT: { id },
         },
       });
@@ -268,7 +277,7 @@ export async function updateProduct(id: string, data: ProductInput) {
     }
 
     const updatedProduct = await prisma.product.update({
-      where: { id },
+      where: { id, deletedAt: null },
       data: {
         name,
         sku,
@@ -288,6 +297,7 @@ export async function updateProduct(id: string, data: ProductInput) {
     revalidateProductPaths();
     return { success: true, data: { id: updatedProduct.id } };
   } catch (error) {
+    if (isNotFound(error)) return { success: false, error: PRODUCT_NOT_FOUND };
     console.error("Erro ao atualizar produto:", error);
     return { success: false, error: "Falha ao atualizar o produto." };
   }
@@ -298,18 +308,18 @@ export async function deleteProduct(id: string) {
     const authz = await authorize("catalog.manage");
     if (!authz.ok) return { success: false, error: authz.error };
 
-    await prisma.product.delete({
-      where: { id },
+    // Exclusão lógica: o produto some das listagens e do catálogo, e o PDV offline recebe a
+    // exclusão na próxima sincronização. Vendas e movimentações continuam com o histórico.
+    await prisma.product.update({
+      where: { id, deletedAt: null },
+      data: { deletedAt: new Date() },
     });
 
     revalidateProductPaths();
     return { success: true };
   } catch (error) {
+    if (isNotFound(error)) return { success: false, error: PRODUCT_NOT_FOUND };
     console.error("Erro ao excluir produto:", error);
-    return {
-      success: false,
-      error:
-        "Falha ao excluir o produto. Verifique se existem vendas ou movimentações de estoque associadas.",
-    };
+    return { success: false, error: "Falha ao excluir o produto." };
   }
 }

@@ -123,7 +123,7 @@ export const getCatalogStore = cache(async (): Promise<CatalogStore | null> => {
 /** Página de produtos visíveis com busca, categoria, "somente disponíveis" e ordenação. */
 export async function getCatalogProducts(filters: CatalogFilters): Promise<CatalogPage | null> {
   try {
-    const where: Prisma.ProductWhereInput = { showInCatalog: true };
+    const where: Prisma.ProductWhereInput = { showInCatalog: true, deletedAt: null };
     if (filters.q) {
       where.OR = [
         { name: { contains: filters.q, mode: "insensitive" } },
@@ -164,7 +164,7 @@ export async function getCatalogProducts(filters: CatalogFilters): Promise<Catal
 export async function getCatalogCategories(): Promise<{ id: string; name: string }[]> {
   try {
     return await prisma.category.findMany({
-      where: { products: { some: { showInCatalog: true } } },
+      where: { deletedAt: null, products: { some: { showInCatalog: true, deletedAt: null } } },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     });
@@ -178,7 +178,7 @@ export async function getCatalogCategories(): Promise<{ id: string; name: string
 export const getCatalogProduct = cache(async (id: string): Promise<CatalogProduct | null> => {
   try {
     const row = await prisma.product.findFirst({
-      where: { id, showInCatalog: true },
+      where: { id, showInCatalog: true, deletedAt: null },
       select: productSelect,
     });
     return row ? toCatalogProduct(row) : null;
