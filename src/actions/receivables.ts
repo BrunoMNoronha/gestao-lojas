@@ -72,7 +72,7 @@ export async function getReceivables(
         where,
         include: {
           customer: { select: { name: true } },
-          sale: { select: { code: true, createdAt: true } },
+          sale: { select: { code: true, occurredAt: true } },
           payments: {
             include: { user: { select: { name: true } } },
             orderBy: { createdAt: "asc" },
@@ -92,7 +92,7 @@ export async function getReceivables(
         customerId: r.customerId,
         customerName: r.customer.name,
         saleCode: r.sale.code,
-        saleDate: r.sale.createdAt.toISOString(),
+        saleDate: r.sale.occurredAt.toISOString(),
         amount: r.amount.toNumber(),
         paidAmount: r.paidAmount.toNumber(),
         balance: r.amount.sub(r.paidAmount).toNumber(),

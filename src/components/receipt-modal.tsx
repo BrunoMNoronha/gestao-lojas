@@ -21,6 +21,7 @@ export interface CompletedSale {
   paymentMethod: string;
   amountPaid: number;
   change: number;
+  occurredAt: string;
   createdAt: string;
   userName: string;
   customerName: string;
@@ -58,7 +59,7 @@ export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: Receip
     window.print();
   };
 
-  const formattedDate = new Date(sale.createdAt).toLocaleString("pt-BR", {
+  const formattedDate = new Date(sale.occurredAt).toLocaleString("pt-BR", {
     dateStyle: "short",
     timeStyle: "medium",
   });
