@@ -1,3 +1,4 @@
+import { CART_DRAFT_ID } from "@/lib/offline/cart-draft";
 import {
   getDevice,
   readMeta,
@@ -56,7 +57,11 @@ export async function recordSale(userId: string, draft: PdvSaleDraft): Promise<L
       cashRegisterId: existing.request.cashRegisterId,
       now: new Date(existing.request.occurredAt),
     });
-    if (JSON.stringify(request) === JSON.stringify(existing.request)) return existing;
+    if (JSON.stringify(request) === JSON.stringify(existing.request)) {
+      // O carrinho desta venda já foi vendido: o rascunho não volta (#53)
+      await db.drafts.delete(CART_DRAFT_ID);
+      return existing;
+    }
     throw new SaleDraftError("Já existe outra venda com esta chave neste aparelho.");
   }
 
@@ -86,8 +91,10 @@ export async function recordSale(userId: string, draft: PdvSaleDraft): Promise<L
     now.getTime(),
   );
   // Número de ordem e gravação na mesma transação: duas abas gravando juntas nunca repetem o
-  // número. A fila é pequena (finalizadas saem em 24 h), então ler todas não pesa
-  await db.transaction("rw", db.operations, async () => {
+  // número. A fila é pequena (finalizadas saem em 24 h), então ler todas não pesa. O rascunho do
+  // carrinho sai na mesma transação (#53): se a página cair depois, o carrinho vendido não volta;
+  // se cair antes, nada foi gravado e o rascunho continua com a mesma chave
+  await db.transaction("rw", [db.operations, db.drafts], async () => {
     let last = 0;
     await db.operations.each((row) => {
       last = Math.max(last, row.seq ?? 0);
@@ -95,6 +102,7 @@ export async function recordSale(userId: string, draft: PdvSaleDraft): Promise<L
     op.seq = last + 1;
     // add (e não put): a mesma chave nunca sobrescreve uma venda já gravada
     await db.operations.add(op);
+    await db.drafts.delete(CART_DRAFT_ID);
   });
   await refreshPendingCount(userId).catch((error) =>
     console.error("Não foi possível atualizar a contagem de pendências:", error),

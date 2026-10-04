@@ -1,17 +1,23 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { SerwistProvider } from "@serwist/turbopack/react";
 import { Loader2 } from "lucide-react";
 import { PdvTerminal, type PdvCustomer, type PdvProduct } from "@/components/pdv-terminal";
-import { readMeta, userDb } from "@/lib/offline/db";
+import { loadCartDraft, readMeta, saveCartDraft, userDb } from "@/lib/offline/db";
+import {
+  restoreCartDraft,
+  type CartDraftInput,
+  type RestoreResult,
+} from "@/lib/offline/cart-draft";
 import { recordSale } from "@/lib/offline/queue";
 import {
   availableStock,
   reservedQuantities,
   SaleDraftError,
   toCompletedSale,
+  type PdvPaymentMethod,
   type PdvSaleDraft,
   type SubmitSaleResult,
 } from "@/lib/offline/sale-operation";
@@ -35,6 +41,9 @@ const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompar
 // disso o recibo sai provisório e o envio continua em segundo plano
 const SEND_WAIT_MS = 4_000;
 const wait = (ms: number) => new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+
+// Formas de pagamento do /pdv: o Fiado não é oferecido sem internet (docs/OFFLINE.md seção 3.4)
+const PAYMENT_METHODS: PdvPaymentMethod[] = ["MONEY", "PIX", "CREDIT_CARD", "DEBIT_CARD"];
 
 function saleErrorMessage(error: unknown): string {
   if (error instanceof SaleDraftError) return `${error.message} O carrinho foi mantido.`;
@@ -107,6 +116,40 @@ function LocalTerminal({
   );
   const storeSettings = useMemo(() => toStoreSettings(data?.store), [data?.store]);
 
+  // Carrinho em montagem guardado no aparelho (#53): lido uma vez, quando a cópia local abre, e
+  // conferido com ela (produto excluído, preço mudado, quantidade inválida, saldo)
+  const [restore, setRestore] = useState<RestoreResult | null>(null);
+  const restoreStarted = useRef(false);
+  const loaded = !!data;
+  useEffect(() => {
+    if (!loaded || restoreStarted.current) return;
+    restoreStarted.current = true;
+    loadCartDraft(userId)
+      .catch((error) => {
+        console.error("Não foi possível ler o carrinho guardado:", error);
+        return null;
+      })
+      .then((draft) =>
+        setRestore(
+          restoreCartDraft(draft, {
+            products,
+            customers,
+            paymentMethods: PAYMENT_METHODS,
+            now: Date.now(),
+          }),
+        ),
+      );
+  }, [loaded, userId, products, customers]);
+  const saveDraft = useCallback(
+    (draft: CartDraftInput | null) => saveCartDraft(userId, draft),
+    [userId],
+  );
+  const cartDraft = useMemo(
+    () =>
+      restore ? { restored: restore.cart, notices: restore.notices, save: saveDraft } : undefined,
+    [restore, saveDraft],
+  );
+
   const submitSale = useCallback(
     async (draft: PdvSaleDraft): Promise<SubmitSaleResult> => {
       let id: string;
@@ -129,7 +172,7 @@ function LocalTerminal({
     [db, sendAfterSale, userId],
   );
 
-  if (!data || !data.cashRegister) return <LoadingState />;
+  if (!data || !data.cashRegister || !cartDraft) return <LoadingState />;
   return (
     <PdvTerminal
       products={products}
@@ -138,6 +181,7 @@ function LocalTerminal({
       cashRegisterId={data.cashRegister.id}
       offline={!online}
       submitSale={submitSale}
+      cartDraft={cartDraft}
       className="lg:h-[calc(100svh-8.5rem)]"
     />
   );
@@ -183,6 +227,7 @@ function OfflinePdv() {
         {view.kind === "blocked" && <BlockedState reason={view.reason} onRetry={pdv.retry} />}
         {view.kind === "ready" && (
           <LocalTerminal
+            key={view.userId}
             userId={view.userId}
             online={pdv.online}
             sendAfterSale={pdv.sendAfterSale}

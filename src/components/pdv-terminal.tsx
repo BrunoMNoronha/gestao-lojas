@@ -51,6 +51,7 @@ import {
   type PdvSaleDraft,
   type SubmitSaleResult,
 } from "@/lib/offline/sale-operation";
+import type { CartDraftInput, RestoredCart } from "@/lib/offline/cart-draft";
 
 interface CartItem {
   productId: string;
@@ -93,6 +94,9 @@ const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
 const formatQuantity = (value: number, unit: string) =>
   formatNumber(value, isIntegerUnit(unit) ? 0 : 3);
+
+// Gravações seguidas do rascunho do carrinho viram uma só (não trava a digitação)
+const DRAFT_SAVE_DELAY_MS = 300;
 
 interface QuantityInputProps {
   item: CartItem;
@@ -155,6 +159,14 @@ interface PdvTerminalProps {
   submitSale?: (draft: PdvSaleDraft) => Promise<SubmitSaleResult>;
   // Depois da venda: por padrão recarrega os dados da página (router.refresh)
   onSaleCompleted?: () => void;
+  // Carrinho em montagem guardado no aparelho (/pdv, issue #53): começa pelo rascunho já
+  // conferido com a cópia local e grava cada mudança. Sem ela, o carrinho fica só na memória
+  cartDraft?: {
+    restored: RestoredCart | null;
+    // O que mudou no carrinho guardado (ou por que foi descartado)
+    notices: string[];
+    save: (draft: CartDraftInput | null) => Promise<void>;
+  };
   className?: string;
 }
 
@@ -166,35 +178,47 @@ export function PdvTerminal({
   offline = false,
   submitSale,
   onSaleCompleted,
+  cartDraft,
   className,
 }: PdvTerminalProps) {
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
 
+  // Carrinho guardado no aparelho (só o estado inicial; depois, o terminal manda)
+  const restored = cartDraft?.restored ?? null;
+
   // Cart state
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [discount, setDiscount] = useState(0);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [cart, setCart] = useState<CartItem[]>(() => restored?.items ?? []);
+  const [discount, setDiscount] = useState(() => restored?.discount ?? 0);
+  const [notice, setNotice] = useState<string | null>(() =>
+    cartDraft?.notices.length ? cartDraft.notices.join(" ") : null,
+  );
 
   // Search & product suggestions
   const [searchQuery, setSearchQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Customer selection
-  const [selectedCustomer, setSelectedCustomer] = useState<PdvCustomer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<PdvCustomer | null>(() =>
+    restored?.customer ? (customers.find((c) => c.id === restored.customer!.id) ?? null) : null,
+  );
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
 
   // Payment / Checkout
-  const [checkoutDialogOpen, setCheckoutDialogOpen] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<PaymentMethodKey>("MONEY");
-  const [amountPaid, setAmountPaid] = useState(0);
+  const [checkoutDialogOpen, setCheckoutDialogOpen] = useState(() => !!restored?.checkout);
+  const [selectedPayment, setSelectedPayment] = useState<PaymentMethodKey>(
+    () => restored?.checkout?.paymentMethod ?? "MONEY",
+  );
+  const [amountPaid, setAmountPaid] = useState(() => restored?.checkout?.amountPaid ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Chave da tentativa de venda (issue #35): reaproveitada nos reenvios da mesma venda, para
   // que o servidor nunca grave duas vezes; muda quando o carrinho ou o pagamento mudam.
-  const pendingOperation = useRef<{ id: string; signature: string } | null>(null);
+  const pendingOperation = useRef<{ id: string; signature: string } | null>(
+    restored?.operation ?? null,
+  );
 
   // Receipt modal
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -219,6 +243,98 @@ export function PdvTerminal({
   // Focus search on mount and after sale
   useEffect(() => {
     searchInputRef.current?.focus();
+  }, []);
+
+  // Rascunho do carrinho (issue #53): cada mudança é gravada depois de uma pausa curta; esvaziar
+  // o carrinho apaga na hora. Falha ao gravar não bloqueia a venda: avisa uma vez.
+  const saveDraft = cartDraft?.save;
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Rascunho ainda não gravado (undefined: nada pendente; null: apagar)
+  const unsavedDraft = useRef<CartDraftInput | null | undefined>(undefined);
+  const draftFailed = useRef(false);
+
+  const writeDraft = useCallback(
+    async (draft: CartDraftInput | null) => {
+      if (!saveDraft) return;
+      try {
+        await saveDraft(draft);
+        draftFailed.current = false;
+      } catch (err) {
+        console.error("Falha ao guardar o carrinho no aparelho:", err);
+        if (!draftFailed.current) {
+          draftFailed.current = true;
+          toast.warning(
+            "Não foi possível guardar o carrinho neste aparelho. A venda funciona normalmente, mas o carrinho se perde se a página recarregar.",
+          );
+        }
+      }
+    },
+    [saveDraft],
+  );
+
+  const flushDraft = useCallback(() => {
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    const draft = unsavedDraft.current;
+    unsavedDraft.current = undefined;
+    return draft === undefined ? Promise.resolve() : writeDraft(draft);
+  }, [writeDraft]);
+
+  const draftOf = useCallback(
+    (): CartDraftInput | null =>
+      cart.length === 0 && !selectedCustomer
+        ? null
+        : {
+            items: cart.map(({ productId, name, unit, barcode, quantity, unitPrice }) => ({
+              productId,
+              name,
+              unit,
+              barcode,
+              quantity,
+              unitPrice,
+            })),
+            customer: selectedCustomer
+              ? {
+                  id: selectedCustomer.id,
+                  name: selectedCustomer.name,
+                  document: selectedCustomer.document,
+                }
+              : null,
+            discount,
+            checkout: checkoutDialogOpen ? { paymentMethod: selectedPayment, amountPaid } : null,
+            operation: pendingOperation.current,
+          },
+    [cart, selectedCustomer, discount, checkoutDialogOpen, selectedPayment, amountPaid],
+  );
+
+  // Carrinho restaurado sem mudanças já está gravado: regravar renovaria a validade de 12 h, que
+  // conta da última mudança feita pelo operador
+  const skipFirstSave = useRef(!!restored && !cartDraft?.notices.length);
+  useEffect(() => {
+    if (!saveDraft) return;
+    if (skipFirstSave.current) {
+      skipFirstSave.current = false;
+      return;
+    }
+    const draft = draftOf();
+    unsavedDraft.current = draft;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = null;
+    if (draft === null) void flushDraft();
+    else draftTimer.current = setTimeout(() => void flushDraft(), DRAFT_SAVE_DELAY_MS);
+  }, [saveDraft, draftOf, flushDraft]);
+
+  // Ao sair da tela (troca de painel, encerramento), grava o que estiver pendente
+  const flushOnUnmount = useRef(flushDraft);
+  useEffect(() => {
+    flushOnUnmount.current = flushDraft;
+  }, [flushDraft]);
+  useEffect(() => () => void flushOnUnmount.current(), []);
+
+  // Carrinho restaurado sem mudanças: avisa de leve (as mudanças ficam no aviso fixo)
+  const restoredOnMount = useRef(!!restored && !cartDraft?.notices.length);
+  useEffect(() => {
+    if (restoredOnMount.current) toast.info("Carrinho da venda em andamento restaurado.");
   }, []);
 
   // Product suggestions filtered
@@ -442,6 +558,15 @@ export function PdvTerminal({
     }
 
     if (submitSale) {
+      // O rascunho guarda a chave antes de a venda ser gravada: se a página cair no meio, o
+      // carrinho volta com a mesma chave e a nova tentativa nunca vira uma segunda venda. A venda
+      // apaga o rascunho na mesma transação em que é gravada
+      if (saveDraft) {
+        unsavedDraft.current = undefined;
+        if (draftTimer.current) clearTimeout(draftTimer.current);
+        draftTimer.current = null;
+        await writeDraft(draftOf());
+      }
       await finalizeWith(submitSale, pendingOperation.current.id);
       return;
     }

@@ -189,7 +189,8 @@ test("banco local da versão anterior com a fila cheia: o upgrade preserva as ve
 
   // Sai do /pdv (fecha o banco local) e volta a estrutura para a da versão anterior
   await page.goto("/offline");
-  expect(await downgradeLocalDbToV1(page, store.seller.id)).toBe(20);
+  // Versão atual: 3 do Dexie (30 no IndexedDB), com o rascunho do carrinho (#53)
+  expect(await downgradeLocalDbToV1(page, store.seller.id)).toBe(30);
 
   // Ainda sem rede, o /pdv abre e o Dexie migra o banco: a venda continua pendente e a linha
   // antiga sem dados fica visível como recusada, nunca apagada

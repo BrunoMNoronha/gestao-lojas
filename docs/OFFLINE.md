@@ -483,6 +483,30 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
   nunca recebeu vendas antes da #38) vira `rejected`, visível, em vez de ser apagada.
 - O aparelho pede `navigator.storage.persist()` na preparação. Falha de gravação ou de cota **impede**
   confirmar a venda localmente e mantém o carrinho.
+- **Rascunho do carrinho (#53, versão 3 do banco do operador):** a tabela `drafts` guarda uma linha
+  com o carrinho em montagem no `/pdv`: itens (com o preço exibido), cliente, desconto, o pagamento
+  escolhido quando o "Finalizar Venda" está aberto e a chave da tentativa de venda
+  (`src/lib/offline/cart-draft.ts` e `loadCartDraft`/`saveCartDraft` em `db.ts`). A versão 3 só
+  cria a tabela, sem upgrade: a fila não é tocada (teste em `tests/unit/offline-cart-draft.test.ts`).
+  - O terminal grava cada mudança depois de 300 ms sem mexer; esvaziar o carrinho apaga na hora.
+    Falha ao gravar o rascunho não bloqueia a venda: avisa uma vez.
+  - **Sem venda duplicada:** ao finalizar, o rascunho é gravado com a chave da venda e só então a
+    venda é registrada. O `recordSale` grava a venda e apaga o rascunho **na mesma transação**: se a
+    página cair depois, o carrinho vendido não volta; se cair antes, ele volta com a mesma chave e a
+    nova tentativa devolve a venda já gravada. Um rascunho cuja chave já está na fila nunca é
+    gravado nem restaurado (cobre uma gravação atrasada ou de outra aba).
+  - **Ao reabrir o `/pdv`**, com ou sem conexão, o rascunho é conferido com a cópia local: produto
+    excluído sai do carrinho; preço mudado passa a ser o atual (a venda ainda não aconteceu, então a
+    regra 3.1 não se aplica); quantidade fracionada em produto por unidade e quantidade acima do
+    saldo disponível são ajustadas, ou o item sai; cliente que não está mais na cópia sai da venda.
+    Cada mudança aparece num aviso fixo, a chave da tentativa é descartada e o pagamento não reabre
+    sozinho. Sem mudanças, o carrinho volta como estava, inclusive com o "Finalizar Venda" aberto.
+  - **Decisões (recomendações da issue, aprovadas pelo responsável em 04/10/2026):** (1) "Sair",
+    "Encerrar neste aparelho" e a troca de usuário apagam o rascunho junto com a cópia; (2) rascunho
+    com mais de 12 h (a validade da autorização, 3.5) é descartado ao abrir, com aviso; (3) o
+    `/admin/pdv` não guarda rascunho: ele não tem banco local preparado.
+  - Um rascunho por operador e aparelho. Duas abas do `/pdv` do mesmo operador gravam no mesmo
+    rascunho (vale a última mudança); vários carrinhos ao mesmo tempo ficam fora (#53).
 
 ### 6.4 `experimental.useOffline`: não usar agora
 
@@ -515,7 +539,7 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
   de encerrar a sessão; o painel (`OfflineUserGuard`) e o `/pdv` (pelo `ping`) apagam a cópia do
   operador anterior quando outro usuário entra sem que ele tenha saído. Sem conexão, "Encerrar neste
   aparelho" apaga a cópia local. Sem fila, o banco do operador é removido; com fila, ficam só as
-  operações.
+  operações. O rascunho do carrinho em montagem (#53) sai junto com a cópia.
 - **Senha nunca é guardada.** A sessão continua no cookie `HttpOnly` do Auth.js; o cache não vale
   como autorização no servidor.
 - **Limite assumido:** quem tem acesso físico ao aparelho e à conta do sistema operacional consegue ler
@@ -569,17 +593,18 @@ página), por isso a versão nova é simulada no servidor. É o mesmo build com 
 e do `/offline`: o navegador instala o Service Worker novo e guarda as páginas de novo. A troca
 dos arquivos `_next/static` entre dois builds diferentes fica para a homologação.
 
-| Arquivo                    | Cenários                                                                                                                                 |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `service-worker.spec.ts`   | `/pdv` preparado recarrega sem rede; painel sem rede mostra a página offline                                                             |
-| `offline-sales.spec.ts`    | vender sem rede, recarregar, reconectar e comparar vendas/itens/estoque/caixa/recebíveis; reconexão intermitente                         |
-| `network-failures.spec.ts` | resposta perdida depois da gravação; servidor fora do ar com internet; lote processado em parte                                          |
-| `business-rules.spec.ts`   | dois terminais com o último saldo; preço alterado; caixa fechado no servidor                                                             |
-| `users-sessions.spec.ts`   | operador desativado (envio assistido pelo gerente); troca de usuário com fila; sessão expirada                                           |
-| `storage-failures.spec.ts` | sem espaço no aparelho e erro do IndexedDB: sem recibo, carrinho mantido e uma única venda na nova tentativa                             |
-| `app-update.spec.ts`       | Service Worker novo com a fila cheia ("Atualizar o app"); banco local da versão anterior migrado com a fila                              |
-| `stock-query.spec.ts`      | consulta de estoque sem rede: saldo menos pendentes, estoque baixo, carrinho mantido, aviso de dados antigos, link só com `stock.manage` |
-| `camera-scanner.spec.ts`   | sem rede, a câmera lê o código (ZXing em WASM do cache do Service Worker) e a venda segue pela fila                                      |
+| Arquivo                    | Cenários                                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `service-worker.spec.ts`   | `/pdv` preparado recarrega sem rede; painel sem rede mostra a página offline                                                                                        |
+| `offline-sales.spec.ts`    | vender sem rede, recarregar, reconectar e comparar vendas/itens/estoque/caixa/recebíveis; reconexão intermitente                                                    |
+| `network-failures.spec.ts` | resposta perdida depois da gravação; servidor fora do ar com internet; lote processado em parte                                                                     |
+| `business-rules.spec.ts`   | dois terminais com o último saldo; preço alterado; caixa fechado no servidor                                                                                        |
+| `users-sessions.spec.ts`   | operador desativado (envio assistido pelo gerente); troca de usuário com fila; sessão expirada                                                                      |
+| `storage-failures.spec.ts` | sem espaço no aparelho e erro do IndexedDB: sem recibo, carrinho mantido e uma única venda na nova tentativa                                                        |
+| `app-update.spec.ts`       | Service Worker novo com a fila cheia ("Atualizar o app"); banco local da versão anterior migrado com a fila                                                         |
+| `stock-query.spec.ts`      | consulta de estoque sem rede: saldo menos pendentes, estoque baixo, carrinho mantido, aviso de dados antigos, link só com `stock.manage`                            |
+| `cart-draft.spec.ts`       | carrinho em montagem volta ao recarregar com e sem rede (itens, cliente, desconto, pagamento) e vira uma única venda; produto excluído e preço alterado geram aviso |
+| `camera-scanner.spec.ts`   | sem rede, a câmera lê o código (ZXing em WASM do cache do Service Worker) e a venda segue pela fila                                                                 |
 
 Encontrado pela suíte (corrigido na #39): usuário desativado com o cookie ainda válido ficava em
 laço de redirecionamento entre `/login` e `/` (o navegador desistia com erro). Agora o servidor
@@ -598,24 +623,22 @@ Camadas:
 - **Homologação:** no ambiente alvo (Vercel + Neon), com aparelho real. **Nenhum item foi
   homologado por esta suíte**: o roteiro de conferência de produção está no `docs/DEPLOY.md`.
 
-| Critério da #33                                                                      | Unidade                                          | Integração                                                     | Navegador                                                          | Homologação |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
-| Preparar, cortar a rede, recarregar, consultar e vender; defasagem e bloqueios       | Autorização vencida não grava                    | Preparação, autorização de 12 h, recusas (`offline-device`)    | `service-worker`, `offline-sales`, `camera-scanner`, `stock-query` | Pendente    |
-| Vendas pendentes sobrevivem a recarregar; novas vendas descontam as pendentes        | Saldo reservado sem erro de ponto flutuante      | —                                                              | `offline-sales` (recarga e saldo reservado), `app-update`          | Pendente    |
-| Carrinho em montagem sobrevive a fechar e reabrir                                    | —                                                | —                                                              | **Lacuna**: o carrinho só existe na memória da página (ver abaixo) | —           |
-| Uma única venda: resposta perdida, cliques repetidos, duas abas, lote repetido       | Trava entre abas; venda "sincronizando" retomada | Mesma chave, chamadas simultâneas, lote repetido               | `network-failures`, `offline-sales` (reconexão intermitente)       | Pendente    |
-| Atualizações e exclusões chegam sem apagar pendentes                                 | Limpeza só das finalizadas e refletidas          | Incremental, exclusões, cursor sem perdas (`offline-snapshot`) | `business-rules` (preço alterado)                                  | Pendente    |
-| Preço alterado, produto removido, estoque disputado, caixa fechado, Fiado bloqueado  | —                                                | Todas as políticas (`offline-sync`, `offline-reconciliation`)  | Preço, dois terminais e caixa fechado (`business-rules`)           | Pendente    |
-| Sessão expirada, operador inativo ou sem permissão; autoria e isolamento             | Fila do operador e envio assistido               | 401/403, envio assistido com a autoria original                | `users-sessions`                                                   | Pendente    |
-| Dinheiro, desconto/troco, unidades inteiras e fracionadas, datas                     | Arredondamento como o servidor                   | Precisão de valores e quantidades; data limitada à validade    | `offline-sales` (UN e KG)                                          | Pendente    |
-| Cota, banco indisponível, atualização do app, falha intermediária: sem falso sucesso | Falha de rede é recuperável                      | Falha no meio desfaz tudo; 503 com o banco fora                | `storage-failures`, `network-failures`, `app-update`               | Pendente    |
-| Fluxos online continuam funcionando                                                  | —                                                | `createSale` com idempotência e autorização (`sales-action`)   | —                                                                  | Pendente    |
+| Critério da #33                                                                      | Unidade                                                                  | Integração                                                     | Navegador                                                          | Homologação |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
+| Preparar, cortar a rede, recarregar, consultar e vender; defasagem e bloqueios       | Autorização vencida não grava                                            | Preparação, autorização de 12 h, recusas (`offline-device`)    | `service-worker`, `offline-sales`, `camera-scanner`, `stock-query` | Pendente    |
+| Vendas pendentes sobrevivem a recarregar; novas vendas descontam as pendentes        | Saldo reservado sem erro de ponto flutuante                              | —                                                              | `offline-sales` (recarga e saldo reservado), `app-update`          | Pendente    |
+| Carrinho em montagem sobrevive a fechar e reabrir                                    | Rascunho gravado e apagado junto com a venda; atualização 2 → 3 com fila | —                                                              | `cart-draft` (com e sem rede, venda única, avisos)                 | Pendente    |
+| Uma única venda: resposta perdida, cliques repetidos, duas abas, lote repetido       | Trava entre abas; venda "sincronizando" retomada                         | Mesma chave, chamadas simultâneas, lote repetido               | `network-failures`, `offline-sales` (reconexão intermitente)       | Pendente    |
+| Atualizações e exclusões chegam sem apagar pendentes                                 | Limpeza só das finalizadas e refletidas                                  | Incremental, exclusões, cursor sem perdas (`offline-snapshot`) | `business-rules` (preço alterado)                                  | Pendente    |
+| Preço alterado, produto removido, estoque disputado, caixa fechado, Fiado bloqueado  | —                                                                        | Todas as políticas (`offline-sync`, `offline-reconciliation`)  | Preço, dois terminais e caixa fechado (`business-rules`)           | Pendente    |
+| Sessão expirada, operador inativo ou sem permissão; autoria e isolamento             | Fila do operador e envio assistido                                       | 401/403, envio assistido com a autoria original                | `users-sessions`                                                   | Pendente    |
+| Dinheiro, desconto/troco, unidades inteiras e fracionadas, datas                     | Arredondamento como o servidor                                           | Precisão de valores e quantidades; data limitada à validade    | `offline-sales` (UN e KG)                                          | Pendente    |
+| Cota, banco indisponível, atualização do app, falha intermediária: sem falso sucesso | Falha de rede é recuperável                                              | Falha no meio desfaz tudo; 503 com o banco fora                | `storage-failures`, `network-failures`, `app-update`               | Pendente    |
+| Fluxos online continuam funcionando                                                  | —                                                                        | `createSale` com idempotência e autorização (`sales-action`)   | —                                                                  | Pendente    |
 
-**Lacuna encontrada no levantamento da parte (b):** o carrinho que o operador está montando (antes
-de "Finalizar Venda") fica só no estado do React (`pdv-terminal.tsx`). Recarregar ou fechar a aba
-perde os itens. Venda nenhuma se perde, porque a venda só existe depois de gravada na fila. Mas o
-critério da #33 fala em "carrinho e vendas pendentes" e precisa de uma issue própria (guardar o
-rascunho no banco do operador).
+**Lacuna encontrada no levantamento da parte (b), resolvida na #53:** o carrinho em montagem (antes
+de "Finalizar Venda") ficava só no estado do React e se perdia ao recarregar. Agora fica no banco do
+operador (seção 6.3).
 
 **Fica para a homologação:**
 
