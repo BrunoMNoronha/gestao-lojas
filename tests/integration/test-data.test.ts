@@ -5,6 +5,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/authz";
 import { registerSale } from "@/lib/create-sale";
+import { syncOfflineOperation } from "@/lib/offline-sale";
 import {
   buildTestData,
   createSeededRandom,
@@ -20,7 +21,7 @@ import {
   RESET_TABLES,
   resetStoreData,
 } from "@/lib/test-data";
-import { prepareOffline, resetDatabase, saleInput, seedStore } from "./fixtures";
+import { offlineSale, prepareOffline, resetDatabase, saleInput, seedStore } from "./fixtures";
 
 // Dados de teste e restauração do banco (issue #57): geração coerente e idempotente, sem tocar no
 // que existe; restauração só com confirmação, sem impedimentos, apagando a lista fechada de
@@ -348,6 +349,39 @@ describe("resetStoreData", () => {
       data: { revokedAt: new Date() },
     });
     expect((await resetStoreData(admin, randomUUID(), confirm)).ok).toBe(true);
+  });
+
+  it("venda guardada em aparelho que não informou pendências volta como conflito sem efeito", async () => {
+    await saveSettings();
+    const store = await seedStore();
+    const { device, grant } = await prepareOffline(store.user.id, store.cashRegister.id);
+    const seller: SessionUser = { id: store.user.id, name: store.user.name, role: "SELLER" };
+    const op = offlineSale(store, {
+      userId: seller.id,
+      deviceId: device.id,
+      grantId: grant.id,
+      cashRegisterId: store.cashRegister.id,
+    });
+    await prisma.cashRegister.update({
+      where: { id: store.cashRegister.id },
+      data: { status: "CLOSED", openUserId: null, closedAt: new Date() },
+    });
+    expect((await resetStoreData(admin, randomUUID(), confirm)).ok).toBe(true);
+
+    const result = await syncOfflineOperation(seller, op);
+
+    expect(result.status).toBe("conflict");
+    expect(await prisma.sale.count()).toBe(0);
+    const operation = await prisma.syncOperation.findUniqueOrThrow({
+      where: { id: op.operationId },
+    });
+    expect(operation).toMatchObject({
+      status: "CONFLICT",
+      saleId: null,
+      deviceId: null,
+      grantId: null,
+      cashRegisterId: null,
+    });
   });
 
   it("recusa nome da loja ou senha errados com a mesma mensagem", async () => {

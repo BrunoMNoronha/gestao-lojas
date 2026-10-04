@@ -204,6 +204,13 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
   - Registro excluído não pode ser editado nem usado em venda online, entrada ou ajuste de estoque,
     e some do catálogo público. Não há restauração pela interface.
 - `Supplier` fica como está (fora do PDV).
+- **Única exclusão física (#57):** a restauração do banco em Configurações (só ADMIN, com nome da
+  loja e senha) apaga com `TRUNCATE` vendas, caixas, fiado, estoque, cadastros, aparelhos e
+  operações offline, mantendo usuários e configurações da loja. É recusada com caixa aberto ou
+  aparelho que informou vendas não enviadas. Os aparelhos recebem carga completa pela época do
+  cursor (seção 5) e precisam ser preparados de novo, porque `OfflineDevice` e `OfflineGrant` também
+  são apagados. Venda guardada num aparelho que nunca informou pendências volta como conflito na
+  sincronização.
 
 ### 3.8 Campos gravados no aparelho
 
@@ -352,6 +359,12 @@ versão desconhecida, lote vazio ou corpo que não é JSON; 401/403 como os dema
   - O cursor é a posição `(syncVersion, id)` de cada tabela, opaco para o aparelho (base64url).
   - Limite conhecido: uma transação muito longa e aberta no banco segura o limite e atrasa a
     sincronização (não perde dados).
+- **Época dos dados (#57):** a restauração do banco em Configurações apaga as tabelas com
+  `TRUNCATE` e não deixa exclusões para enviar. Por isso o cursor também leva a época `e`, que é a
+  quantidade de restaurações concluídas (`TestDataRun` com `RESET`/`COMPLETED`; `""` se nunca
+  houve). A época é lida na mesma transação `REPEATABLE READ` das páginas. Cursor de outra época,
+  inclusive no meio de uma sequência de páginas, recomeça do zero com `reset: true`, e o aparelho
+  substitui a cópia local inteira. Cursores anteriores à #57 não têm `e` e valem como `""`.
 - Ao aplicar mudanças recebidas, o aparelho preserva as operações pendentes e recalcula o saldo local
   (saldo recebido menos pendentes).
 
