@@ -6,5 +6,6 @@ import { authConfig } from "./auth.config";
 export default NextAuth(authConfig).auth;
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // /serwist (Service Worker) e o manifest são arquivos estáticos públicos: o proxy não precisa rodar
+  matcher: ["/((?!api|_next/static|_next/image|serwist/|manifest.webmanifest|favicon.ico).*)"],
 };
