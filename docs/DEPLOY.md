@@ -117,6 +117,8 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
       e reabrir o navegador → o PDV abre, busca produtos e clientes e mostra "Sem conexão".
 - [ ] Depois do deploy, o `/pdv` já preparado mostra "Atualizar o app"; ao atualizar, os dados
       continuam (idade e validade no topo).
+- [ ] Configurações da Loja (ADMIN): a seção "Dados de teste" aparece com o histórico. **Não**
+      gerar nem restaurar em produção só para testar (seção 11).
 
 ## 7. Usabilidade e performance do PDV
 
@@ -132,6 +134,8 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 - **Banco:** migrations não são revertidas automaticamente. Se uma migration causar problema,
   publique uma nova migration corretiva. Antes de mudanças de schema arriscadas, crie um branch
   ou snapshot da Neon.
+- **Restauração do banco pela tela (seção 11):** o sistema não guarda cópia. Só a restauração por
+  ponto no tempo ou um branch da Neon criado antes trazem os dados de volta.
 
 ## 9. reCAPTCHA no login (issue #26)
 
@@ -435,3 +439,41 @@ trocando `_next/static`")
 - [ ] Aplicar a decisão de 10.1 sobre os registros (restaurar o backup da Neon só se não houve
       operação real no meio). Sem restauração, apagar o branch de backup quando não for mais útil.
 - [ ] Com todos os critérios OK (ou cada falha com issue e decisão registrada), fechar a #33.
+
+## 11. Dados de teste e restauração do banco (#57)
+
+Em **Configurações da Loja**, a seção "Dados de teste" (só ADMIN) tem duas ações. As regras estão no
+`docs/OFFLINE.md` (seções 3.7 e 5) e no código em `src/lib/test-data.ts`.
+
+- **Gerar dados de teste:** cria até 15 categorias, 50 produtos (com estoque inicial como entrada de
+  um fornecedor gerado), 10 clientes e 5 fornecedores, sem alterar cadastros existentes. Os
+  produtos ficam fora do catálogo público. Em produção, os dados fictícios se misturam aos reais e
+  só saem com a restauração abaixo (ou excluindo um a um).
+- **Restaurar banco:** apaga vendas, caixas, fiado, estoque, produtos, categorias, clientes,
+  fornecedores, aparelhos e operações offline. Mantém usuários, configurações da loja e o histórico
+  da seção. A numeração das vendas volta a 1. **É irreversível e vale para produção.**
+
+### 11.1 Migration
+
+O recurso precisa da migration `0011_test_data_runs` (só acrescenta a tabela `TestDataRun`; nenhum
+dado é alterado). Aplicar em produção pelo roteiro da seção 4 **antes** do merge que publica o
+código, com um branch de backup da Neon criado antes. Conferência (console SQL da Neon, só
+leitura):
+
+```sql
+select migration_name, finished_at from "_prisma_migrations" order by migration_name;
+```
+
+### 11.2 Antes de restaurar em produção
+
+- [ ] Confirmar com o responsável pela loja que os dados podem ser apagados.
+- [ ] Criar um branch de backup na Neon (ou anotar o instante para a restauração por ponto no
+      tempo). O sistema não guarda cópia.
+- [ ] Fechar todos os caixas e sincronizar os aparelhos do PDV sem internet: a restauração é
+      recusada com caixa aberto ou aparelho que informou vendas não enviadas, e a tela lista os
+      impedimentos. Venda guardada num aparelho que nunca avisou o servidor volta como conflito na
+      conciliação.
+- [ ] Na confirmação, digitar o nome fantasia da loja e a senha do ADMIN. Cinco tentativas erradas
+      bloqueiam a ação por 15 minutos.
+- [ ] Depois: preparar de novo cada aparelho do PDV sem internet (eles recebem a carga completa e
+      os registros dos aparelhos foram apagados) e conferir o histórico da seção.
