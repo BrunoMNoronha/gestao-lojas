@@ -53,7 +53,7 @@ No PowerShell, defina antes `$env:TEST_DATABASE_URL = "postgresql://..."` e rode
 `pnpm test:integration`.
 
 Os testes unitários (`tests/unit/`, `pnpm test:unit`) não usam banco: cobrem a fila de vendas do
-PDV sem internet com o IndexedDB simulado pelo `fake-indexeddb`.
+PDV sem internet com o IndexedDB simulado pelo `fake-indexeddb` e o saldo da consulta de estoque.
 
 ### Testes de navegador
 

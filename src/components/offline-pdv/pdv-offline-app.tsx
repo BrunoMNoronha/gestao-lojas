@@ -8,6 +8,7 @@ import { PdvTerminal, type PdvCustomer, type PdvProduct } from "@/components/pdv
 import { readMeta, userDb } from "@/lib/offline/db";
 import { recordSale } from "@/lib/offline/queue";
 import {
+  availableStock,
   reservedQuantities,
   SaleDraftError,
   toCompletedSale,
@@ -92,8 +93,7 @@ function LocalTerminal({
           barcode: p.barcode,
           salePrice: Number(p.salePrice),
           unit: p.unit,
-          currentStock:
-            Math.round((Number(p.currentStock) - (reserved.get(p.id) ?? 0)) * 1000) / 1000,
+          currentStock: availableStock(p.currentStock, reserved.get(p.id)),
         }))
         .sort(byName),
     [data?.products, reserved],

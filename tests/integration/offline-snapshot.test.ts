@@ -99,13 +99,16 @@ describe("readOfflineSnapshot", () => {
       salePrice: "10.00",
       unit: "UN",
       currentStock: "10.000",
+      minStock: "3.000",
       categoryId: category.id,
       updatedAt: expect.any(String),
     });
-    // Nunca: preço de custo, estoque mínimo, descrição, imagem
-    expect(Object.keys(snapshot.products[0])).not.toEqual(
-      expect.arrayContaining(["costPrice", "minStock", "description", "imageUrl"]),
-    );
+    // Nunca: preço de custo, descrição, imagem (cada campo, em todos os produtos)
+    for (const product of snapshot.products) {
+      for (const field of ["costPrice", "description", "imageUrl"]) {
+        expect(product).not.toHaveProperty(field);
+      }
+    }
     expect(snapshot.categories).toEqual([{ id: category.id, deleted: false, name: "Grãos" }]);
     // Cliente: nome e documento mascarado; nada de telefone, e-mail ou endereço
     expect(snapshot.customers).toEqual([
@@ -131,6 +134,20 @@ describe("readOfflineSnapshot", () => {
       openingAmount: "100.00",
     });
     expect(snapshot.user).toEqual(user);
+  });
+
+  it("estoque mínimo vai a todos os perfis, e o preço de custo a nenhum (#54)", async () => {
+    await prisma.product.update({
+      where: { id: store.rice.id },
+      data: { minStock: new Prisma.Decimal("2.5"), costPrice: new Prisma.Decimal("7.35") },
+    });
+
+    for (const role of ["SELLER", "MANAGER", "ADMIN"] as const) {
+      const snapshot = await readOfflineSnapshot({ ...user, role });
+      const rice = snapshot.products.find((p) => p.id === store.rice.id);
+      expect(rice).toMatchObject({ minStock: "2.500" });
+      expect(rice).not.toHaveProperty("costPrice");
+    }
   });
 
   it("sem caixa aberto do operador, cashRegister vem nulo", async () => {
@@ -177,6 +194,16 @@ describe("readOfflineSnapshot", () => {
     ]);
     expect(next.customers).toEqual([
       { id: newCustomer.id, deleted: false, name: "Novo", document: null },
+    ]);
+
+    // Estoque mínimo alterado no cadastro chega pelo incremental (#54)
+    await prisma.product.update({
+      where: { id: store.rice.id },
+      data: { minStock: new Prisma.Decimal(8) },
+    });
+    const minChanged = await readOfflineSnapshot(user, { cursor: next.cursor });
+    expect(minChanged.products).toEqual([
+      expect.objectContaining({ id: store.rice.id, minStock: "8.000", currentStock: "7.000" }),
     ]);
   });
 

@@ -15,7 +15,11 @@ import type {
 // sessão nunca são gravadas aqui: a sessão continua no cookie HttpOnly do Auth.js, e nada daqui
 // vale como autorização no servidor.
 
-export type LocalProduct = Extract<OfflineProduct, { deleted: false }>;
+// O estoque mínimo entrou na cópia na #54: produtos guardados antes ficam sem ele até a próxima
+// carga completa (preparação do turno), e a consulta de estoque mostra "não sincronizado"
+export type LocalProduct = Omit<Extract<OfflineProduct, { deleted: false }>, "minStock"> & {
+  minStock?: string;
+};
 export type LocalCategory = Extract<OfflineCategory, { deleted: false }>;
 export type LocalCustomer = Extract<OfflineCustomer, { deleted: false }>;
 

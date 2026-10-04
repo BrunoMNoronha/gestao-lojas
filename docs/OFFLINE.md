@@ -40,24 +40,27 @@ Já corrigido durante o levantamento: o preço de custo deixou de ser enviado a 
 
 ## 2. Matriz de cobertura
 
-Legenda: **Sim** = disponível offline · **Não** = exige conexão · **Expansão** = avaliar na #40.
+Legenda: **Sim** = disponível offline · **Não** = exige conexão · **Sempre online** = fora da
+cobertura offline. A expansão (#40) foi decidida pelo responsável em 04/10/2026 (comentário na
+#40): só o estoque ganhou consulta offline (#54); os demais módulos marcados antes como "Expansão"
+ficam sempre online.
 
-| Módulo                           | Consulta                                              | Criação                                    | Edição | Exclusão | Entrega              |
-| -------------------------------- | ----------------------------------------------------- | ------------------------------------------ | ------ | -------- | -------------------- |
-| PDV (carrinho e venda)           | Sim                                                   | Sim — venda local pendente                 | Não    | Não      | **Primeira (PDV)**   |
-| Produtos (dados para o PDV)      | Sim — cópia mínima, com idade dos dados               | Não                                        | Não    | Não      | **Primeira (PDV)**   |
-| Categorias                       | Sim — só para filtrar no PDV                          | Não                                        | Não    | Não      | **Primeira (PDV)**   |
-| Clientes                         | Sim — nome e documento mascarado (3.8)                | Não                                        | Não    | Não      | **Primeira (PDV)**   |
-| Configurações da loja            | Sim — só os dados do recibo                           | —                                          | Não    | —        | **Primeira (PDV)**   |
-| Caixa                            | Sim — o turno preparado (abertura e valor inicial)    | Não (abertura, sangria, suprimento)        | Não    | —        | Primeira: só leitura |
-| Fechamento de caixa              | —                                                     | Não — bloqueado com pendências no aparelho | —      | —        | Primeira (3.3)       |
-| Estoque                          | No PDV: saldo sincronizado menos pendentes            | Não (entrada, ajuste)                      | Não    | —        | Expansão             |
-| Contas a receber / fiado         | Não                                                   | Não — fiado bloqueado offline (3.4)        | Não    | —        | Expansão             |
-| Fornecedores                     | Não                                                   | Não                                        | Não    | Não      | Expansão             |
-| Dashboard e relatórios           | Não                                                   | —                                          | —      | —        | Expansão             |
-| Usuários, perfis e configurações | Não                                                   | Não                                        | Não    | Não      | Sempre online        |
-| Login e troca de senha           | —                                                     | Não                                        | —      | —        | Sempre online        |
-| Catálogo público / WhatsApp      | Fora deste trabalho (carrinho em `localStorage`, #17) | —                                          | —      | —        | Avaliar à parte      |
+| Módulo                           | Consulta                                                                   | Criação                                    | Edição | Exclusão | Entrega              |
+| -------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ | ------ | -------- | -------------------- |
+| PDV (carrinho e venda)           | Sim                                                                        | Sim — venda local pendente                 | Não    | Não      | **Primeira (PDV)**   |
+| Produtos (dados para o PDV)      | Sim — cópia mínima, com idade dos dados                                    | Não                                        | Não    | Não      | **Primeira (PDV)**   |
+| Categorias                       | Sim — só para filtrar no PDV                                               | Não                                        | Não    | Não      | **Primeira (PDV)**   |
+| Clientes                         | Sim — nome e documento mascarado (3.8)                                     | Não                                        | Não    | Não      | **Primeira (PDV)**   |
+| Configurações da loja            | Sim — só os dados do recibo                                                | —                                          | Não    | —        | **Primeira (PDV)**   |
+| Caixa                            | Sim — o turno preparado (abertura e valor inicial)                         | Não (abertura, sangria, suprimento)        | Não    | —        | Primeira: só leitura |
+| Fechamento de caixa              | —                                                                          | Não — bloqueado com pendências no aparelho | —      | —        | Primeira (3.3)       |
+| Estoque                          | Sim — consulta no `/pdv`: saldo sincronizado menos pendentes, mínimo (6.2) | Não (entrada, ajuste)                      | Não    | —        | Consulta (#54)       |
+| Contas a receber / fiado         | Não                                                                        | Não — fiado bloqueado offline (3.4)        | Não    | —        | Sempre online        |
+| Fornecedores                     | Não                                                                        | Não                                        | Não    | Não      | Sempre online        |
+| Dashboard e relatórios           | Não                                                                        | —                                          | —      | —        | Sempre online        |
+| Usuários, perfis e configurações | Não                                                                        | Não                                        | Não    | Não      | Sempre online        |
+| Login e troca de senha           | —                                                                          | Não                                        | —      | —        | Sempre online        |
+| Catálogo público / WhatsApp      | Fora deste trabalho (carrinho em `localStorage`, #17)                      | —                                          | —      | —        | Avaliar à parte      |
 
 Critério de expansão (#40): um módulo só ganha escrita offline depois de ter política de conflito
 registrada aqui, chave de operação idempotente no servidor e testes dos cenários de concorrência.
@@ -206,14 +209,18 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
 
 Iguais para todos os perfis (a cópia local serve só ao PDV):
 
-| Origem                | Campos guardados                                                                        | Nunca guardados                                   |
-| --------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Produto               | id, nome, SKU, código de barras, preço de venda, unidade, saldo, categoria, `updatedAt` | preço de custo, estoque mínimo, descrição, imagem |
-| Categoria             | id, nome                                                                                | —                                                 |
-| Cliente               | id, nome, documento **mascarado** (ex.: `***.456.789-**`)                               | documento completo, telefone, e-mail, endereço    |
-| Configurações da loja | nome, documento, endereço e telefone **da loja** (recibo)                               | parâmetros do fiado e demais configurações        |
-| Caixa                 | id, abertura, valor inicial                                                             | movimentos e resumos de outros caixas             |
-| Usuário               | id, nome, perfil                                                                        | senha, hash de senha, token de sessão             |
+| Origem                | Campos guardados                                                                                                  | Nunca guardados                                |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Produto               | id, nome, SKU, código de barras, preço de venda, unidade, saldo, **estoque mínimo** (#54), categoria, `updatedAt` | preço de custo, descrição, imagem              |
+| Categoria             | id, nome                                                                                                          | —                                              |
+| Cliente               | id, nome, documento **mascarado** (ex.: `***.456.789-**`)                                                         | documento completo, telefone, e-mail, endereço |
+| Configurações da loja | nome, documento, endereço e telefone **da loja** (recibo)                                                         | parâmetros do fiado e demais configurações     |
+| Caixa                 | id, abertura, valor inicial                                                                                       | movimentos e resumos de outros caixas          |
+| Usuário               | id, nome, perfil                                                                                                  | senha, hash de senha, token de sessão          |
+
+O estoque mínimo entrou na #54 (decisão de 04/10/2026), para a consulta de estoque do `/pdv`
+indicar estoque baixo: é dado de baixa sensibilidade, igual para todos os perfis. Cópias guardadas
+antes disso recebem o campo na próxima carga completa, que toda preparação faz (6.2).
 
 O recibo offline imprime o documento do cliente mascarado. Essa política também reduz o que fica
 exposto a quem tiver acesso físico ao aparelho (LGPD).
@@ -442,6 +449,20 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
     recibo usa sempre o fuso da loja.
   - Lista "Vendas deste aparelho" no cabeçalho, com a situação, o motivo do conflito ou da falha e
     o recibo de cada venda. "Encerrar neste aparelho" e "Sair" mantêm as vendas não finalizadas.
+- **Consulta de estoque (#54, decisões do responsável em 04/10/2026):** botão "Estoque" no
+  cabeçalho do `/pdv`, só leitura, com e sem conexão (`src/components/offline-pdv/offline-stock-panel.tsx`).
+  1. Painel por cima do terminal, não uma rota nova: o terminal continua montado (o carrinho em
+     montagem não se perde) e o Service Worker não muda.
+  2. Segue o mesmo bloqueio do PDV (autorização de 12 h, dados de até 24 h). Dentro disso, dados
+     com mais de **4 horas** geram aviso (`STOCK_STALE_WARNING_MS`), só visual.
+  3. Saldo disponível = sincronizado menos as vendas da fila ainda não refletidas na cópia, o mesmo
+     número que limita o terminal (`availableStock`, em milésimos). Estoque baixo usa o disponível,
+     com a regra do servidor (`isStockLow`: saldo ≤ mínimo); saldo negativo em destaque.
+  - Busca por nome, SKU e código de barras; filtros por categoria e estoque baixo.
+  - Produto sem estoque mínimo na cópia (guardada antes da #54) aparece como "Mínimo não
+    sincronizado" e nunca como normal, até a próxima preparação.
+  - Sem conexão, nenhuma escrita: o painel avisa que entrada e ajuste exigem conexão. Com conexão,
+    quem tem `stock.manage` vê o link para o `/admin/estoque`.
 - O terminal é o mesmo do `/admin/pdv` (`src/components/pdv-terminal.tsx`), com os dados da cópia
   local. O Fiado não é oferecido no `/pdv`: a cópia não leva os parâmetros dele (3.4 e 3.8).
 - Abre sem conexão só com: operador ativo preparado, cópia completa, autorização válida, dados com
@@ -511,7 +532,7 @@ Nada abaixo é feito nesta issue; serve de referência para as próximas.
 | #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Parte 2 (navegador, feita): fila no Dexie, saldo reservado, envio entre abas, recibo provisório e bloqueio do fechamento. Parte 3 (feita): migration `0010_offline_reconciliation`, tela "Sincronização offline" (conflitos, pendências e aparelhos), envio assistido, aviso do servidor no fechamento, ajuste pós-fechamento e saldo negativo em destaque. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
 | #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila). Parte (a), feita: infraestrutura e 12 cenários (seção 9). Parte (b), feita: cota, atualização de versão, câmera, Edge, Android emulado e relatório por camada (9.1)                                                                                                                                                                                                                                                                                                                                                                        |
-| #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| #40 Expansão              | Decidida em 04/10/2026 (matriz, seção 2): só a consulta de estoque offline (#54, feita: estoque mínimo na cópia e painel "Estoque" no `/pdv`); caixa, fiado, fornecedores, dashboard e relatórios sempre online                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 Migrations seguem o fluxo de `docs/DEPLOY.md` (aplicação explícita com `pnpm db:deploy`, nunca no
 build).
@@ -548,16 +569,17 @@ página), por isso a versão nova é simulada no servidor. É o mesmo build com 
 e do `/offline`: o navegador instala o Service Worker novo e guarda as páginas de novo. A troca
 dos arquivos `_next/static` entre dois builds diferentes fica para a homologação.
 
-| Arquivo                    | Cenários                                                                                                         |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `service-worker.spec.ts`   | `/pdv` preparado recarrega sem rede; painel sem rede mostra a página offline                                     |
-| `offline-sales.spec.ts`    | vender sem rede, recarregar, reconectar e comparar vendas/itens/estoque/caixa/recebíveis; reconexão intermitente |
-| `network-failures.spec.ts` | resposta perdida depois da gravação; servidor fora do ar com internet; lote processado em parte                  |
-| `business-rules.spec.ts`   | dois terminais com o último saldo; preço alterado; caixa fechado no servidor                                     |
-| `users-sessions.spec.ts`   | operador desativado (envio assistido pelo gerente); troca de usuário com fila; sessão expirada                   |
-| `storage-failures.spec.ts` | sem espaço no aparelho e erro do IndexedDB: sem recibo, carrinho mantido e uma única venda na nova tentativa     |
-| `app-update.spec.ts`       | Service Worker novo com a fila cheia ("Atualizar o app"); banco local da versão anterior migrado com a fila      |
-| `camera-scanner.spec.ts`   | sem rede, a câmera lê o código (ZXing em WASM do cache do Service Worker) e a venda segue pela fila              |
+| Arquivo                    | Cenários                                                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `service-worker.spec.ts`   | `/pdv` preparado recarrega sem rede; painel sem rede mostra a página offline                                                             |
+| `offline-sales.spec.ts`    | vender sem rede, recarregar, reconectar e comparar vendas/itens/estoque/caixa/recebíveis; reconexão intermitente                         |
+| `network-failures.spec.ts` | resposta perdida depois da gravação; servidor fora do ar com internet; lote processado em parte                                          |
+| `business-rules.spec.ts`   | dois terminais com o último saldo; preço alterado; caixa fechado no servidor                                                             |
+| `users-sessions.spec.ts`   | operador desativado (envio assistido pelo gerente); troca de usuário com fila; sessão expirada                                           |
+| `storage-failures.spec.ts` | sem espaço no aparelho e erro do IndexedDB: sem recibo, carrinho mantido e uma única venda na nova tentativa                             |
+| `app-update.spec.ts`       | Service Worker novo com a fila cheia ("Atualizar o app"); banco local da versão anterior migrado com a fila                              |
+| `stock-query.spec.ts`      | consulta de estoque sem rede: saldo menos pendentes, estoque baixo, carrinho mantido, aviso de dados antigos, link só com `stock.manage` |
+| `camera-scanner.spec.ts`   | sem rede, a câmera lê o código (ZXing em WASM do cache do Service Worker) e a venda segue pela fila                                      |
 
 Encontrado pela suíte (corrigido na #39): usuário desativado com o cookie ainda válido ficava em
 laço de redirecionamento entre `/login` e `/` (o navegador desistia com erro). Agora o servidor
@@ -578,7 +600,7 @@ Camadas:
 
 | Critério da #33                                                                      | Unidade                                          | Integração                                                     | Navegador                                                          | Homologação |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
-| Preparar, cortar a rede, recarregar, consultar e vender; defasagem e bloqueios       | Autorização vencida não grava                    | Preparação, autorização de 12 h, recusas (`offline-device`)    | `service-worker`, `offline-sales`, `camera-scanner`                | Pendente    |
+| Preparar, cortar a rede, recarregar, consultar e vender; defasagem e bloqueios       | Autorização vencida não grava                    | Preparação, autorização de 12 h, recusas (`offline-device`)    | `service-worker`, `offline-sales`, `camera-scanner`, `stock-query` | Pendente    |
 | Vendas pendentes sobrevivem a recarregar; novas vendas descontam as pendentes        | Saldo reservado sem erro de ponto flutuante      | —                                                              | `offline-sales` (recarga e saldo reservado), `app-update`          | Pendente    |
 | Carrinho em montagem sobrevive a fechar e reabrir                                    | —                                                | —                                                              | **Lacuna**: o carrinho só existe na memória da página (ver abaixo) | —           |
 | Uma única venda: resposta perdida, cliques repetidos, duas abas, lote repetido       | Trava entre abas; venda "sincronizando" retomada | Mesma chave, chamadas simultâneas, lote repetido               | `network-failures`, `offline-sales` (reconexão intermitente)       | Pendente    |
