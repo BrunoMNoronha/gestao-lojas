@@ -59,6 +59,36 @@ enum SyncOperationKind {
   SALE_CREATE // "sale.create" no protocolo
 }
 
+// Situação da operação no servidor (docs/OFFLINE.md, seção 4). A venda online grava APPLIED.
+enum SyncOperationStatus {
+  APPLIED // Efeitos gravados na sincronização
+  CONFLICT // Recusada por regra de negócio, sem efeito; aguarda decisão de um gerente
+  APPROVED // Conflito aprovado: efeitos gravados com a autoria e o caixa originais
+  DISCARDED // Conflito descartado com motivo, sem efeito
+}
+
+// Motivo de uma operação offline não ter sido aplicada (docs/OFFLINE.md, seção 4)
+enum SyncConflictReason {
+  DEVICE_REVOKED // Aparelho revogado
+  GRANT_MISMATCH // Autorização offline inexistente ou de outro operador, aparelho ou caixa
+  CASH_REGISTER_MISMATCH // Caixa original inexistente ou de outro operador
+  PRICE_NOT_VALID // Preço praticado que não vigorou no período da autorização
+  PRODUCT_NOT_FOUND // Produto que nunca existiu
+  CUSTOMER_NOT_FOUND // Cliente que nunca existiu
+  FRACTIONAL_QUANTITY // Quantidade fracionada em produto vendido por unidade inteira
+  ON_ACCOUNT_OFFLINE // Fiado não é permitido offline
+  INVALID_AMOUNTS // Desconto maior que o subtotal ou valor pago menor que o total
+}
+
+// Pendência de conciliação: a venda foi aplicada, mas exige acompanhamento (docs/OFFLINE.md, seção 4)
+enum ReconciliationIssueType {
+  NEGATIVE_STOCK // A baixa deixou o saldo do produto negativo
+  POST_CLOSING_SALE // A venda chegou depois do fechamento do caixa original
+  PRICE_DIVERGENCE // Preço praticado diferente do preço atual
+  DATE_ADJUSTED // Data informada pelo aparelho fora do intervalo permitido
+  DELETED_CUSTOMER // Cliente excluído depois da venda offline
+}
+
 enum ReceivableStatus {
   OPEN
   PARTIAL
@@ -80,10 +110,12 @@ model User {
   cashRegisters      CashRegister[]
   cashMovements      CashMovement[]
   receivablePayments ReceivablePayment[]
-  syncOperations     SyncOperation[]
+  syncOperations     SyncOperation[]     @relation("SyncOperationAuthor")
+  resolvedOperations SyncOperation[]     @relation("SyncOperationResolver")
   registeredDevices  OfflineDevice[]     @relation("OfflineDeviceRegisteredBy")
   revokedDevices     OfflineDevice[]     @relation("OfflineDeviceRevokedBy")
   offlineGrants      OfflineGrant[]
+  acknowledgedIssues ReconciliationIssue[]
 }
 
 // Exclusão lógica (deletedAt) e versão de sincronização (syncVersion) em Category, Product e
@@ -126,6 +158,7 @@ model Product {
   saleItems      SaleItem[]
   stockMovements StockMovement[]
   priceHistory   ProductPrice[]
+  reconciliationIssues ReconciliationIssue[]
 
   @@index([syncVersion, id])
 }
@@ -180,6 +213,7 @@ model Sale {
   items          SaleItem[]
   receivable     Receivable?
   syncOperation  SyncOperation?
+  reconciliationIssues ReconciliationIssue[]
 
   @@index([occurredAt])
   @@index([createdAt])
@@ -329,21 +363,61 @@ model ReceivablePayment {
 // Chave de idempotência das operações (issue #35, docs/OFFLINE.md seção 5). A linha é gravada na
 // mesma transação dos efeitos: rollback não deixa registro, e a mesma chave nunca produz dois
 // conjuntos de efeitos. Mesma chave com payload diferente (outro hash) é recusada.
+// Operação offline (#38): o payload fica guardado para a conciliação, e um conflito é gravado com
+// a situação CONFLICT e nenhum efeito.
 model SyncOperation {
-  id             String            @id @db.Uuid // operationId gerado no PDV / aparelho
-  kind           SyncOperationKind
-  payloadHash    String // SHA-256 (hex) do payload canônico
-  userId         String // Operador original
-  user           User              @relation(fields: [userId], references: [id])
-  deviceId       String? // Aparelho registrado (#37); nulo no PDV online
-  cashRegisterId String? // Caixa original
-  cashRegister   CashRegister?     @relation(fields: [cashRegisterId], references: [id])
-  saleId         String?           @unique
-  sale           Sale?             @relation(fields: [saleId], references: [id])
-  occurredAt     DateTime // Instante da operação no aparelho
-  receivedAt     DateTime          @default(now()) // Instante de recebimento no servidor
+  id              String               @id @db.Uuid // operationId gerado no PDV / aparelho
+  kind            SyncOperationKind
+  status          SyncOperationStatus  @default(APPLIED)
+  payloadHash     String // SHA-256 (hex) do payload canônico
+  // Operação offline normalizada (envelope e venda), usada para aprovar um conflito; nulo no online
+  payload         Json?
+  userId          String // Operador original
+  user            User                 @relation("SyncOperationAuthor", fields: [userId], references: [id])
+  deviceId        String?              @db.Uuid // Aparelho registrado (#37); nulo no PDV online
+  device          OfflineDevice?       @relation(fields: [deviceId], references: [id])
+  grantId         String?              @db.Uuid // Autorização offline usada; nulo no online
+  grant           OfflineGrant?        @relation(fields: [grantId], references: [id])
+  cashRegisterId  String? // Caixa original
+  cashRegister    CashRegister?        @relation(fields: [cashRegisterId], references: [id])
+  saleId          String?              @unique
+  sale            Sale?                @relation(fields: [saleId], references: [id])
+  occurredAt      DateTime // Instante da operação no aparelho (como enviado)
+  receivedAt      DateTime             @default(now()) // Instante de recebimento no servidor
+  // Id da transação que gravou os efeitos (pg_current_xact_id): o aparelho compara com o limite da
+  // cópia local para saber quando a baixa de estoque já chegou nela
+  appliedTxid     BigInt?
+  conflictReason  SyncConflictReason?
+  conflictMessage String?
+  resolvedById    String?
+  resolvedBy      User?                @relation("SyncOperationResolver", fields: [resolvedById], references: [id])
+  resolvedAt      DateTime?
+  resolutionNote  String?
 
   @@index([userId, receivedAt])
+  @@index([status, receivedAt])
+}
+
+// Pendência de conciliação de uma venda offline já aplicada (issue #38, docs/OFFLINE.md seção 4):
+// estoque negativo, venda pós-fechamento, preço divergente, data ajustada ou cliente excluído.
+// Quem tem offline.reconcile registra a ciência; nada aqui desfaz a venda.
+model ReconciliationIssue {
+  id               String                  @id @default(cuid())
+  type             ReconciliationIssueType
+  saleId           String
+  sale             Sale                    @relation(fields: [saleId], references: [id])
+  productId        String?
+  product          Product?                @relation(fields: [productId], references: [id])
+  // Valores do caso (ex.: preço praticado e atual, data original e ajustada, saldo resultante)
+  details          Json
+  createdAt        DateTime                @default(now())
+  acknowledgedById String?
+  acknowledgedBy   User?                   @relation(fields: [acknowledgedById], references: [id])
+  acknowledgedAt   DateTime?
+  note             String?
+
+  @@index([acknowledgedAt, createdAt])
+  @@index([saleId])
 }
 
 // Aparelho habilitado para o PDV offline (issue #37, docs/OFFLINE.md seção 7). Registrado na
@@ -360,6 +434,7 @@ model OfflineDevice {
   revokedById    String?
   revokedBy      User?          @relation("OfflineDeviceRevokedBy", fields: [revokedById], references: [id])
   grants         OfflineGrant[]
+  operations     SyncOperation[]
 }
 
 // Autorização offline (docs/OFFLINE.md seção 3.5): emitida na preparação online, vale para um
@@ -375,6 +450,7 @@ model OfflineGrant {
   cashRegister   CashRegister  @relation(fields: [cashRegisterId], references: [id])
   issuedAt       DateTime      @default(now())
   expiresAt      DateTime
+  operations     SyncOperation[]
 
   @@index([deviceId, userId, issuedAt])
 }

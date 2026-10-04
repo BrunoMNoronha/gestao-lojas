@@ -56,6 +56,20 @@ export async function lockOwnOpenCashRegisterById(tx: Db, cashRegisterId: string
 }
 
 /**
+ * Trava o caixa pelo id, aberto ou fechado, até o fim da transação (SELECT ... FOR UPDATE, que
+ * espera as travas de vendas, sangrias e fechamento do mesmo caixa). Usado pela sincronização
+ * offline (docs/OFFLINE.md seção 3.3): a venda vai sempre para o caixa original, mesmo que ele já
+ * tenha sido fechado, e o chamador confere o dono. Devolve null se o caixa não existe.
+ */
+export async function lockCashRegisterById(tx: Db, cashRegisterId: string) {
+  const locked = await tx.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "CashRegister" WHERE "id" = ${cashRegisterId} FOR UPDATE
+  `;
+  if (locked.length === 0) return null;
+  return tx.cashRegister.findUnique({ where: { id: cashRegisterId } });
+}
+
+/**
  * Regra única do dinheiro esperado na gaveta:
  * abertura + vendas em dinheiro + suprimentos − sangrias + recebimentos de fiado em dinheiro.
  * O troco sai da própria gaveta, por isso conta o total da venda (não o valor recebido).

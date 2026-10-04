@@ -24,6 +24,8 @@ export const PERMISSIONS = {
   "customers.manage": ALL,
   "customers.delete": MANAGEMENT,
   "suppliers.manage": MANAGEMENT,
+  // Conflitos e pendências das vendas offline: aprovar, descartar e dar ciência (issue #38)
+  "offline.reconcile": MANAGEMENT,
   "settings.manage": ["ADMIN"],
   "users.manage": ["ADMIN"],
   // Página "Minha conta" (dados próprios e troca de senha)

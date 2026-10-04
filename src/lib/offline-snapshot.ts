@@ -78,6 +78,10 @@ export interface OfflineSnapshot {
   generatedAt: string;
   // Sem cursor na requisição: carga completa, o aparelho substitui a cópia local inteira
   reset: boolean;
+  // Limite seguro desta leitura (texto: bigint): toda transação com id menor já está refletida
+  // na cópia depois da última página. O aparelho compara com o appliedTxid das vendas
+  // sincronizadas para saber quando a baixa de estoque delas já chegou (#38)
+  watermark: string;
   // Enviar na próxima requisição; com hasMore, pedir a próxima página imediatamente
   cursor: string;
   hasMore: boolean;
@@ -255,6 +259,7 @@ export async function readOfflineSnapshot(
         protocolVersion: OFFLINE_PROTOCOL_VERSION,
         generatedAt: new Date().toISOString(),
         reset,
+        watermark: watermark.toString(),
         cursor: encodeCursor(next),
         hasMore: p.hasMore || c.hasMore || k.hasMore,
         products: p.rows.map((row): OfflineProduct =>

@@ -126,7 +126,7 @@ Parâmetros em `StoreSettings`, editados nas Configurações (`settings.manage`)
 - **Menu:** `AppRoute.feature = "onAccount"` esconde "Contas a Receber" (e o card do Dashboard) só quando o fiado está desligado **e** não há títulos a receber. É só exibição: a página continua protegida por `receivables.view` e, pela URL, mostra um estado vazio informativo.
 
 ### 6. Idempotência da venda (issue #35)
-`createSale` (`src/actions/sales.ts`) só autoriza (`pdv.use`) e revalida as telas; as regras ficam em `registerSale` (`src/lib/create-sale.ts`), que a sincronização offline (#38) vai reaproveitar.
+`createSale` (`src/actions/sales.ts`) só autoriza (`pdv.use`) e revalida as telas; as regras ficam em `registerSale` (`src/lib/create-sale.ts`); a sincronização offline (#38) tem regras próprias em `src/lib/offline-sale.ts`, com a mesma chave de idempotência.
 - **Chave:** o PDV gera um `operationId` (UUID, `src/lib/operation-id.ts`) por tentativa de finalização e o reaproveita enquanto o carrinho, o cliente e o pagamento não mudam.
 - **Mesma transação:** a `SyncOperation` é gravada logo após travar o caixa e antes de qualquer efeito, junto com a venda, os itens, o estoque e o título. Mesma chave e mesmo hash devolvem a venda gravada; hash, operador ou tipo diferentes são recusados; rollback não deixa registro. A garantia é o índice único da chave (violação P2002 → devolve o resultado gravado), inclusive com chamadas simultâneas.
 - **Caixa original:** a venda leva o id do caixa aberto quando o PDV carregou e trava esse caixa (`lockOwnOpenCashRegisterById`). Se ele foi fechado, a venda é recusada, nunca vai para o caixa aberto depois.
@@ -139,6 +139,13 @@ Detalhes e decisões em `docs/OFFLINE.md` (seções 5, 6 e 7).
 - **Dados no navegador:** Dexie (`src/lib/offline/db.ts`), um banco por operador e um banco comum com o aparelho. A comunicação usa os Route Handlers `GET /api/offline/ping`, `POST /api/offline/prepare` e `GET /api/offline/snapshot` (`src/lib/offline/sync.ts`).
 - **Servidor:** `OfflineDevice` e `OfflineGrant` (autorização de 12 h vinculada ao caixa aberto), em `src/lib/offline-device.ts`.
 - **Saída:** `signOutClearingOfflineData` (`src/lib/offline/sign-out.ts`) apaga a cópia local antes de encerrar a sessão; `OfflineUserGuard`, no layout do painel, apaga a cópia de outro operador.
+
+### 8. Sincronização das vendas offline (issue #38, parte 1: servidor)
+Detalhes, conflitos e pendências em `docs/OFFLINE.md` (seções 3 a 5).
+- **Envio:** `POST /api/offline/operations` (`src/app/api/offline/operations/route.ts`, `authorize("pdv.use")`), lote de até 50 operações com resultado por operação. Regras em `syncOfflineOperation` (`src/lib/offline-sale.ts`), separadas do `registerSale` online: preço praticado conferido no histórico `ProductPrice`, estoque pode ficar negativo, caixa original travado pelo id mesmo fechado (`lockCashRegisterById`), data limitada ao período da autorização, Fiado recusado.
+- **Idempotência:** a mesma `SyncOperation` da #35, agora com `status` (APPLIED, CONFLICT, APPROVED, DISCARDED), o payload normalizado e `appliedTxid`. Conflito grava só a operação, sem efeito.
+- **Pendências:** `ReconciliationIssue` (estoque negativo, venda pós-fechamento, preço divergente, data ajustada, cliente excluído), gravadas na transação da venda.
+- **Conciliação:** Server Actions em `src/actions/offline-reconciliation.ts` com `authorize("offline.reconcile")` (ADMIN e MANAGER): listar, aprovar (autoria e caixa originais), descartar com motivo e dar ciência.
 
 ---
 
