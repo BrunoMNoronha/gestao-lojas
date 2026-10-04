@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { SessionUser } from "@/lib/authz";
 import type { OfflinePreparation } from "@/lib/offline-device";
+import { CART_DRAFT_ID, type CartDraft, type CartDraftInput } from "@/lib/offline/cart-draft";
 import type {
   OfflineCategory,
   OfflineCustomer,
@@ -164,6 +165,7 @@ export class OfflineUserDb extends Dexie {
   customers!: EntityTable<LocalCustomer, "id">;
   meta!: EntityTable<MetaRow, "key">;
   operations!: EntityTable<LocalOperation, "id">;
+  drafts!: EntityTable<CartDraft, "id">;
 
   constructor(userId: string) {
     super(userDbName(userId));
@@ -187,6 +189,9 @@ export class OfflineUserDb extends Dexie {
             Object.assign(op, upgradeOperationV1(op));
           }),
       );
+    // #53: rascunho do carrinho em montagem (uma linha). Tabela nova, sem upgrade: a fila fica
+    // como está
+    this.version(3).stores({ drafts: "id" });
   }
 }
 
@@ -385,6 +390,36 @@ export async function otherOperatorQueues(currentUserId: string): Promise<Operat
 }
 
 /**
+ * Rascunho do carrinho do operador (#53). Um rascunho cuja venda já está na fila é apagado (a
+ * venda e a remoção do rascunho são gravadas juntas; isto cobre uma gravação atrasada).
+ */
+export async function loadCartDraft(userId: string): Promise<CartDraft | null> {
+  const db = userDb(userId);
+  return db.transaction("rw", [db.drafts, db.operations], async () => {
+    const draft = await db.drafts.get(CART_DRAFT_ID);
+    if (!draft) return null;
+    if (draft.operation && (await db.operations.get(draft.operation.id))) {
+      await db.drafts.delete(CART_DRAFT_ID);
+      return null;
+    }
+    return draft;
+  });
+}
+
+/**
+ * Guarda (ou apaga, com `null`) o rascunho do carrinho. Nunca grava o rascunho de uma venda que
+ * já está na fila: uma gravação que chegue depois da venda não faz o carrinho vendido voltar.
+ */
+export async function saveCartDraft(userId: string, draft: CartDraftInput | null) {
+  const db = userDb(userId);
+  await db.transaction("rw", [db.drafts, db.operations], async () => {
+    const sold = !!draft?.operation && !!(await db.operations.get(draft.operation.id));
+    if (!draft || sold) await db.drafts.delete(CART_DRAFT_ID);
+    else await db.drafts.put({ ...draft, id: CART_DRAFT_ID, updatedAt: Date.now() });
+  });
+}
+
+/**
  * Encerra a operação offline do operador (saída, troca de usuário ou perda de acesso): apaga a
  * cópia de dados e a autorização. Se houver operações não finalizadas, o banco fica só com a
  * fila, que continua oculta para os outros operadores até o dono sincronizar; nada pendente é
@@ -394,12 +429,14 @@ export async function endOfflineSession(userId: string) {
   const db = userDb(userId);
   const open = await db.operations.where("status").noneOf(FINAL_STATUSES).count();
   if (open > 0) {
-    await db.transaction("rw", [db.products, db.categories, db.customers, db.meta], () =>
+    await db.transaction("rw", [db.products, db.categories, db.customers, db.meta, db.drafts], () =>
       Promise.all([
         db.products.clear(),
         db.categories.clear(),
         db.customers.clear(),
         db.meta.clear(),
+        // Carrinho em montagem não é venda: não fica para o próximo operador (#53)
+        db.drafts.clear(),
       ]),
     );
     await refreshPendingCount(userId);

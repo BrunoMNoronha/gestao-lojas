@@ -355,7 +355,7 @@ describe("endOfflineSession", () => {
   });
 });
 
-describe("atualização da estrutura (versão 1 → 2)", () => {
+describe("atualização da estrutura (versão 1 → 3)", () => {
   it("preserva a fila existente", async () => {
     const name = `gestao-lojas-offline-${userId}`;
     userDb(userId).close();
@@ -394,7 +394,7 @@ describe("atualização da estrutura (versão 1 → 2)", () => {
     // O app novo abre o mesmo banco na versão 2
     const reopened = new OfflineUserDb(userId);
     const rows = await reopened.operations.toArray();
-    expect(reopened.verno).toBe(2);
+    expect(reopened.verno).toBe(3);
     expect(rows).toHaveLength(2);
     expect(rows.find((r) => r.id === "antiga")).toMatchObject({
       status: "rejected",
