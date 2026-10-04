@@ -436,6 +436,7 @@ export function CashRegisterManager({
             key={`close-${dialogKey}`}
             open={closeDialogOpen}
             cashRegisterId={current.id}
+            offlinePending={current.offlinePending}
             onOpenChange={setCloseDialogOpen}
             expectedCash={current.summary.expectedCash}
             onSuccess={handleClosed}

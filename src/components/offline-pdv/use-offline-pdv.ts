@@ -79,6 +79,8 @@ export function useOfflinePdv() {
   const [sending, setSending] = useState(false);
   // Operador cuja fila aparece e é enviada: o da sessão (com conexão) ou o ativo (sem conexão)
   const [queueUserId, setQueueUserId] = useState<string | null>(null);
+  // Usuário da sessão, conhecido só com conexão (envio assistido por um gerente, #38)
+  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const lastSyncAt = useRef(0);
   // Só o resultado da avaliação mais recente vale (as checagens periódicas podem se sobrepor), e
   // nenhuma avaliação muda a tela durante a preparação ou o encerramento
@@ -124,7 +126,8 @@ export function useOfflinePdv() {
       async function runSend(id: string): Promise<SendSummary> {
         setSending(true);
         try {
-          const summary = await sendQueue(id, options);
+          // A fila enviada aqui é sempre a do operador da sessão: informa o que ainda falta
+          const summary = await sendQueue(id, { ...options, report: true });
           const message = SEND_ERRORS[summary.status];
           if (message) setSyncError(message);
           // Envio voltou a funcionar: some o aviso de envio (o de cópia fica com o sync)
@@ -192,6 +195,7 @@ export function useOfflinePdv() {
       }
       if (!isLatest()) return;
       setQueueUserId(user.id);
+      setSessionUser(user);
       // Em segundo plano: a tela não espera o envio
       void send(user.id);
       const db = userDb(user.id);
@@ -318,6 +322,7 @@ export function useOfflinePdv() {
     syncing: syncing || sending,
     syncError,
     queueUserId,
+    sessionUser: online ? sessionUser : null,
     prepare,
     syncNow,
     sendAfterSale,

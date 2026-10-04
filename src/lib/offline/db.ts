@@ -345,6 +345,38 @@ export async function unsentSalesForCashRegister(cashRegisterId: string): Promis
   return rows.reduce((sum, row) => sum + (row.unsentByCashRegister?.[cashRegisterId] ?? 0), 0);
 }
 
+export interface OperatorQueue {
+  userId: string;
+  userName: string;
+  // Ainda não gravadas no servidor / já no servidor, aguardando decisão
+  unsent: number;
+  conflicts: number;
+}
+
+/**
+ * Filas de outros operadores guardadas neste navegador (docs/OFFLINE.md seção 3.5): quem saiu
+ * ou perdeu o acesso com vendas não enviadas. Só o envio assistido por um gerente lê isto.
+ */
+export async function otherOperatorQueues(currentUserId: string): Promise<OperatorQueue[]> {
+  if (!(await Dexie.exists(COMMON_DB_NAME))) return [];
+  const rows = await commonDb().pending.where("userId").notEqual(currentUserId).toArray();
+  const queues = await Promise.all(
+    rows.map(async (row) => {
+      const ops = await userDb(row.userId)
+        .operations.where("status")
+        .noneOf(FINAL_STATUSES)
+        .toArray();
+      return {
+        userId: row.userId,
+        userName: ops.find((op) => op.receipt)?.receipt.userName ?? "Operador",
+        unsent: ops.filter((op) => UNSENT_STATUSES.includes(op.status)).length,
+        conflicts: ops.filter((op) => op.status === "conflict").length,
+      };
+    }),
+  );
+  return queues.filter((q) => q.unsent + q.conflicts > 0);
+}
+
 /**
  * Encerra a operação offline do operador (saída, troca de usuário ou perda de acesso): apaga a
  * cópia de dados e a autorização. Se houver operações não finalizadas, o banco fica só com a

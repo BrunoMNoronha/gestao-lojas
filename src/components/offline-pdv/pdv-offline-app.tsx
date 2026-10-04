@@ -162,6 +162,7 @@ function OfflinePdv() {
       <OfflinePdvHeader
         userId={userId}
         queueUserId={pdv.queueUserId}
+        sessionUser={pdv.sessionUser}
         online={pdv.online}
         syncing={pdv.syncing}
         syncError={pdv.syncError}

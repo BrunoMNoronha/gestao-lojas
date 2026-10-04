@@ -14,6 +14,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 import { lockCashRegisterById } from "@/lib/cash-register";
 import { getOnAccountSettings } from "@/lib/on-account";
 import { storeDueDate } from "@/lib/store-time";
@@ -758,10 +759,16 @@ async function previousResult(op: ParsedOperation): Promise<OfflineOperationResu
   return storedResult(op.operationId, stored);
 }
 
-/** Grava a operação nova: aplicada (com os efeitos) ou conflito (sem efeito), numa transação. */
+/**
+ * Grava a operação nova: aplicada (com os efeitos) ou conflito (sem efeito), numa transação. No
+ * envio assistido (`submittedBy`, um gerente enviando a venda de outro operador), nada é aplicado:
+ * a operação é sempre conflito, com o motivo encontrado ou ASSISTED_SUBMISSION, para um gerente
+ * conferir e aprovar com a autoria original.
+ */
 async function recordOperation(
   op: ParsedOperation,
   receivedAt: Date,
+  submittedBy: SessionUser | null = null,
 ): Promise<OfflineOperationResult> {
   return prisma.$transaction(async (tx) => {
     // O caixa original fica travado até o fim: serializa com vendas, sangrias e fechamento dele
@@ -787,20 +794,32 @@ async function recordOperation(
         cashRegisterId: cash?.id ?? null,
         occurredAt: op.occurredAt,
         receivedAt,
+        submittedById: submittedBy?.id ?? null,
       },
     });
 
     let evaluated: Awaited<ReturnType<typeof evaluateOperation>>;
     try {
       evaluated = await evaluateOperation(tx, op, cash, device, grant, receivedAt);
+      if (submittedBy) {
+        throw new SaleConflict(
+          SyncConflictReason.ASSISTED_SUBMISSION,
+          `Enviada por ${submittedBy.name} em nome do operador da venda. Confira antes de aprovar.`,
+        );
+      }
     } catch (error) {
       if (!(error instanceof SaleConflict)) throw error;
+      // No envio assistido, o outro motivo encontrado vem primeiro e a origem fica registrada
+      const message =
+        submittedBy && error.reason !== SyncConflictReason.ASSISTED_SUBMISSION
+          ? `${error.message} Enviada por ${submittedBy.name} em nome do operador da venda.`
+          : error.message;
       await tx.syncOperation.update({
         where: { id: op.operationId },
         data: {
           status: SyncOperationStatus.CONFLICT,
           conflictReason: error.reason,
-          conflictMessage: error.message,
+          conflictMessage: message,
         },
       });
       return {
@@ -808,7 +827,7 @@ async function recordOperation(
         status: "conflict",
         replayed: false,
         reason: error.reason,
-        message: error.message,
+        message,
       };
     }
 
@@ -837,8 +856,9 @@ async function recordOperation(
 
 /**
  * Sincroniza uma operação offline do operador já autorizado (`pdv.use`). Nunca lança: cada
- * operação do lote recebe o próprio resultado. Só o operador original envia as próprias
- * operações; o envio assistido por um gerente é outra etapa (#38, PR 3).
+ * operação do lote recebe o próprio resultado. O operador envia as próprias operações; quem tem
+ * `offline.reconcile` também envia as de outro operador guardadas no aparelho (envio assistido,
+ * docs/OFFLINE.md seção 3.5), que chegam sempre como conflito, com a autoria original.
  */
 export async function syncOfflineOperation(
   user: SessionUser,
@@ -848,10 +868,11 @@ export async function syncOfflineOperation(
   const operationId = readOperationId(raw);
   try {
     const op = parseOperation(raw);
-    if (op.userId !== user.id) {
+    const assisted = op.userId !== user.id;
+    if (assisted && !can(user.role, "offline.reconcile")) {
       throw new OperationRejected(
         "forbidden",
-        "Esta venda é de outro operador e só pode ser enviada por ele.",
+        "Esta venda é de outro operador e só pode ser enviada por ele ou por um gerente.",
       );
     }
 
@@ -860,7 +881,7 @@ export async function syncOfflineOperation(
     const previous = await previousResult(op);
     if (previous) return previous;
     try {
-      return await recordOperation(op, receivedAt);
+      return await recordOperation(op, receivedAt, assisted ? user : null);
     } catch (error) {
       if (isDuplicateOperation(error)) {
         const concurrent = await previousResult(op);

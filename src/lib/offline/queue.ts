@@ -1,6 +1,8 @@
 import {
+  getDevice,
   readMeta,
   refreshPendingCount,
+  UNSENT_STATUSES,
   userDb,
   type LocalOperation,
   type LocalOperationStatus,
@@ -21,6 +23,10 @@ import { offlineBlock } from "@/lib/offline/sync";
 // para a mesma chave (idempotência da #35).
 
 const OPERATIONS_URL = "/api/offline/operations";
+const REPORT_URL = "/api/offline/report";
+// Repetição do mesmo informe (menor que o prazo de "sem contato" do servidor, de 10 min)
+const REPORT_REPEAT_MS = 2 * 60_000;
+const lastReports = new Map<string, { body: string; at: number }>();
 const MAX_BATCH = 50; // MAX_OPERATIONS_PER_BATCH do servidor
 const REQUEST_TIMEOUT_MS = 30_000;
 // Conflito só muda quando um gerente decide: a consulta automática é espaçada
@@ -184,7 +190,8 @@ function applyResult(
       return {
         ...base,
         status: "failed",
-        message: "Venda de outro operador: é enviada quando o operador da venda entrar.",
+        message:
+          "Venda de outro operador: é enviada quando o operador da venda entrar, ou por um gerente.",
       };
     default:
       return {
@@ -315,18 +322,72 @@ export async function pruneQueue(userId: string) {
 }
 
 /**
- * Envia a fila do operador da sessão em lotes de até 50, na ordem em que as vendas aconteceram,
- * até esvaziar ou falhar. Conflitos são consultados de novo a cada 5 minutos (ou sempre, com
- * `includeConflicts`, no botão manual), para saber da decisão do gerente.
+ * Vendas ainda não gravadas no servidor por autorização offline: todas as autorizações da fila e
+ * a atual (com zero, se não tiver nenhuma), para o servidor zerar o que já foi enviado.
+ */
+export function pendingByGrant(
+  operations: LocalOperation[],
+  currentGrantId: string | null,
+): { grantId: string; pending: number }[] {
+  const counts = new Map<string, number>();
+  if (currentGrantId) counts.set(currentGrantId, 0);
+  for (const op of operations) {
+    if (!op.request) continue;
+    const unsent = UNSENT_STATUSES.includes(op.status) ? 1 : 0;
+    counts.set(op.request.grantId, (counts.get(op.request.grantId) ?? 0) + unsent);
+  }
+  return [...counts].map(([grantId, pending]) => ({ grantId, pending })).slice(0, 50);
+}
+
+/**
+ * Informa ao servidor as vendas do operador da sessão ainda não enviadas, por autorização
+ * (docs/OFFLINE.md seção 3.3): o fechamento do caixa avisa quando algum aparelho ainda tem vendas.
+ */
+export async function reportPending(userId: string) {
+  const db = userDb(userId);
+  const [{ id: deviceId }, grant, operations] = await Promise.all([
+    getDevice(),
+    readMeta(db, "grant"),
+    db.operations.toArray(),
+  ]);
+  const grants = pendingByGrant(operations, grant?.id ?? null);
+  if (!deviceId || grants.length === 0) return;
+  // O mesmo informe só se repete a cada 2 min: serve de sinal de contato para o fechamento
+  const body = JSON.stringify({ deviceId, grants });
+  const last = lastReports.get(userId);
+  if (last && last.body === body && Date.now() - last.at < REPORT_REPEAT_MS) return;
+  const res = await fetch(REPORT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Informe de pendências recusado (${res.status}).`);
+  lastReports.set(userId, { body, at: Date.now() });
+}
+
+/**
+ * Envia a fila do operador em lotes de até 50, na ordem em que as vendas aconteceram, até
+ * esvaziar ou falhar. Conflitos são consultados de novo a cada 5 minutos (ou sempre, com
+ * `includeConflicts`, no botão manual), para saber da decisão do gerente. Com `report` (a fila
+ * é do operador da sessão), informa em seguida as vendas que ainda faltam.
+ *
+ * Um gerente também envia a fila de outro operador guardada no aparelho (envio assistido): as
+ * vendas chegam ao servidor como conflito, com a autoria original, para conferência.
  */
 export async function sendQueue(
   userId: string,
-  { includeConflicts = false } = {},
+  { includeConflicts = false, report = false } = {},
 ): Promise<SendSummary> {
   const summary = await withSendLock(userId, () => sendBatches(userId, includeConflicts));
   await pruneQueue(userId).catch((error) => console.error("Falha ao limpar a fila:", error));
   await refreshPendingCount(userId).catch((error) =>
     console.error("Não foi possível atualizar a contagem de pendências:", error),
   );
+  if (report && summary.status === "done") {
+    await reportPending(userId).catch((error) =>
+      console.error("Não foi possível informar as vendas pendentes:", error),
+    );
+  }
   return summary;
 }

@@ -16,6 +16,9 @@ import {
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-dialog";
 import { OfflineQueuePanel } from "@/components/offline-pdv/offline-queue-panel";
+import { AssistedQueuePanel } from "@/components/offline-pdv/assisted-queue-panel";
+import type { SessionUser } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 import { readMeta, userDb } from "@/lib/offline/db";
 import { MAX_DATA_AGE_MS } from "@/lib/offline/sync";
 import { formatStoreDateTime } from "@/lib/store-time";
@@ -98,6 +101,8 @@ interface OfflinePdvHeaderProps {
   userId: string | null;
   // Operador cuja fila de vendas aparece (também fora do terminal, ex.: caixa fechado)
   queueUserId: string | null;
+  // Usuário da sessão (só com conexão): o gerente vê as vendas de outros operadores
+  sessionUser: SessionUser | null;
   online: boolean;
   syncing: boolean;
   syncError: string | null;
@@ -109,6 +114,7 @@ interface OfflinePdvHeaderProps {
 export function OfflinePdvHeader({
   userId,
   queueUserId,
+  sessionUser,
   online,
   syncing,
   syncError,
@@ -199,6 +205,9 @@ export function OfflinePdvHeader({
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {sessionUser && can(sessionUser.role, "offline.reconcile") && (
+            <AssistedQueuePanel sessionUserId={sessionUser.id} />
+          )}
           {queueUserId && (
             <OfflineQueuePanel
               userId={queueUserId}

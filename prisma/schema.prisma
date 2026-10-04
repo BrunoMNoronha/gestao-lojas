@@ -78,6 +78,7 @@ enum SyncConflictReason {
   FRACTIONAL_QUANTITY // Quantidade fracionada em produto vendido por unidade inteira
   ON_ACCOUNT_OFFLINE // Fiado não é permitido offline
   INVALID_AMOUNTS // Desconto maior que o subtotal ou valor pago menor que o total
+  ASSISTED_SUBMISSION // Enviada por um gerente em nome do operador original (sem outro conflito)
 }
 
 // Pendência de conciliação: a venda foi aplicada, mas exige acompanhamento (docs/OFFLINE.md, seção 4)
@@ -112,6 +113,7 @@ model User {
   receivablePayments ReceivablePayment[]
   syncOperations     SyncOperation[]     @relation("SyncOperationAuthor")
   resolvedOperations SyncOperation[]     @relation("SyncOperationResolver")
+  submittedOperations SyncOperation[]    @relation("SyncOperationSubmitter")
   registeredDevices  OfflineDevice[]     @relation("OfflineDeviceRegisteredBy")
   revokedDevices     OfflineDevice[]     @relation("OfflineDeviceRevokedBy")
   offlineGrants      OfflineGrant[]
@@ -391,6 +393,10 @@ model SyncOperation {
   conflictMessage String?
   resolvedById    String?
   resolvedBy      User?                @relation("SyncOperationResolver", fields: [resolvedById], references: [id])
+  // Gerente que enviou a operação em nome do operador original (envio assistido, #38); nulo no
+  // envio pelo próprio operador
+  submittedById   String?
+  submittedBy     User?                @relation("SyncOperationSubmitter", fields: [submittedById], references: [id])
   resolvedAt      DateTime?
   resolutionNote  String?
 
@@ -450,7 +456,12 @@ model OfflineGrant {
   cashRegister   CashRegister  @relation(fields: [cashRegisterId], references: [id])
   issuedAt       DateTime      @default(now())
   expiresAt      DateTime
+  // Vendas desta autorização ainda não gravadas no servidor, informadas pelo aparelho (#38): o
+  // fechamento do caixa avisa quando algum aparelho ainda tem vendas dele
+  pendingCount      Int?
+  pendingReportedAt DateTime?
   operations     SyncOperation[]
 
   @@index([deviceId, userId, issuedAt])
+  @@index([cashRegisterId])
 }

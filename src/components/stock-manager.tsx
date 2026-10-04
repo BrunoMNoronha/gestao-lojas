@@ -121,6 +121,8 @@ export function StockManager({
   const [dialogKey, setDialogKey] = useState(0);
 
   const outOfStockCount = products.filter((p) => p.currentStock <= 0).length;
+  // Saldo negativo só acontece pela sincronização de vendas offline (docs/OFFLINE.md seção 3.2)
+  const negativeStock = products.filter((p) => p.currentStock < 0);
   const hasFilters = Object.values(filters).some(Boolean);
 
   const loadMovements = async (nextFilters: Filters, append = false) => {
@@ -231,6 +233,50 @@ export function StockManager({
           </CardContent>
         </Card>
       </div>
+
+      {negativeStock.length > 0 && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <div className="text-sm">
+                <p className="text-destructive font-semibold">
+                  {negativeStock.length === 1
+                    ? "1 produto com saldo negativo"
+                    : `${negativeStock.length} produtos com saldo negativo`}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  Vendas feitas sem internet baixaram mais do que o saldo do sistema. Confira a
+                  contagem e ajuste o estoque; as pendências ficam em Sincronização offline.
+                </p>
+              </div>
+            </div>
+            <ul className="divide-y rounded-lg border text-sm">
+              {negativeStock.map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                  <span className="font-medium">{p.name}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-destructive font-mono font-semibold">
+                      {formatQuantity(p.currentStock, p.unit)} {p.unit}
+                    </span>
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1"
+                        onClick={() => openAdjustDialog(p.id)}
+                      >
+                        <ClipboardCheck className="h-3.5 w-3.5" />
+                        Ajustar
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* View switch */}
       <div className="bg-muted/40 inline-flex gap-1 rounded-lg border p-1">
