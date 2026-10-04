@@ -268,6 +268,21 @@ O servidor grava `receivedAt` e o resultado.
 - O sinal de conexão é uma chamada real ao servidor (ex.: `GET /api/offline/ping`, sem cache e com
   tempo limite), não `navigator.onLine`. Não depende de Background Sync nem promete envio com o
   navegador fechado.
+- Implementado na #37 (`src/lib/offline/sync.ts`): `GET /api/offline/ping` com `authorize("pdv.use")`
+  e tempo limite de 5 s no aparelho. 200 traz o usuário da sessão; 401 manda ao login; 403 apaga a
+  cópia local e mostra "sem acesso"; falha de rede, tempo esgotado ou 503 contam como servidor
+  inacessível. O `/pdv` confere a cada 30 s, nos eventos `online`/`offline` e ao voltar para a aba, e
+  sincroniza as alterações a cada 2 min com conexão.
+
+### Preparação (aparelho → servidor, #37)
+
+- `POST /api/offline/prepare` com `{ "deviceId"?, "deviceName"? }` em JSON (outro tipo de conteúdo é
+  recusado, para obrigar a checagem de CORS), `authorize("pdv.use")` e `Cache-Control: no-store`.
+  Exige o caixa aberto do operador (409 `cash_closed`). Registra o aparelho na primeira vez (id
+  desconhecido também registra de novo), recusa aparelho revogado (403 `device_revoked`) e emite a
+  autorização offline de 12 h vinculada ao caixa. Renovar é preparar de novo.
+- Em seguida o aparelho pede `navigator.storage.persist()`, grava a autorização e faz a carga completa
+  da cópia (`GET /api/offline/snapshot` sem cursor).
 
 ## 6. Escolhas técnicas
 
@@ -283,14 +298,21 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
   (`app/serwist/[path]/route.ts` com `createSerwistRoute`).
 - **Por quê:** gera a lista de arquivos do build a guardar (`_next/static`), que é a parte difícil de
   manter à mão, e trata atualização de versão.
-- **A validar no início da #37 (teste rápido):**
-  - compatibilidade com Next 16.3.8 (o exemplo oficial usa 16.2.10) e uso da versão estável (9.x),
-    não da `preview`;
-  - versão do cache por `VERCEL_GIT_COMMIT_SHA`, e não por `git rev-parse` como no exemplo;
-  - escopo `/` a partir de `/serwist/sw.js` e cabeçalho `Cache-Control: no-cache` no script;
-  - inclusão do WASM do leitor (`/vendor/zxing/zxing_reader-<versão>.wasm`, copiado no
-    `postinstall`) na lista guardada.
-- **Alternativa se o teste falhar:** Service Worker próprio, com a lista de arquivos gerada no build.
+- **Validado na #37** com `serwist` e `@serwist/turbopack` **9.5.12** (estáveis) no Next 16.3.8:
+  - o fonte fica em `src/service-worker/sw.ts` (tsconfig próprio, com a lib `webworker`, fora do
+    tsconfig da aplicação) e é empacotado no build pelo `esbuild` nativo (dependência de
+    desenvolvimento; `useNativeEsbuild: true`, também na Vercel);
+  - `/serwist/sw.js` sai estático no build, com `Service-Worker-Allowed: /` (escopo `/`) e
+    `Cache-Control: no-cache, no-store, must-revalidate` (`next.config.ts`); o proxy não atua em
+    `/serwist/` nem no manifest;
+  - guarda `_next/static` (inclusive chunks sob demanda e as fontes `.woff2`) e `public/` (com o
+    WASM do leitor e os ícones), mais as páginas estáticas `/pdv` e `/offline`. A revisão dessas
+    páginas é `VERCEL_GIT_COMMIT_SHA` ou, fora da Vercel, o hash da lista de arquivos do build;
+  - qualquer outra navegação vai direto à rede e nunca é guardada; sem conexão, cai na página
+    `/offline` (com atalho para o `/pdv`). `/api` não passa pelo Service Worker;
+  - a versão nova **espera** (`skipWaiting: false`): o `/pdv` mostra "Atualizar o app" e só troca
+    quando o operador confirma. Os caches antigos são apagados na troca; o IndexedDB não é tocado;
+  - em `next dev` o registro fica desligado.
 
 ### 6.2 Tela do PDV offline
 
@@ -300,8 +322,21 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
   (`next/dynamic` com `ssr: false`, conforme o guia de SPA). O HTML não contém dados do usuário; tudo
   vem do IndexedDB. Quando há rede, os dados chegam pelos Route Handlers autenticados.
 - Por estar fora do `/admin`, a página não usa `requirePageAccess` (não há dado no HTML para
-  proteger). A proteção fica nos handlers (`authorize("pdv.use")`). O destino do `/admin/pdv`
-  (redirecionar para `/pdv` ou manter) é definido na #37.
+  proteger). A proteção fica nos handlers (`authorize("pdv.use")`).
+- **Decisões da #37 (aprovadas pelo responsável em 03/10/2026):**
+  1. O `/admin/pdv` fica como está (PDV online). O `/pdv` entra no menu como "PDV sem internet"
+     (`APP_ROUTES`) e é aceito como destino do login. O redirecionamento fica para a #38.
+  2. No `/pdv` a venda só é finalizada com conexão, pelo `createSale` com a idempotência da #35. Sem
+     conexão, o carrinho é montado normalmente e o botão de finalizar fica desativado com aviso.
+  3. A tela de aparelhos e a revogação pela interface vão para a #38; aqui entram o campo
+     `revokedAt` e a recusa na preparação.
+  4. O acesso segue esta seção, não o `requirePageAccess` citado no escopo da issue.
+- O terminal é o mesmo do `/admin/pdv` (`src/components/pdv-terminal.tsx`), com os dados da cópia
+  local. O Fiado não é oferecido no `/pdv`: a cópia não leva os parâmetros dele (3.4 e 3.8).
+- Abre sem conexão só com: operador ativo preparado, cópia completa, autorização válida, dados com
+  até 24 h e o caixa da autorização igual ao da última sincronização. Fora disso, a tela explica o
+  motivo. Com conexão, autorização vencida, caixa fechado ou caixa trocado levam à tela de
+  preparação.
 
 ### 6.3 IndexedDB: Dexie
 
@@ -329,6 +364,10 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
 - **Registro do aparelho:** na primeira preparação, o aparelho recebe um `deviceId` registrado no
   servidor (nome, quem registrou, quando, última sincronização, revogação). ADMIN e MANAGER podem
   revogar um aparelho.
+- Implementado na #37 (migration `0008_offline_devices`): tabelas `OfflineDevice` (o aparelho,
+  compartilhado pelos operadores do mesmo navegador) e `OfflineGrant` (operador, aparelho, caixa,
+  emissão e expiração). O `deviceId` fica no banco comum do navegador. Limite: apagar os dados do
+  site no navegador gera um aparelho novo na próxima preparação. A interface de revogação é da #38.
 - **Preparação** (online, por operador): caixa aberto, `pdv.use`, download da cópia mínima e emissão
   da autorização offline (3.5).
 - **Quem opera offline:** só o usuário que preparou o aparelho, enquanto a autorização for válida.
@@ -338,6 +377,11 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
 - **Saída e troca de usuário:** a cópia de dados do usuário que sai é apagada; a fila pendente é
   mantida e fica oculta para os outros usuários até o dono sincronizar. Nada pendente é apagado em
   silêncio.
+- Implementado na #37 (`src/lib/offline/db.ts`): o "Sair" do painel e do `/pdv` apaga a cópia antes
+  de encerrar a sessão; o painel (`OfflineUserGuard`) e o `/pdv` (pelo `ping`) apagam a cópia do
+  operador anterior quando outro usuário entra sem que ele tenha saído. Sem conexão, "Encerrar neste
+  aparelho" apaga a cópia local. Sem fila, o banco do operador é removido; com fila, ficam só as
+  operações.
 - **Senha nunca é guardada.** A sessão continua no cookie `HttpOnly` do Auth.js; o cache não vale
   como autorização no servidor.
 - **Limite assumido:** quem tem acesso físico ao aparelho e à conta do sistema operacional consegue ler

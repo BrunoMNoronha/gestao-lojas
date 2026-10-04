@@ -50,6 +50,15 @@ docker stop gestao-lojas-test
 No PowerShell, defina antes `$env:TEST_DATABASE_URL = "postgresql://..."` e rode
 `pnpm test:integration`.
 
+## PDV sem internet
+
+O app é instalável (manifest e Service Worker com Serwist). Em `/pdv`, o operador com o caixa aberto
+prepara o aparelho uma vez com internet; depois o PDV abre e consulta produtos e clientes sem
+conexão por até 12 horas, com os dados da última sincronização. Nesta etapa a venda ainda é
+finalizada só com conexão. O Service Worker só é registrado no build de produção
+(`pnpm build` / `pnpm start`); em `pnpm dev` ele fica desligado. Detalhes em
+[`docs/OFFLINE.md`](docs/OFFLINE.md).
+
 ## Documentação
 
 - [`AGENTS.md`](AGENTS.md) — convenções para agentes de IA e desenvolvedores
