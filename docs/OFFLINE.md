@@ -502,14 +502,14 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
 
 Nada abaixo é feito nesta issue; serve de referência para as próximas.
 
-| Etapa                     | Mudanças decorrentes deste documento                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #35 Idempotência e testes | Tabela de operações (`operationId` único, aparelho, operador, hash, estado, resultado); `Sale.occurredAt`; venda travando o caixa pelo id original; relatórios e vencimento por `occurredAt`; testes de integração com PostgreSQL                                                                                                                                                 |
-| #36 Cópia local           | Exclusão lógica em produtos, clientes e categorias (índices únicos parciais); datas em `Category`; histórico de preços; Route Handlers de cópia com cursor e campos de 3.8                                                                                                                                                                                                        |
-| #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                                                                                                                                                                             |
+| Etapa                     | Mudanças decorrentes deste documento                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #35 Idempotência e testes | Tabela de operações (`operationId` único, aparelho, operador, hash, estado, resultado); `Sale.occurredAt`; venda travando o caixa pelo id original; relatórios e vencimento por `occurredAt`; testes de integração com PostgreSQL                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| #36 Cópia local           | Exclusão lógica em produtos, clientes e categorias (índices únicos parciais); datas em `Category`; histórico de preços; Route Handlers de cópia com cursor e campos de 3.8                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Parte 2 (navegador, feita): fila no Dexie, saldo reservado, envio entre abas, recibo provisório e bloqueio do fechamento. Parte 3 (feita): migration `0010_offline_reconciliation`, tela "Sincronização offline" (conflitos, pendências e aparelhos), envio assistido, aviso do servidor no fechamento, ajuste pós-fechamento e saldo negativo em destaque. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
-| #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila). Parte (a), feita: infraestrutura e 12 cenários (seção 9). Parte (b): cota, atualização de versão, câmera, Edge e relatório                                                                                                                                                                                                                          |
-| #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                                                                                                                                                                   |
+| #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila). Parte (a), feita: infraestrutura e 12 cenários (seção 9). Parte (b), feita: cota, atualização de versão, câmera, Edge, Android emulado e relatório por camada (9.1)                                                                                                                                                                                                                                                                                                                                                                        |
+| #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 Migrations seguem o fluxo de `docs/DEPLOY.md` (aplicação explícita com `pnpm db:deploy`, nunca no
 build).
@@ -518,17 +518,44 @@ build).
 
 Suíte Playwright em `tests/e2e/` (como rodar: README, "Testes de navegador"), contra o build de
 produção, com o Service Worker ativo, o banco descartável dos testes de integração e o `siteverify`
-do reCAPTCHA simulado no servidor. A rede é cortada com `context.setOffline`; falhas do servidor
-são simuladas interceptando as chamadas `/api/offline/**` na página (o Service Worker não atende
-`/api`); mudanças feitas "por outro lado" (preço, caixa, usuário) vão direto ao banco.
+do reCAPTCHA simulado no servidor.
 
-| Arquivo                    | Cenários                                                                                          |
-| -------------------------- | ------------------------------------------------------------------------------------------------- |
-| `service-worker.spec.ts`   | `/pdv` preparado recarrega sem rede; painel sem rede mostra a página offline                       |
+**Navegadores** (matriz da seção 3.5), um projeto do Playwright cada:
+
+- `chromium`: o Chromium do Playwright, no lugar do Chrome de computador;
+- `msedge`: o Edge instalado na máquina (`channel: "msedge"`);
+- `android`: Chrome no Android **emulado** (Pixel 7: tela, toque e user agent). Não é um aparelho
+  real: câmera, armazenamento e economia de bateria do Android ficam para a homologação.
+
+Safari/iOS não é suportado (3.5) e não entra na suíte.
+
+**Como cada situação é simulada:**
+
+| Situação                       | Como                                                                                                        |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Sem rede                       | `context.setOffline`                                                                                        |
+| Falhas do servidor             | Interceptação das chamadas `/api/offline/**` na página (o Service Worker não atende `/api`)                 |
+| Mudanças "por outro lado"      | Direto no banco (preço, caixa, usuário)                                                                     |
+| Sem espaço / erro do IndexedDB | `IDBObjectStore.add` da fila passa a lançar `QuotaExceededError` ou `UnknownError` na página                |
+| Versão nova do app             | Preload do servidor (`support/mock-app-version.mjs`) serve o `/serwist/sw.js` com outra revisão das páginas |
+| Banco local da versão anterior | O teste recria o banco do operador com a estrutura da versão 1 (antes da #38), com as mesmas linhas         |
+| Câmera                         | Câmera falsa do Chromium com um vídeo Y4M de um EAN-13, gerado no `global-setup` (`support/fake-camera.ts`) |
+
+O Playwright não intercepta a busca do script do Service Worker (quem a faz é o navegador, fora da
+página), por isso a versão nova é simulada no servidor. É o mesmo build com outra revisão do `/pdv`
+e do `/offline`: o navegador instala o Service Worker novo e guarda as páginas de novo. A troca
+dos arquivos `_next/static` entre dois builds diferentes fica para a homologação.
+
+| Arquivo                    | Cenários                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `service-worker.spec.ts`   | `/pdv` preparado recarrega sem rede; painel sem rede mostra a página offline                                     |
 | `offline-sales.spec.ts`    | vender sem rede, recarregar, reconectar e comparar vendas/itens/estoque/caixa/recebíveis; reconexão intermitente |
-| `network-failures.spec.ts` | resposta perdida depois da gravação; servidor fora do ar com internet; lote processado em parte    |
-| `business-rules.spec.ts`   | dois terminais com o último saldo; preço alterado; caixa fechado no servidor                       |
-| `users-sessions.spec.ts`   | operador desativado (envio assistido pelo gerente); troca de usuário com fila; sessão expirada     |
+| `network-failures.spec.ts` | resposta perdida depois da gravação; servidor fora do ar com internet; lote processado em parte                  |
+| `business-rules.spec.ts`   | dois terminais com o último saldo; preço alterado; caixa fechado no servidor                                     |
+| `users-sessions.spec.ts`   | operador desativado (envio assistido pelo gerente); troca de usuário com fila; sessão expirada                   |
+| `storage-failures.spec.ts` | sem espaço no aparelho e erro do IndexedDB: sem recibo, carrinho mantido e uma única venda na nova tentativa     |
+| `app-update.spec.ts`       | Service Worker novo com a fila cheia ("Atualizar o app"); banco local da versão anterior migrado com a fila      |
+| `camera-scanner.spec.ts`   | sem rede, a câmera lê o código (ZXing em WASM do cache do Service Worker) e a venda segue pela fila              |
 
 Encontrado pela suíte (corrigido na #39): usuário desativado com o cookie ainda válido ficava em
 laço de redirecionamento entre `/login` e `/` (o navegador desistia com erro). Agora o servidor
@@ -537,5 +564,39 @@ Comportamento confirmado: o `/pdv` só percebe o caixa fechado no servidor ao at
 (a cada 2 min ou no "Sincronizar"); a fila é enviada antes disso, e a venda vai para o caixa
 original como ajuste pós-fechamento.
 
-Ficam para a parte (b): cota/falha de armazenamento, atualização de versão com fila, leitor pela
-câmera sem rede, execução no Edge (`channel: msedge`) e o relatório por camada de evidência.
+### 9.1 Evidências por camada (critérios de aceite da #33)
+
+Camadas:
+
+- **Unidade:** `pnpm test:unit`. Fila e venda no navegador, com `fake-indexeddb`, sem servidor.
+- **Integração:** `pnpm test:integration`. Servidor e PostgreSQL real e descartável.
+- **Navegador:** `pnpm test:e2e`. Build de produção nos três projetos acima.
+- **Homologação:** no ambiente alvo (Vercel + Neon), com aparelho real. **Nenhum item foi
+  homologado por esta suíte**: o roteiro de conferência de produção está no `docs/DEPLOY.md`.
+
+| Critério da #33                                                                      | Unidade                                          | Integração                                                     | Navegador                                                          | Homologação |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
+| Preparar, cortar a rede, recarregar, consultar e vender; defasagem e bloqueios       | Autorização vencida não grava                    | Preparação, autorização de 12 h, recusas (`offline-device`)    | `service-worker`, `offline-sales`, `camera-scanner`                | Pendente    |
+| Vendas pendentes sobrevivem a recarregar; novas vendas descontam as pendentes        | Saldo reservado sem erro de ponto flutuante      | —                                                              | `offline-sales` (recarga e saldo reservado), `app-update`          | Pendente    |
+| Carrinho em montagem sobrevive a fechar e reabrir                                    | —                                                | —                                                              | **Lacuna**: o carrinho só existe na memória da página (ver abaixo) | —           |
+| Uma única venda: resposta perdida, cliques repetidos, duas abas, lote repetido       | Trava entre abas; venda "sincronizando" retomada | Mesma chave, chamadas simultâneas, lote repetido               | `network-failures`, `offline-sales` (reconexão intermitente)       | Pendente    |
+| Atualizações e exclusões chegam sem apagar pendentes                                 | Limpeza só das finalizadas e refletidas          | Incremental, exclusões, cursor sem perdas (`offline-snapshot`) | `business-rules` (preço alterado)                                  | Pendente    |
+| Preço alterado, produto removido, estoque disputado, caixa fechado, Fiado bloqueado  | —                                                | Todas as políticas (`offline-sync`, `offline-reconciliation`)  | Preço, dois terminais e caixa fechado (`business-rules`)           | Pendente    |
+| Sessão expirada, operador inativo ou sem permissão; autoria e isolamento             | Fila do operador e envio assistido               | 401/403, envio assistido com a autoria original                | `users-sessions`                                                   | Pendente    |
+| Dinheiro, desconto/troco, unidades inteiras e fracionadas, datas                     | Arredondamento como o servidor                   | Precisão de valores e quantidades; data limitada à validade    | `offline-sales` (UN e KG)                                          | Pendente    |
+| Cota, banco indisponível, atualização do app, falha intermediária: sem falso sucesso | Falha de rede é recuperável                      | Falha no meio desfaz tudo; 503 com o banco fora                | `storage-failures`, `network-failures`, `app-update`               | Pendente    |
+| Fluxos online continuam funcionando                                                  | —                                                | `createSale` com idempotência e autorização (`sales-action`)   | —                                                                  | Pendente    |
+
+**Lacuna encontrada no levantamento da parte (b):** o carrinho que o operador está montando (antes
+de "Finalizar Venda") fica só no estado do React (`pdv-terminal.tsx`). Recarregar ou fechar a aba
+perde os itens. Venda nenhuma se perde, porque a venda só existe depois de gravada na fila. Mas o
+critério da #33 fala em "carrinho e vendas pendentes" e precisa de uma issue própria (guardar o
+rascunho no banco do operador).
+
+**Fica para a homologação:**
+
+- aparelho Android real (câmera, armazenamento, economia de bateria);
+- dois builds diferentes trocando arquivos `_next/static`;
+- cota real do navegador (a suíte simula o erro, não enche o disco);
+- desempenho com o catálogo real;
+- Chrome instalado (a suíte usa o Chromium do Playwright, da mesma base).
