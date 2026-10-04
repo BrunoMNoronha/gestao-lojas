@@ -389,7 +389,7 @@ function RunHistory({ runs }: { runs: TestDataRunItem[] }) {
         {runs.length === 0 ? (
           <p className="text-muted-foreground text-sm">Nenhuma execução até agora.</p>
         ) : (
-          <ul className="divide-y">
+          <ul className="divide-y" aria-label="Histórico de execuções">
             {runs.map((run) => {
               const badge = STATUS_BADGES[run.status];
               return (
