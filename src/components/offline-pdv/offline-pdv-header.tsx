@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-dialog";
+import { OfflineQueuePanel } from "@/components/offline-pdv/offline-queue-panel";
 import { readMeta, userDb } from "@/lib/offline/db";
 import { MAX_DATA_AGE_MS } from "@/lib/offline/sync";
 import { formatStoreDateTime } from "@/lib/store-time";
@@ -95,6 +96,8 @@ function useAppUpdate() {
 
 interface OfflinePdvHeaderProps {
   userId: string | null;
+  // Operador cuja fila de vendas aparece (também fora do terminal, ex.: caixa fechado)
+  queueUserId: string | null;
   online: boolean;
   syncing: boolean;
   syncError: string | null;
@@ -105,6 +108,7 @@ interface OfflinePdvHeaderProps {
 
 export function OfflinePdvHeader({
   userId,
+  queueUserId,
   online,
   syncing,
   syncError,
@@ -120,7 +124,7 @@ export function OfflinePdvHeader({
     const ok = await askConfirm({
       title: "Encerrar o PDV neste aparelho?",
       description:
-        "Os produtos, clientes e a autorização guardados aqui serão apagados. Para usar o PDV de novo é preciso internet e uma nova preparação.",
+        "Os produtos, clientes e a autorização guardados aqui serão apagados. As vendas ainda não enviadas continuam guardadas e são enviadas quando você entrar de novo, com conexão. Para usar o PDV de novo é preciso internet e uma nova preparação.",
       confirmLabel: "Encerrar",
       destructive: true,
     });
@@ -195,13 +199,21 @@ export function OfflinePdvHeader({
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {queueUserId && (
+            <OfflineQueuePanel
+              userId={queueUserId}
+              online={online}
+              busy={syncing}
+              onSend={onSync}
+            />
+          )}
           {app.waiting && (
             <Button size="sm" className="gap-1.5" onClick={app.update}>
               <Download className="h-4 w-4" />
               Atualizar o app
             </Button>
           )}
-          {userId && online && (
+          {(userId || queueUserId) && online && (
             <Button
               size="sm"
               variant="outline"

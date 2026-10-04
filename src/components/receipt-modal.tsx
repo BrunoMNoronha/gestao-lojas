@@ -12,10 +12,16 @@ import { Printer, CheckCircle, ShoppingBag } from "lucide-react";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { StoreSettingsData } from "@/actions/settings";
 import { displayCep, displayDocument, displayPhone } from "@/lib/masks";
+import { STORE_TIME_ZONE } from "@/lib/store-time";
 
 export interface CompletedSale {
   id: string;
-  code: number;
+  // Código oficial; nulo no recibo provisório de uma venda do /pdv ainda não sincronizada (#38)
+  code: number | null;
+  // Código da venda no aparelho (/pdv), que relaciona o recibo provisório ao oficial
+  localCode?: string;
+  // Situação do recibo provisório (ex.: "PENDENTE DE SINCRONIZAÇÃO")
+  pendingLabel?: string;
   total: number;
   discount: number;
   paymentMethod: string;
@@ -42,6 +48,8 @@ interface ReceiptModalProps {
   onOpenChange: (open: boolean) => void;
   sale: CompletedSale | null;
   storeSettings: StoreSettingsData;
+  // Rótulo do botão de fechar (padrão: "Nova Venda", logo depois de vender)
+  closeLabel?: string;
 }
 
 const paymentMethodLabels: Record<string, string> = {
@@ -52,17 +60,26 @@ const paymentMethodLabels: Record<string, string> = {
   ON_ACCOUNT: "Fiado / Em Conta",
 };
 
-export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: ReceiptModalProps) {
+export function ReceiptModal({
+  open,
+  onOpenChange,
+  sale,
+  storeSettings,
+  closeLabel = "Nova Venda",
+}: ReceiptModalProps) {
   if (!sale) return null;
 
   const handlePrint = () => {
     window.print();
   };
 
+  // Relógio da loja, não o do navegador (docs/OFFLINE.md seção 1)
   const formattedDate = new Date(sale.occurredAt).toLocaleString("pt-BR", {
+    timeZone: STORE_TIME_ZONE,
     dateStyle: "short",
     timeStyle: "medium",
   });
+  const provisional = sale.code === null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -71,7 +88,7 @@ export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: Receip
           <div className="text-success flex items-center gap-2">
             <CheckCircle className="h-6 w-6" />
             <DialogTitle className="text-foreground text-lg font-bold">
-              Venda Concluída com Sucesso!
+              {provisional ? "Venda registrada neste aparelho" : "Venda Concluída com Sucesso!"}
             </DialogTitle>
           </div>
         </DialogHeader>
@@ -116,8 +133,18 @@ export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: Receip
           <div className="space-y-0.5 border-b border-dashed border-gray-400 pb-2 text-[11px]">
             <div className="flex justify-between">
               <span>CUPOM NÃO FISCAL</span>
-              <span className="font-bold">VENDA #{sale.code}</span>
+              <span className="font-bold">
+                {provisional ? `PROVISÓRIA ${sale.localCode}` : `VENDA #${sale.code}`}
+              </span>
             </div>
+            {provisional && sale.pendingLabel && (
+              <div className="text-center font-bold">{sale.pendingLabel}</div>
+            )}
+            {!provisional && sale.localCode && (
+              <div className="flex justify-between text-gray-600">
+                <span>Registro no aparelho: {sale.localCode}</span>
+              </div>
+            )}
             <div className="flex justify-between text-gray-600">
               <span>Data: {formattedDate}</span>
             </div>
@@ -215,7 +242,7 @@ export function ReceiptModal({ open, onOpenChange, sale, storeSettings }: Receip
             <Printer className="mr-2 h-4 w-4" /> Imprimir Recibo
           </Button>
           <Button onClick={() => onOpenChange(false)} className="flex-1">
-            <ShoppingBag className="mr-2 h-4 w-4" /> Nova Venda
+            <ShoppingBag className="mr-2 h-4 w-4" /> {closeLabel}
           </Button>
         </DialogFooter>
 

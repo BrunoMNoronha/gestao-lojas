@@ -9,6 +9,7 @@
     "lint": "eslint",
     "check:actions": "node scripts/check-actions-auth.mjs",
     "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:unit": "vitest run --config vitest.unit.config.mts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate && node scripts/copy-zxing-wasm.mjs"
@@ -46,6 +47,7 @@
     "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "fake-indexeddb": "^6.2.5",
     "prisma": "^6.4.0",
     "tailwindcss": "^4",
     "typescript": "^5",

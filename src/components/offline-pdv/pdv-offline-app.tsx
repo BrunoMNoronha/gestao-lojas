@@ -1,67 +1,87 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { SerwistProvider } from "@serwist/turbopack/react";
 import { Loader2 } from "lucide-react";
-import type { StoreSettingsData } from "@/actions/settings";
 import { PdvTerminal, type PdvCustomer, type PdvProduct } from "@/components/pdv-terminal";
 import { readMeta, userDb } from "@/lib/offline/db";
+import { recordSale } from "@/lib/offline/queue";
+import {
+  reservedQuantities,
+  SaleDraftError,
+  toCompletedSale,
+  type PdvSaleDraft,
+  type SubmitSaleResult,
+} from "@/lib/offline/sale-operation";
 import { useOfflinePdv } from "@/components/offline-pdv/use-offline-pdv";
 import { OfflinePdvHeader } from "@/components/offline-pdv/offline-pdv-header";
+import { toStoreSettings } from "@/components/offline-pdv/store-settings";
 import {
   BlockedState,
   ForbiddenState,
   PrepareState,
 } from "@/components/offline-pdv/offline-pdv-states";
-import type { OfflineStore } from "@/lib/offline-snapshot";
 
 // PDV que abre sem rede (issue #37, docs/OFFLINE.md seção 6.2). Renderizado só no navegador: a
 // página /pdv é estática e não leva dados do usuário; tudo vem do IndexedDB, atualizado pelos
-// Route Handlers autenticados quando há conexão.
+// Route Handlers autenticados quando há conexão. Toda venda entra na fila do aparelho e é
+// enviada pelo POST /api/offline/operations (#38), com ou sem conexão no momento da venda.
 
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, "pt-BR");
 
-// Dados da loja para o recibo; o Fiado não é oferecido no /pdv (docs/OFFLINE.md seção 3.4)
-function toStoreSettings(store: OfflineStore | null): StoreSettingsData {
-  const value = (v: string | null | undefined) => v ?? undefined;
-  return {
-    personType: store?.personType === "INDIVIDUAL" ? "INDIVIDUAL" : "COMPANY",
-    companyName: store?.companyName ?? "",
-    tradeName: store?.tradeName ?? "",
-    document: value(store?.document),
-    phone: value(store?.phone),
-    zipCode: value(store?.zipCode),
-    address: value(store?.address),
-    number: value(store?.number),
-    neighborhood: value(store?.neighborhood),
-    city: value(store?.city),
-    state: value(store?.state),
-    receiptFooterNote: value(store?.receiptFooterNote),
-    onAccountEnabled: false,
-  };
+// Com conexão, espera o envio por até 4 s para já mostrar o código oficial no recibo; depois
+// disso o recibo sai provisório e o envio continua em segundo plano
+const SEND_WAIT_MS = 4_000;
+const wait = (ms: number) => new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+
+function saleErrorMessage(error: unknown): string {
+  if (error instanceof SaleDraftError) return `${error.message} O carrinho foi mantido.`;
+  const names = [
+    (error as { name?: string })?.name,
+    (error as { inner?: { name?: string } })?.inner?.name,
+  ];
+  if (names.includes("QuotaExceededError")) {
+    return "Sem espaço no aparelho para guardar a venda. Libere espaço e tente de novo: o carrinho foi mantido e a venda não foi registrada.";
+  }
+  return "Não foi possível guardar a venda neste aparelho. O carrinho foi mantido e a venda não foi registrada.";
 }
 
 function LocalTerminal({
   userId,
   online,
-  onSaleCompleted,
+  sendAfterSale,
 }: {
   userId: string;
   online: boolean;
-  onSaleCompleted: () => void;
+  sendAfterSale: (userId: string) => Promise<unknown>;
 }) {
   const db = userDb(userId);
   const data = useLiveQuery(async () => {
-    const [products, customers, store, cashRegister] = await Promise.all([
+    const [products, customers, store, cashRegister, sync, operations] = await Promise.all([
       db.products.toArray(),
       db.customers.toArray(),
       readMeta(db, "store"),
       readMeta(db, "cashRegister"),
+      readMeta(db, "sync"),
+      db.operations.toArray(),
     ]);
-    return { products, customers, store: store ?? null, cashRegister: cashRegister ?? null };
+    return {
+      products,
+      customers,
+      store: store ?? null,
+      cashRegister: cashRegister ?? null,
+      watermark: sync?.watermark ?? null,
+      operations,
+    };
   }, [db]);
 
+  // Saldo disponível = saldo da cópia menos as vendas da fila que ela ainda não mostra
+  // (docs/OFFLINE.md seção 3.2): o terminal não deixa vender além disso
+  const reserved = useMemo(
+    () => reservedQuantities(data?.operations ?? [], data?.watermark),
+    [data?.operations, data?.watermark],
+  );
   const products = useMemo<PdvProduct[]>(
     () =>
       (data?.products ?? [])
@@ -72,10 +92,11 @@ function LocalTerminal({
           barcode: p.barcode,
           salePrice: Number(p.salePrice),
           unit: p.unit,
-          currentStock: Number(p.currentStock),
+          currentStock:
+            Math.round((Number(p.currentStock) - (reserved.get(p.id) ?? 0)) * 1000) / 1000,
         }))
         .sort(byName),
-    [data?.products],
+    [data?.products, reserved],
   );
   const customers = useMemo<PdvCustomer[]>(
     () =>
@@ -84,7 +105,29 @@ function LocalTerminal({
         .sort(byName),
     [data?.customers],
   );
-  const storeSettings = useMemo(() => toStoreSettings(data?.store ?? null), [data?.store]);
+  const storeSettings = useMemo(() => toStoreSettings(data?.store), [data?.store]);
+
+  const submitSale = useCallback(
+    async (draft: PdvSaleDraft): Promise<SubmitSaleResult> => {
+      let id: string;
+      try {
+        id = (await recordSale(userId, draft)).id;
+      } catch (error) {
+        console.error("Falha ao guardar a venda no aparelho:", error);
+        return { success: false, error: saleErrorMessage(error) };
+      }
+      // A venda já está guardada: daqui em diante nada desfaz a confirmação
+      try {
+        await Promise.race([sendAfterSale(userId), wait(SEND_WAIT_MS)]);
+      } catch (error) {
+        console.error("Falha ao enviar a venda:", error);
+      }
+      const op = await db.operations.get(id);
+      if (!op) return { success: false, error: "A venda não foi encontrada no aparelho." };
+      return { success: true, sale: toCompletedSale(op) };
+    },
+    [db, sendAfterSale, userId],
+  );
 
   if (!data || !data.cashRegister) return <LoadingState />;
   return (
@@ -94,7 +137,7 @@ function LocalTerminal({
       storeSettings={storeSettings}
       cashRegisterId={data.cashRegister.id}
       offline={!online}
-      onSaleCompleted={onSaleCompleted}
+      submitSale={submitSale}
       className="lg:h-[calc(100svh-8.5rem)]"
     />
   );
@@ -118,6 +161,7 @@ function OfflinePdv() {
     <div className="bg-background flex min-h-screen flex-col">
       <OfflinePdvHeader
         userId={userId}
+        queueUserId={pdv.queueUserId}
         online={pdv.online}
         syncing={pdv.syncing}
         syncError={pdv.syncError}
@@ -137,7 +181,11 @@ function OfflinePdv() {
         )}
         {view.kind === "blocked" && <BlockedState reason={view.reason} onRetry={pdv.retry} />}
         {view.kind === "ready" && (
-          <LocalTerminal userId={view.userId} online={pdv.online} onSaleCompleted={pdv.syncNow} />
+          <LocalTerminal
+            userId={view.userId}
+            online={pdv.online}
+            sendAfterSale={pdv.sendAfterSale}
+          />
         )}
       </main>
     </div>

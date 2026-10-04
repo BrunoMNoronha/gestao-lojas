@@ -9,6 +9,7 @@ import {
   readMeta,
   userDb,
 } from "@/lib/offline/db";
+import { sendQueue, type SendSummary } from "@/lib/offline/queue";
 import { signOutClearingOfflineData } from "@/lib/offline/sign-out";
 import {
   checkConnectivity,
@@ -20,7 +21,9 @@ import {
 } from "@/lib/offline/sync";
 
 // Estado do PDV offline (issue #37): decide entre preparar, abrir com dados locais ou explicar a
-// indisponibilidade, a partir da conexão real com o servidor e da preparação guardada.
+// indisponibilidade, a partir da conexão real com o servidor e da preparação guardada. Com
+// conexão, envia também a fila de vendas do operador da sessão (#38), em qualquer tela: o
+// servidor aceita a venda mesmo com a autorização vencida ou o caixa já fechado.
 
 export type PdvView =
   | { kind: "loading" }
@@ -52,6 +55,14 @@ async function localBlock(userId: string) {
   return offlineBlock({ grant: grant ?? null, sync, cashRegister: cashRegister ?? null });
 }
 
+const SEND_ERRORS: Partial<Record<SendSummary["status"], string>> = {
+  unauthenticated: "Sessão expirada: entre de novo para enviar as vendas guardadas.",
+  forbidden: "Sem permissão para enviar as vendas guardadas.",
+  outdated: "Atualize o app para enviar as vendas guardadas.",
+};
+
+const SEND_MESSAGES = new Set(Object.values(SEND_ERRORS));
+
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof OfflineRequestError) return error.message;
   if (error instanceof DOMException && error.name === "QuotaExceededError") {
@@ -65,12 +76,16 @@ export function useOfflinePdv() {
   const [online, setOnline] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  // Operador cuja fila aparece e é enviada: o da sessão (com conexão) ou o ativo (sem conexão)
+  const [queueUserId, setQueueUserId] = useState<string | null>(null);
   const lastSyncAt = useRef(0);
   // Só o resultado da avaliação mais recente vale (as checagens periódicas podem se sobrepor), e
   // nenhuma avaliação muda a tela durante a preparação ou o encerramento
   const generation = useRef(0);
   const exclusive = useRef(false);
   const syncInFlight = useRef<Promise<boolean> | null>(null);
+  const sendInFlight = useRef<Promise<SendSummary> | null>(null);
 
   const sync = useCallback((userId: string) => {
     syncInFlight.current ??= runSync(userId).finally(() => {
@@ -94,6 +109,41 @@ export function useOfflinePdv() {
     }
   }, []);
 
+  /**
+   * Envia a fila do operador (uma rodada por vez nesta aba; entre abas, a trava do sendQueue).
+   * Venda aplicada libera a reserva de saldo quando a cópia local mostrar a baixa: por isso a
+   * cópia é sincronizada em seguida, se o aparelho estiver preparado.
+   */
+  const send = useCallback(
+    (userId: string, options: { includeConflicts?: boolean } = {}) => {
+      sendInFlight.current ??= runSend(userId).finally(() => {
+        sendInFlight.current = null;
+      });
+      return sendInFlight.current;
+
+      async function runSend(id: string): Promise<SendSummary> {
+        setSending(true);
+        try {
+          const summary = await sendQueue(id, options);
+          const message = SEND_ERRORS[summary.status];
+          if (message) setSyncError(message);
+          // Envio voltou a funcionar: some o aviso de envio (o de cópia fica com o sync)
+          else if (summary.status === "done") {
+            setSyncError((prev) => (prev && SEND_MESSAGES.has(prev) ? null : prev));
+          }
+          if (summary.applied > 0 && (await readMeta(userDb(id), "grant"))) await sync(id);
+          return summary;
+        } catch (error) {
+          console.error("Erro ao enviar as vendas guardadas:", error);
+          return { status: "unreachable", applied: 0 };
+        } finally {
+          setSending(false);
+        }
+      }
+    },
+    [sync],
+  );
+
   /** Decide a tela a partir da conexão e da preparação guardada. */
   const evaluate = useCallback(async () => {
     if (exclusive.current) return;
@@ -116,12 +166,14 @@ export function useOfflinePdv() {
       if (conn.status === "forbidden") {
         // Desmonta o terminal antes de apagar a cópia que ele está lendo
         setView({ kind: "forbidden" });
+        setQueueUserId(null);
         await endActiveOfflineSession();
         return;
       }
 
       if (conn.status === "unreachable") {
         const active = await getActiveUserId();
+        if (isLatest()) setQueueUserId(active);
         if (!active) {
           setView({ kind: "blocked", reason: "not_prepared" });
           return;
@@ -138,6 +190,10 @@ export function useOfflinePdv() {
         setView({ kind: "loading" });
         await endOfflineSession(active);
       }
+      if (!isLatest()) return;
+      setQueueUserId(user.id);
+      // Em segundo plano: a tela não espera o envio
+      void send(user.id);
       const db = userDb(user.id);
       const grant = await readMeta(db, "grant");
       if (!grant) {
@@ -163,7 +219,7 @@ export function useOfflinePdv() {
       console.error("Erro ao abrir o PDV offline:", error);
       setView({ kind: "blocked", reason: "incomplete" });
     }
-  }, [sync]);
+  }, [send, sync]);
 
   const prepare = useCallback(
     async (user: SessionUser) => {
@@ -194,12 +250,26 @@ export function useOfflinePdv() {
     [evaluate],
   );
 
-  /** Sincronização manual (botão) ou depois de uma venda online. */
+  /** Sincronização manual (botão): envia a fila, consulta os conflitos e atualiza a cópia. */
   const syncNow = useCallback(async () => {
+    if (queueUserId) await send(queueUserId, { includeConflicts: true });
     if (view.kind !== "ready") return;
     const ok = await sync(view.userId);
     if (ok) await evaluate();
-  }, [evaluate, sync, view]);
+  }, [evaluate, queueUserId, send, sync, view]);
+
+  /**
+   * Depois de uma venda: tenta enviar na hora, se houver conexão. Uma rodada já em andamento
+   * pode ter lido a fila antes da venda nova; por isso espera ela terminar e envia de novo.
+   */
+  const sendAfterSale = useCallback(
+    async (userId: string) => {
+      if (!online) return null;
+      if (sendInFlight.current) await sendInFlight.current;
+      return send(userId);
+    },
+    [online, send],
+  );
 
   /** Sair do sistema (com conexão): apaga a cópia local e encerra a sessão. */
   const signOut = useCallback(async () => {
@@ -245,10 +315,12 @@ export function useOfflinePdv() {
   return {
     view,
     online,
-    syncing,
+    syncing: syncing || sending,
     syncError,
+    queueUserId,
     prepare,
     syncNow,
+    sendAfterSale,
     signOut,
     endLocalSession,
     retry: evaluate,

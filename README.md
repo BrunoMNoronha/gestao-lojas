@@ -34,6 +34,7 @@ descrito em `.env.example`).
 | `pnpm db:migrate --name <nome>` | Cria e aplica uma migration (desenvolvimento) |
 | `pnpm db:deploy`                | Aplica migrations pendentes (produção)        |
 | `pnpm test:integration`         | Testes de integração com PostgreSQL real      |
+| `pnpm test:unit`                | Testes unitários (fila do PDV, sem banco)     |
 
 ## Testes
 
@@ -50,12 +51,16 @@ docker stop gestao-lojas-test
 No PowerShell, defina antes `$env:TEST_DATABASE_URL = "postgresql://..."` e rode
 `pnpm test:integration`.
 
+Os testes unitários (`tests/unit/`, `pnpm test:unit`) não usam banco: cobrem a fila de vendas do
+PDV sem internet com o IndexedDB simulado pelo `fake-indexeddb`.
+
 ## PDV sem internet
 
 O app é instalável (manifest e Service Worker com Serwist). Em `/pdv`, o operador com o caixa aberto
 prepara o aparelho uma vez com internet; depois o PDV abre e consulta produtos e clientes sem
-conexão por até 12 horas, com os dados da última sincronização. Nesta etapa a venda ainda é
-finalizada só com conexão. O Service Worker só é registrado no build de produção
+conexão por até 12 horas, com os dados da última sincronização. Toda venda do `/pdv` é gravada
+no aparelho e enviada ao servidor na hora, se houver conexão, ou quando ela voltar; o recibo sai
+provisório até a venda ser sincronizada. O Service Worker só é registrado no build de produção
 (`pnpm build` / `pnpm start`); em `pnpm dev` ele fica desligado. Detalhes em
 [`docs/OFFLINE.md`](docs/OFFLINE.md).
 
