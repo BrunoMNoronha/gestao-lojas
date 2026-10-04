@@ -621,7 +621,7 @@ Camadas:
 - **Integração:** `pnpm test:integration`. Servidor e PostgreSQL real e descartável.
 - **Navegador:** `pnpm test:e2e`. Build de produção nos três projetos acima.
 - **Homologação:** no ambiente alvo (Vercel + Neon), com aparelho real. **Nenhum item foi
-  homologado por esta suíte**: o roteiro de conferência de produção está no `docs/DEPLOY.md`.
+  homologado por esta suíte**: o roteiro está no `docs/DEPLOY.md`, seção 10 (cenários H1 a H19).
 
 | Critério da #33                                                                      | Unidade                                                                  | Integração                                                     | Navegador                                                          | Homologação |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------ | ----------- |
