@@ -46,6 +46,11 @@ import { MoneyInput } from "@/components/money-input";
 import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
 import { formatStoreDate, storeDueDate } from "@/lib/store-time";
 import { newOperationId } from "@/lib/operation-id";
+import {
+  lineSubtotal,
+  type PdvSaleDraft,
+  type SubmitSaleResult,
+} from "@/lib/offline/sale-operation";
 
 interface CartItem {
   productId: string;
@@ -138,17 +143,16 @@ export type PdvProduct = Pick<
 >;
 export type PdvCustomer = Pick<CustomerItem, "id" | "name" | "document" | "phone">;
 
-// Sem conexão com o servidor: monta o carrinho, mas a venda sem internet chega na #38
-const OFFLINE_SALE_MESSAGE =
-  "Sem conexão com o servidor: a venda não pode ser finalizada agora. Mantenha o carrinho e finalize quando a conexão voltar.";
-
 interface PdvTerminalProps {
   products: PdvProduct[];
   customers: PdvCustomer[];
   storeSettings: StoreSettingsData;
   cashRegisterId: string;
-  // PDV sem conexão (/pdv): consulta e carrinho funcionam; finalizar fica bloqueado
+  // PDV sem conexão com o servidor (/pdv): só avisa; a venda vai para a fila do aparelho
   offline?: boolean;
+  // Grava a venda por outro caminho (/pdv: fila do aparelho, issue #38). Sem ela, a venda vai
+  // ao servidor pelo createSale, com as regras online
+  submitSale?: (draft: PdvSaleDraft) => Promise<SubmitSaleResult>;
   // Depois da venda: por padrão recarrega os dados da página (router.refresh)
   onSaleCompleted?: () => void;
   className?: string;
@@ -160,6 +164,7 @@ export function PdvTerminal({
   storeSettings,
   cashRegisterId,
   offline = false,
+  submitSale,
   onSaleCompleted,
   className,
 }: PdvTerminalProps) {
@@ -261,7 +266,7 @@ export function PdvTerminal({
           if (prev.some((item) => item.productId === product.id)) {
             return prev.map((item) =>
               item.productId === product.id
-                ? { ...item, quantity: nextQty, subtotal: roundMoney(nextQty * item.unitPrice) }
+                ? { ...item, quantity: nextQty, subtotal: lineSubtotal(nextQty, item.unitPrice) }
                 : item,
             );
           }
@@ -356,7 +361,7 @@ export function PdvTerminal({
         ? prev.filter((i) => i.productId !== productId)
         : prev.map((i) =>
             i.productId === productId
-              ? { ...i, quantity, subtotal: roundMoney(quantity * i.unitPrice) }
+              ? { ...i, quantity, subtotal: lineSubtotal(quantity, i.unitPrice) }
               : i,
           ),
     );
@@ -397,10 +402,6 @@ export function PdvTerminal({
   // Open checkout
   const openCheckout = () => {
     if (cart.length === 0) return;
-    if (offline) {
-      setNotice(OFFLINE_SALE_MESSAGE);
-      return;
-    }
     setAmountPaid(total);
     setSelectedPayment("MONEY");
     setError(null);
@@ -410,11 +411,6 @@ export function PdvTerminal({
   // Finalize sale
   const finalizeSale = async () => {
     if (cart.length === 0 || loading) return;
-
-    if (offline) {
-      setError(OFFLINE_SALE_MESSAGE);
-      return;
-    }
 
     if (needsCustomer) {
       setError("Venda no Fiado exige um cliente. Selecione o cliente (F4) antes de confirmar.");
@@ -445,6 +441,11 @@ export function PdvTerminal({
       pendingOperation.current = { id: newOperationId(), signature };
     }
 
+    if (submitSale) {
+      await finalizeWith(submitSale, pendingOperation.current.id);
+      return;
+    }
+
     let res: Awaited<ReturnType<typeof createSale>>;
     try {
       res = await createSale({ operationId: pendingOperation.current.id, ...payload });
@@ -462,16 +463,58 @@ export function PdvTerminal({
     }
 
     if (res.success && res.data) {
-      pendingOperation.current = null;
-      setCompletedSale(res.data as CompletedSale);
-      setCheckoutDialogOpen(false);
-      setReceiptOpen(true);
-      clearCart();
-      if (onSaleCompleted) onSaleCompleted();
-      else router.refresh();
+      completeSale(res.data as CompletedSale);
     } else {
       setError(res.error || "Erro ao processar a venda.");
     }
+  };
+
+  const completeSale = (sale: CompletedSale) => {
+    pendingOperation.current = null;
+    setCompletedSale(sale);
+    setCheckoutDialogOpen(false);
+    setReceiptOpen(true);
+    clearCart();
+    if (onSaleCompleted) onSaleCompleted();
+    else if (!submitSale) router.refresh();
+  };
+
+  // Venda pela fila do aparelho (/pdv): o recibo só aparece depois de a venda estar gravada;
+  // se a gravação falhar (ex.: sem espaço), o carrinho fica como está
+  const finalizeWith = async (
+    submit: (draft: PdvSaleDraft) => Promise<SubmitSaleResult>,
+    operationId: string,
+  ) => {
+    let res: SubmitSaleResult;
+    try {
+      res = await submit({
+        operationId,
+        customer: selectedCustomer
+          ? {
+              id: selectedCustomer.id,
+              name: selectedCustomer.name,
+              document: selectedCustomer.document,
+            }
+          : null,
+        paymentMethod: selectedPayment,
+        discount: effectiveDiscount,
+        amountPaid: selectedPayment === "MONEY" ? amountPaid : undefined,
+        items: cart.map((item) => ({
+          productId: item.productId,
+          name: item.name,
+          unit: item.unit,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+        })),
+      });
+    } catch (err) {
+      console.error("Falha ao registrar a venda:", err);
+      res = { success: false, error: "Não foi possível registrar a venda neste aparelho." };
+    } finally {
+      setLoading(false);
+    }
+    if (res.success) completeSale(res.sale);
+    else setError(res.error);
   };
 
   // Global keyboard shortcuts. A ref keeps the listener stable while always calling
@@ -788,13 +831,14 @@ export function PdvTerminal({
               {offline && (
                 <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
                   <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                  Sem conexão: finalize a venda quando a conexão voltar.
+                  Sem conexão: a venda fica guardada neste aparelho e é enviada quando a conexão
+                  voltar.
                 </p>
               )}
               <Button
                 className="h-12 w-full gap-2 text-base"
                 onClick={openCheckout}
-                disabled={cart.length === 0 || offline}
+                disabled={cart.length === 0}
               >
                 <DollarSign className="h-5 w-5" />
                 Finalizar Venda (F10)
@@ -1001,11 +1045,7 @@ export function PdvTerminal({
             <Button variant="outline" onClick={() => setCheckoutDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button
-              onClick={finalizeSale}
-              disabled={loading || needsCustomer || offline}
-              className="gap-2"
-            >
+            <Button onClick={finalizeSale} disabled={loading || needsCustomer} className="gap-2">
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" /> Processando...

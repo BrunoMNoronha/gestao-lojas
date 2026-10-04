@@ -31,6 +31,9 @@ export interface SyncState {
   syncedAt: number | null;
   // Instante do servidor da última resposta aplicada
   generatedAt: string | null;
+  // Limite seguro da última sequência de páginas concluída (texto: bigint). Venda sincronizada
+  // com appliedTxid menor já tem a baixa de estoque refletida na cópia (#38)
+  watermark?: string | null;
 }
 
 export interface LocalMeta {
@@ -45,11 +48,107 @@ export interface LocalMeta {
 
 type MetaRow = { [K in keyof LocalMeta]: { key: K; value: LocalMeta[K] } }[keyof LocalMeta];
 
-/** Operação local pendente (fila da #38). Nesta etapa a fila existe, mas fica vazia. */
+/**
+ * Situação de uma operação na fila (docs/OFFLINE.md seção 4):
+ * - pending: gravada, ainda não enviada;
+ * - syncing: enviada, aguardando resposta;
+ * - failed: falha recuperável (rede, servidor, sessão); nada foi aplicado, nova tentativa;
+ * - synced: aplicada no servidor (inclusive conflito aprovado), com o código oficial;
+ * - conflict: recusada por regra de negócio, guardada no servidor para um gerente decidir;
+ * - discarded: conflito descartado por um gerente (final);
+ * - rejected: recusada sem ser gravada no servidor (formato, chave reaproveitada ou autoria).
+ *   Não é reenviada sozinha e nunca é apagada em silêncio.
+ */
+export type LocalOperationStatus =
+  "pending" | "syncing" | "failed" | "synced" | "conflict" | "discarded" | "rejected";
+
+/** Envelope do protocolo v1 de POST /api/offline/operations (decimais sempre como texto). */
+export interface OfflineSaleRequest {
+  protocolVersion: 1;
+  operationId: string;
+  kind: "sale.create";
+  deviceId: string;
+  grantId: string;
+  userId: string;
+  cashRegisterId: string;
+  occurredAt: string;
+  payload: {
+    customerId: string | null;
+    paymentMethod: "MONEY" | "PIX" | "CREDIT_CARD" | "DEBIT_CARD";
+    discount: string;
+    amountPaid?: string;
+    items: { productId: string; quantity: string; unitPrice: string }[];
+  };
+}
+
+/** Dados do recibo provisório (nomes e valores como o operador viu no momento da venda). */
+export interface LocalReceipt {
+  userName: string;
+  customerName: string;
+  customerDocument: string | null;
+  total: string;
+  discount: string;
+  amountPaid: string;
+  change: string;
+  items: {
+    productId: string;
+    productName: string;
+    unit: string;
+    quantity: string;
+    unitPrice: string;
+    subtotal: string;
+  }[];
+}
+
+/** Operação da fila (#38): uma venda feita no /pdv, com ou sem conexão. */
 export interface LocalOperation {
-  id: string;
-  status: string;
-  createdAt: number;
+  id: string; // operationId
+  status: LocalOperationStatus;
+  createdAt: number; // relógio do aparelho
+  request: OfflineSaleRequest;
+  receipt: LocalReceipt;
+  attempts: number;
+  lastAttemptAt: number | null;
+  // Mensagem da última falha, do conflito ou da recusa
+  message: string | null;
+  conflictReason: string | null;
+  // Venda oficial e transação que a gravou (depois de sincronizada)
+  sale: { id: string; code: number; occurredAt: string } | null;
+  appliedTxid: string | null;
+  approved: boolean;
+  // Quando chegou a um estado final (synced ou discarded)
+  settledAt: number | null;
+}
+
+/** Ainda não gravada no servidor (bloqueia o fechamento do caixa). */
+export const UNSENT_STATUSES: LocalOperationStatus[] = ["pending", "syncing", "failed", "rejected"];
+/** Estados finais: a operação pode sair da fila depois do prazo de retenção. */
+export const FINAL_STATUSES: LocalOperationStatus[] = ["synced", "discarded"];
+
+/**
+ * Atualização da versão 1 para a 2. Na versão 1 a fila existia, mas nenhuma venda era gravada
+ * nela; uma linha sem os dados da venda fica como recusada (visível), nunca é apagada.
+ */
+export function upgradeOperationV1(op: Partial<LocalOperation> & { id: string }): LocalOperation {
+  const hasSale = !!op.request && !!op.receipt;
+  return {
+    ...op,
+    id: op.id,
+    status: hasSale ? (op.status ?? "pending") : "rejected",
+    createdAt: op.createdAt ?? Date.now(),
+    request: op.request as OfflineSaleRequest,
+    receipt: op.receipt as LocalReceipt,
+    attempts: op.attempts ?? 0,
+    lastAttemptAt: op.lastAttemptAt ?? null,
+    message: hasSale
+      ? (op.message ?? null)
+      : "Operação de uma versão antiga do app, sem os dados da venda.",
+    conflictReason: op.conflictReason ?? null,
+    sale: op.sale ?? null,
+    appliedTxid: op.appliedTxid ?? null,
+    approved: op.approved ?? false,
+    settledAt: op.settledAt ?? null,
+  };
 }
 
 export class OfflineUserDb extends Dexie {
@@ -61,8 +160,8 @@ export class OfflineUserDb extends Dexie {
 
   constructor(userId: string) {
     super(userDbName(userId));
-    // Atualizações futuras da estrutura entram como version(2), version(3)... com upgrade: a
-    // fila de operações nunca é descartada numa atualização do app.
+    // Cada mudança de estrutura entra como uma versão nova com upgrade: a fila de operações
+    // nunca é descartada numa atualização do app.
     this.version(1).stores({
       products: "id, barcode, sku, categoryId",
       categories: "id",
@@ -70,6 +169,17 @@ export class OfflineUserDb extends Dexie {
       meta: "key",
       operations: "id, status, createdAt",
     });
+    // #38: a fila guarda a venda completa; settledAt indexa a limpeza das já finalizadas
+    this.version(2)
+      .stores({ operations: "id, status, createdAt, settledAt" })
+      .upgrade((tx) =>
+        tx
+          .table("operations")
+          .toCollection()
+          .modify((op: LocalOperation) => {
+            Object.assign(op, upgradeOperationV1(op));
+          }),
+      );
   }
 }
 
@@ -80,7 +190,10 @@ interface CommonRow {
 
 interface PendingCount {
   userId: string;
+  // Operações ainda não finalizadas (não enviadas ou em conflito)
   count: number;
+  // Vendas ainda não gravadas no servidor, por caixa (bloqueiam o fechamento dele)
+  unsentByCashRegister?: Record<string, number>;
 }
 
 class OfflineCommonDb extends Dexie {
@@ -147,7 +260,13 @@ export async function savePreparation(prep: OfflinePreparation, persisted: boole
   ]);
 }
 
-const EMPTY_SYNC: SyncState = { cursor: null, complete: false, syncedAt: null, generatedAt: null };
+const EMPTY_SYNC: SyncState = {
+  cursor: null,
+  complete: false,
+  syncedAt: null,
+  generatedAt: null,
+  watermark: null,
+};
 
 /**
  * Aplica uma página da cópia do servidor numa única transação. `reset` (carga completa) apaga a
@@ -183,6 +302,8 @@ export async function applySnapshotPage(db: OfflineUserDb, page: OfflineSnapshot
       complete: previous.complete || done,
       syncedAt: done ? Date.now() : previous.syncedAt,
       generatedAt: page.generatedAt,
+      // O limite só vale ao fim da sequência: aí tudo abaixo dele já chegou à cópia
+      watermark: done ? page.watermark : (previous.watermark ?? null),
     };
     await db.meta.bulkPut([
       { key: "sync", value: sync },
@@ -194,14 +315,46 @@ export async function applySnapshotPage(db: OfflineUserDb, page: OfflineSnapshot
 }
 
 /**
+ * Atualiza, no banco comum, a contagem de operações não finalizadas do operador e as vendas
+ * ainda não gravadas no servidor por caixa. É o que o painel lê para bloquear o fechamento do
+ * caixa e o que fica visível de uma fila de outro operador.
+ */
+export async function refreshPendingCount(userId: string) {
+  const db = userDb(userId);
+  const open = await db.operations.where("status").noneOf(FINAL_STATUSES).toArray();
+  if (open.length === 0) {
+    await commonDb().pending.delete(userId);
+    return;
+  }
+  const unsentByCashRegister: Record<string, number> = {};
+  for (const op of open) {
+    if (!UNSENT_STATUSES.includes(op.status) || !op.request) continue;
+    const id = op.request.cashRegisterId;
+    unsentByCashRegister[id] = (unsentByCashRegister[id] ?? 0) + 1;
+  }
+  await commonDb().pending.put({ userId, count: open.length, unsentByCashRegister });
+}
+
+/**
+ * Vendas deste navegador ainda não gravadas no servidor para o caixa (de qualquer operador).
+ * Não cria o banco local quando ele não existe (painel sem uso do PDV offline).
+ */
+export async function unsentSalesForCashRegister(cashRegisterId: string): Promise<number> {
+  if (!(await Dexie.exists(COMMON_DB_NAME))) return 0;
+  const rows = await commonDb().pending.toArray();
+  return rows.reduce((sum, row) => sum + (row.unsentByCashRegister?.[cashRegisterId] ?? 0), 0);
+}
+
+/**
  * Encerra a operação offline do operador (saída, troca de usuário ou perda de acesso): apaga a
- * cópia de dados e a autorização. Se houver operações pendentes, o banco fica só com a fila, que
- * continua oculta para os outros operadores até o dono sincronizar; nada pendente é apagado.
+ * cópia de dados e a autorização. Se houver operações não finalizadas, o banco fica só com a
+ * fila, que continua oculta para os outros operadores até o dono sincronizar; nada pendente é
+ * apagado.
  */
 export async function endOfflineSession(userId: string) {
   const db = userDb(userId);
-  const pending = await db.operations.count();
-  if (pending > 0) {
+  const open = await db.operations.where("status").noneOf(FINAL_STATUSES).count();
+  if (open > 0) {
     await db.transaction("rw", [db.products, db.categories, db.customers, db.meta], () =>
       Promise.all([
         db.products.clear(),
@@ -210,7 +363,7 @@ export async function endOfflineSession(userId: string) {
         db.meta.clear(),
       ]),
     );
-    await commonDb().pending.put({ userId, count: pending });
+    await refreshPendingCount(userId);
   } else {
     db.close();
     userDbs.delete(userId);

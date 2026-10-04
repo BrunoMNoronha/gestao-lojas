@@ -147,12 +147,20 @@ Detalhes, conflitos e pendências em `docs/OFFLINE.md` (seções 3 a 5).
 - **Pendências:** `ReconciliationIssue` (estoque negativo, venda pós-fechamento, preço divergente, data ajustada, cliente excluído), gravadas na transação da venda.
 - **Conciliação:** Server Actions em `src/actions/offline-reconciliation.ts` com `authorize("offline.reconcile")` (ADMIN e MANAGER): listar, aprovar (autoria e caixa originais), descartar com motivo e dar ciência.
 
+### 9. Fila de vendas no navegador (issue #38, parte 2)
+Estados e regras em `docs/OFFLINE.md` (seções 3.2, 3.3, 4 e 6.2).
+- **Venda no `/pdv`:** o `PdvTerminal` recebe `submitSale`; a venda vira operação `sale.create` (`src/lib/offline/sale-operation.ts`, valores em inteiros e enviados como texto) e é gravada na fila do Dexie (versão 2 do banco, `src/lib/offline/db.ts`) antes de o recibo aparecer. Sem `submitSale` (`/admin/pdv`), o terminal segue com o `createSale`.
+- **Envio:** `sendQueue` (`src/lib/offline/queue.ts`) manda lotes de até 50 ao `POST /api/offline/operations`, com uma aba por vez (Web Locks), logo depois da venda, a cada checagem de conexão e no botão "Sincronizar". Roda em qualquer tela do `/pdv` com conexão, inclusive com caixa fechado ou autorização vencida.
+- **Saldo reservado:** o terminal desconta do saldo da cópia as vendas que ela ainda não mostra; uma venda sincronizada deixa de reservar quando o `appliedTxid` dela fica abaixo do `watermark` da cópia.
+- **Telas:** lista "Vendas deste aparelho" no cabeçalho do `/pdv` (situação e recibo, provisório ou oficial) e bloqueio do "Fechar Caixa" com vendas do caixa ainda não enviadas por este navegador.
+
 ---
 
 ## 🧪 Boas Práticas & Validações
 
 - **Execução do Build:** Sempre valide alterações executando `pnpm build`.
 - **Testes de integração:** `pnpm test:integration` (vitest, `tests/integration/`) roda contra um PostgreSQL real e descartável em `TEST_DATABASE_URL`; ver o README.
+- **Testes unitários:** `pnpm test:unit` (vitest, `tests/unit/`), sem banco; a fila do PDV usa o IndexedDB simulado (`fake-indexeddb`).
 - **Regeneração de Tipos:** Execute `pnpm prisma generate` após qualquer modificação em `prisma/schema.prisma`.
 - **Migrations:** Toda mudança de schema gera uma migration versionada em `prisma/migrations/` (`pnpm db:migrate --name <descricao>`). Em produção as migrations são aplicadas por passo explícito (`pnpm db:deploy`, conexão direta via `DIRECT_URL`), nunca no build. Ver `docs/DEPLOY.md`.
 - **Primeiro administrador:** Criado por `src/lib/bootstrap-admin.ts` apenas quando o banco não tem usuários, a partir de `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Não há credenciais fixas em produção.

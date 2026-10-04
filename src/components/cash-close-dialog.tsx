@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,13 +12,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/money-input";
 import { Button } from "@/components/ui/button";
-import { Lock, Loader2 } from "lucide-react";
+import { CloudOff, Lock, Loader2 } from "lucide-react";
 import { closeCashRegister } from "@/actions/cash-register";
 import { cn, formatCurrency } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
 
 interface CashCloseDialogProps {
   open: boolean;
+  cashRegisterId: string;
   onOpenChange: (open: boolean) => void;
   expectedCash: number;
   onSuccess: () => void;
@@ -29,6 +30,7 @@ const roundMoney = (value: number) => Math.round(value * 100) / 100;
 // O componente pai troca a `key` a cada abertura, reiniciando o formulário
 export function CashCloseDialog({
   open,
+  cashRegisterId,
   onOpenChange,
   expectedCash,
   onSuccess,
@@ -37,12 +39,15 @@ export function CashCloseDialog({
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Vendas do PDV sem internet deste navegador ainda não enviadas para este caixa (#38)
+  const unsent = useUnsentOfflineSales(open, cashRegisterId);
 
   const countedValue = counted ?? Number.NaN;
   const difference = Number.isFinite(countedValue) ? roundMoney(countedValue - expectedCash) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (unsent > 0) return;
     if (!Number.isFinite(countedValue) || countedValue < 0) {
       setError("Informe o valor contado (zero ou mais).");
       return;
@@ -77,6 +82,25 @@ export function CashCloseDialog({
             Conte o dinheiro da gaveta e informe o valor. O fechamento não pode ser desfeito.
           </DialogDescription>
         </DialogHeader>
+
+        {unsent > 0 && (
+          <div
+            role="alert"
+            className="border-warning/30 bg-warning/10 text-warning flex items-start gap-2 rounded-md border p-2.5 text-xs"
+          >
+            <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+            <span>
+              {unsent === 1
+                ? "Há 1 venda feita no PDV sem internet deste aparelho que ainda não foi enviada"
+                : `Há ${unsent} vendas feitas no PDV sem internet deste aparelho que ainda não foram enviadas`}{" "}
+              para este caixa. Abra o{" "}
+              <a href="/pdv" className="font-semibold underline">
+                PDV sem internet
+              </a>{" "}
+              com conexão para enviá-las antes de fechar.
+            </span>
+          </div>
+        )}
 
         {error && (
           <div className="text-destructive bg-destructive/10 border-destructive/20 rounded-md border p-2.5 text-xs">
@@ -141,7 +165,7 @@ export function CashCloseDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || unsent > 0}>
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Fechando...
@@ -155,4 +179,25 @@ export function CashCloseDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/**
+ * Bloqueio do fechamento (docs/OFFLINE.md seção 3.3): conta, no banco local deste navegador, as
+ * vendas do caixa ainda não gravadas no servidor. O Dexie só é carregado aqui, sob demanda; sem
+ * IndexedDB (ou sem uso do PDV offline), não há o que bloquear.
+ */
+function useUnsentOfflineSales(open: boolean, cashRegisterId: string) {
+  const [unsent, setUnsent] = useState(0);
+  useEffect(() => {
+    if (!open || typeof indexedDB === "undefined") return;
+    let active = true;
+    import("@/lib/offline/db")
+      .then(({ unsentSalesForCashRegister }) => unsentSalesForCashRegister(cashRegisterId))
+      .then((count) => active && setUnsent(count))
+      .catch((error) => console.error("Não foi possível conferir as vendas offline:", error));
+    return () => {
+      active = false;
+    };
+  }, [open, cashRegisterId]);
+  return unsent;
 }

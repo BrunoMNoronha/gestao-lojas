@@ -93,6 +93,11 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
   mantém a regra atual (sem saldo, sem venda).
 - Estoque negativo gera **pendência de conciliação** para quem tem `stock.manage`, resolvida com
   ajuste de estoque ou ciência registrada. A tela de estoque destaca saldos negativos.
+- Implementado na #38, parte 2 (`reservedQuantities` em `src/lib/offline/sale-operation.ts`): a
+  reserva vale para toda venda da fila que a cópia ainda não mostra, **inclusive em conflito ou
+  recusada** (a mercadoria já saiu; decisão do responsável em 04/10/2026). Deixam de reservar a
+  venda descartada por um gerente e a sincronizada cujo `appliedTxid` está abaixo do `watermark`
+  da última sincronização completa da cópia.
 
 ### 3.3 Venda que chega depois do fechamento do caixa original
 
@@ -105,6 +110,10 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
   de `Sale.cashRegisterId` e da data de recebimento.
 - O aparelho **bloqueia o fechamento do caixa** enquanto houver vendas pendentes dele. No servidor, o
   fechamento mostra um aviso quando algum aparelho preparado para aquele caixa ainda não sincronizou.
+- Implementado na #38, parte 2: o banco comum do navegador guarda, por operador, as vendas ainda não
+  gravadas no servidor por caixa; o "Fechar Caixa" do painel lê esse número e fica bloqueado,
+  com atalho para o `/pdv`. Só enxerga o navegador em que está aberto; o aviso do servidor para os
+  demais aparelhos é da parte 3.
 
 ### 3.4 Fiado e formas de pagamento offline
 
@@ -222,6 +231,20 @@ exposto a quem tiver acesso físico ao aparelho (LGPD).
   descarte registram quem decidiu, quando e o motivo.
 - "Resposta perdida" não é estado: o reenvio com a mesma chave devolve o resultado já gravado.
 - Uma operação nunca sai da fila do aparelho antes de chegar a **Sincronizada** ou **Resolvida**.
+- No aparelho (#38, parte 2, `LocalOperationStatus` em `src/lib/offline/db.ts`): `pending`,
+  `syncing`, `failed` (falha recuperável), `synced` (inclusive aprovada), `conflict`, `discarded`
+  (resolvida por descarte) e `rejected`. Mapeamento das respostas do servidor:
+  - `applied`/`approved` → `synced`; `conflict` → `conflict`; `discarded` → `discarded`;
+  - `invalid` e `protocol_error` → `rejected`: o servidor não gravou nada e reenviar não muda o
+    resultado. A venda fica na fila, visível como "Erro: avise o gerente", e nunca é apagada;
+  - `retry`, falta de resposta para a operação, rede, tempo esgotado, 401, 403, 503 e protocolo
+    desatualizado → `failed`, com nova tentativa automática;
+  - `forbidden` (operação de outro operador para a sessão atual) → `failed`: nada foi gravado, e a
+    venda volta a ser enviada quando o operador dela entrar.
+- Conflitos são consultados de novo (reenvio da mesma chave) a cada 5 minutos ou no botão
+  "Sincronizar", para o aparelho saber da decisão do gerente.
+- Retenção: vendas sincronizadas ou descartadas ficam 24 h na fila (reimpressão do recibo) e saem
+  depois que a cópia local já reflete a baixa delas.
 
 ## 5. Contrato do protocolo de sincronização
 
@@ -380,6 +403,23 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
      `createSale` e as regras online. Sem redirecionar o `/admin/pdv` para o `/pdv` até a #39.
   2. A #38 é entregue em três partes: servidor; fila no navegador; telas de conciliação, aparelhos,
      caixa e estoque, com o envio assistido por um gerente.
+- **Implementado na #38, parte 2:**
+  - O `PdvTerminal` recebe `submitSale`. No `/pdv`, finalizar grava a venda na fila do aparelho
+    (`recordSale`, `src/lib/offline/queue.ts`) e só então mostra o recibo; falha de gravação ou de
+    cota mantém o carrinho. Com e sem conexão o fluxo é o mesmo; com conexão, o recibo espera até
+    4 s pelo envio para já sair com o código oficial.
+  - Valores calculados em inteiros (centavos e milésimos), com o mesmo arredondamento do servidor
+    (subtotal de cada item com meio para cima). O terminal usa o mesmo cálculo na tela, também no
+    `/admin/pdv`: em ponto flutuante, 0,01 kg x R$ 14,50 apareceria como R$ 0,14 e não R$ 0,15.
+  - Envio pelo `sendQueue`: lotes de até 50, na ordem das vendas, uma aba por vez (Web Locks;
+    sem Web Locks envia sem trava, o que continua seguro pela idempotência). Roda em qualquer tela
+    do `/pdv` com conexão, inclusive na de preparação (caixa fechado ou autorização vencida), e
+    sincroniza a cópia depois de uma venda aplicada.
+  - Recibo provisório com o código do aparelho (8 primeiros caracteres do `operationId`) e a
+    situação; depois de sincronizada, o recibo traz `VENDA #<código>` e o código do aparelho. O
+    recibo usa sempre o fuso da loja.
+  - Lista "Vendas deste aparelho" no cabeçalho, com a situação, o motivo do conflito ou da falha e
+    o recibo de cada venda. "Encerrar neste aparelho" e "Sair" mantêm as vendas não finalizadas.
 - O terminal é o mesmo do `/admin/pdv` (`src/components/pdv-terminal.tsx`), com os dados da cópia
   local. O Fiado não é oferecido no `/pdv`: a cópia não leva os parâmetros dele (3.4 e 3.8).
 - Abre sem conexão só com: operador ativo preparado, cópia completa, autorização válida, dados com
@@ -395,7 +435,9 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
   comprimidos, carregados só no `/pdv`.
 - **Alternativa descartada:** `idb`, menor, mas as migrações e a reatividade ficariam por nossa conta.
 - A fila de operações é migrada junto com a estrutura e coberta por teste de atualização com fila
-  existente.
+  existente (#38, parte 2: versão 2 do banco do operador, `tests/unit/offline-queue.test.ts`, com o
+  IndexedDB simulado pelo `fake-indexeddb`). Uma linha da versão 1 sem os dados da venda (a fila
+  nunca recebeu vendas antes da #38) vira `rejected`, visível, em vez de ser apagada.
 - O aparelho pede `navigator.storage.persist()` na preparação. Falha de gravação ou de cota **impede**
   confirmar a venda localmente e mantém o carrinho.
 
@@ -445,7 +487,7 @@ Nada abaixo é feito nesta issue; serve de referência para as próximas.
 | #35 Idempotência e testes | Tabela de operações (`operationId` único, aparelho, operador, hash, estado, resultado); `Sale.occurredAt`; venda travando o caixa pelo id original; relatórios e vencimento por `occurredAt`; testes de integração com PostgreSQL                                                                                                                                                 |
 | #36 Cópia local           | Exclusão lógica em produtos, clientes e categorias (índices únicos parciais); datas em `Category`; histórico de preços; Route Handlers de cópia com cursor e campos de 3.8                                                                                                                                                                                                        |
 | #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                                                                                                                                                                             |
-| #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Partes 2 e 3: fila no navegador e telas. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
+| #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Parte 2 (navegador, feita): fila no Dexie, saldo reservado, envio entre abas, recibo provisório e bloqueio do fechamento. Parte 3: telas. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
 | #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila)                                                                                                                                                                                                                          |
 | #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                                                                                                                                                                   |
 
