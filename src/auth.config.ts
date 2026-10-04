@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import { isAppRole } from "@/lib/permissions";
+import { INVALID_SESSION_PARAM } from "@/lib/login-paths";
 
 export const authConfig = {
   pages: {
@@ -23,7 +24,8 @@ export const authConfig = {
       if (pathname.startsWith("/admin")) {
         return isLoggedIn; // false → redireciona para /login?callbackUrl=...
       }
-      if (isLoggedIn && pathname === "/login") {
+      // Sessão que o servidor já recusou (usuário desativado): fica no login para entrar de novo
+      if (isLoggedIn && pathname === "/login" && !nextUrl.searchParams.has(INVALID_SESSION_PARAM)) {
         return Response.redirect(new URL("/", nextUrl));
       }
       return true;

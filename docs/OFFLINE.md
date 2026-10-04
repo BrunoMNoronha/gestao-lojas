@@ -508,8 +508,34 @@ Nada abaixo é feito nesta issue; serve de referência para as próximas.
 | #36 Cópia local           | Exclusão lógica em produtos, clientes e categorias (índices únicos parciais); datas em `Category`; histórico de preços; Route Handlers de cópia com cursor e campos de 3.8                                                                                                                                                                                                        |
 | #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                                                                                                                                                                             |
 | #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Parte 2 (navegador, feita): fila no Dexie, saldo reservado, envio entre abas, recibo provisório e bloqueio do fechamento. Parte 3 (feita): migration `0010_offline_reconciliation`, tela "Sincronização offline" (conflitos, pendências e aparelhos), envio assistido, aviso do servidor no fechamento, ajuste pós-fechamento e saldo negativo em destaque. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
-| #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila)                                                                                                                                                                                                                          |
+| #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila). Parte (a), feita: infraestrutura e 12 cenários (seção 9). Parte (b): cota, atualização de versão, câmera, Edge e relatório                                                                                                                                                                                                                          |
 | #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                                                                                                                                                                   |
 
 Migrations seguem o fluxo de `docs/DEPLOY.md` (aplicação explícita com `pnpm db:deploy`, nunca no
 build).
+
+## 9. Testes de navegador (#39)
+
+Suíte Playwright em `tests/e2e/` (como rodar: README, "Testes de navegador"), contra o build de
+produção, com o Service Worker ativo, o banco descartável dos testes de integração e o `siteverify`
+do reCAPTCHA simulado no servidor. A rede é cortada com `context.setOffline`; falhas do servidor
+são simuladas interceptando as chamadas `/api/offline/**` na página (o Service Worker não atende
+`/api`); mudanças feitas "por outro lado" (preço, caixa, usuário) vão direto ao banco.
+
+| Arquivo                    | Cenários                                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------------------- |
+| `service-worker.spec.ts`   | `/pdv` preparado recarrega sem rede; painel sem rede mostra a página offline                       |
+| `offline-sales.spec.ts`    | vender sem rede, recarregar, reconectar e comparar vendas/itens/estoque/caixa/recebíveis; reconexão intermitente |
+| `network-failures.spec.ts` | resposta perdida depois da gravação; servidor fora do ar com internet; lote processado em parte    |
+| `business-rules.spec.ts`   | dois terminais com o último saldo; preço alterado; caixa fechado no servidor                       |
+| `users-sessions.spec.ts`   | operador desativado (envio assistido pelo gerente); troca de usuário com fila; sessão expirada     |
+
+Encontrado pela suíte (corrigido na #39): usuário desativado com o cookie ainda válido ficava em
+laço de redirecionamento entre `/login` e `/` (o navegador desistia com erro). Agora o servidor
+manda para `/login?sessao=invalida`, que explica o motivo e permite entrar com outro usuário.
+Comportamento confirmado: o `/pdv` só percebe o caixa fechado no servidor ao atualizar a cópia
+(a cada 2 min ou no "Sincronizar"); a fila é enviada antes disso, e a venda vai para o caixa
+original como ajuste pós-fechamento.
+
+Ficam para a parte (b): cota/falha de armazenamento, atualização de versão com fila, leitor pela
+câmera sem rede, execução no Edge (`channel: msedge`) e o relatório por camada de evidência.

@@ -168,6 +168,8 @@ Detalhes em `docs/OFFLINE.md` (seções 3.3, 3.5 e 4). Migration `0010_offline_r
 - **Execução do Build:** Sempre valide alterações executando `pnpm build`.
 - **Testes de integração:** `pnpm test:integration` (vitest, `tests/integration/`) roda contra um PostgreSQL real e descartável em `TEST_DATABASE_URL`; ver o README.
 - **Testes unitários:** `pnpm test:unit` (vitest, `tests/unit/`), sem banco; a fila do PDV usa o IndexedDB simulado (`fake-indexeddb`).
+- **Testes de navegador:** `pnpm test:e2e` (Playwright, `tests/e2e/`) contra o build de produção na porta 3200, com o banco de `TEST_DATABASE_URL` e o `siteverify` do reCAPTCHA simulado no servidor; ver o README.
+- **Sessão recusada:** com o cookie ainda válido de um usuário desativado, o servidor manda para `/login?sessao=invalida` (`src/lib/login-paths.ts`), que o proxy não devolve para `/`; sem isso, `/` e `/login` se alternariam sem fim.
 - **Regeneração de Tipos:** Execute `pnpm prisma generate` após qualquer modificação em `prisma/schema.prisma`.
 - **Migrations:** Toda mudança de schema gera uma migration versionada em `prisma/migrations/` (`pnpm db:migrate --name <descricao>`). Em produção as migrations são aplicadas por passo explícito (`pnpm db:deploy`, conexão direta via `DIRECT_URL`), nunca no build. Ver `docs/DEPLOY.md`.
 - **Primeiro administrador:** Criado por `src/lib/bootstrap-admin.ts` apenas quando o banco não tem usuários, a partir de `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Não há credenciais fixas em produção.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Script from "next/script";
 import { getSession, signIn } from "next-auth/react";
 import { Store, Lock, Mail, Loader2, AlertCircle } from "lucide-react";
@@ -12,6 +12,7 @@ import { landingPathFor, safeInternalPath } from "@/lib/routes";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LOGIN_ERROR_CODES, RECAPTCHA_LOGIN_ACTION } from "@/lib/recaptcha-shared";
+import { INVALID_SESSION_PARAM } from "@/lib/login-paths";
 
 declare global {
   interface Window {
@@ -35,11 +36,22 @@ type RecaptchaStatus = "disabled" | "loading" | "ready" | "error";
 
 // reCAPTCHA v3 (invisível). Sem a chave do site (desenvolvimento), o script não é carregado e o
 // servidor decide se aceita o login sem verificação (ver src/lib/recaptcha.ts).
+const INVALID_SESSION_MESSAGE =
+  "Sua sessão não vale mais (usuário desativado ou alterado). Entre novamente.";
+const noSubscription = () => () => {};
+
 export function LoginForm({ siteKey }: { siteKey?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Sessão recusada pelo servidor (usuário desativado depois do login): explica o retorno ao login
+  const invalidSession = useSyncExternalStore(
+    noSubscription,
+    () => new URLSearchParams(window.location.search).has(INVALID_SESSION_PARAM),
+    () => false,
+  );
+  const message = error ?? (invalidSession ? INVALID_SESSION_MESSAGE : null);
   const [recaptchaStatus, setRecaptchaStatus] = useState<RecaptchaStatus>(
     siteKey ? "loading" : "disabled",
   );
@@ -145,13 +157,13 @@ export function LoginForm({ siteKey }: { siteKey?: string }) {
             <CardDescription>Informe suas credenciais para entrar no sistema</CardDescription>
           </CardHeader>
           <CardContent>
-            {error && (
+            {message && (
               <div
                 role="alert"
                 className="text-destructive bg-destructive/10 border-destructive/20 mb-4 flex items-center gap-2 rounded-md border p-3 text-sm"
               >
                 <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{error}</span>
+                <span>{message}</span>
               </div>
             )}
 
