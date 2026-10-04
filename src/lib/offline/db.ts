@@ -109,6 +109,9 @@ export interface LocalOperation {
   id: string; // operationId
   status: LocalOperationStatus;
   createdAt: number; // relógio do aparelho
+  // Ordem de gravação no banco do operador (1, 2, 3...): desempata vendas do mesmo milissegundo.
+  // Ausente nas gravadas antes deste campo; não indexado, então não exige versão nova do banco
+  seq?: number;
   request: OfflineSaleRequest;
   receipt: LocalReceipt;
   attempts: number;

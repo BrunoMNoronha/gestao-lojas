@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LocalOperation } from "@/lib/offline/db";
 import {
   buildSaleOperation,
+  compareQueueOrder,
   newLocalOperation,
   prunableOperationIds,
   reservedQuantities,
@@ -155,6 +156,20 @@ describe("reservedQuantities", () => {
     expect(reservedQuantities(ops.slice(0, 2), "100").get("p1")).toBe(1);
     expect(reservedQuantities(ops.slice(2, 3), null).get("p1")).toBe(1);
     expect(reservedQuantities(ops.slice(3), "100").size).toBe(0);
+  });
+});
+
+describe("compareQueueOrder", () => {
+  it("ordena pelo relógio e, no mesmo milissegundo, pela ordem de gravação", () => {
+    const ops = [
+      operation("e", { createdAt: 2_000, seq: 1 }),
+      operation("a", { createdAt: 1_000, seq: 3 }),
+      operation("c", { createdAt: 1_000, seq: 2 }),
+      // Gravadas antes do campo seq: antes das novas do mesmo instante, desempate pela chave
+      operation("d", { createdAt: 1_000 }),
+      operation("b", { createdAt: 1_000 }),
+    ];
+    expect(ops.sort(compareQueueOrder).map((op) => op.id)).toEqual(["b", "d", "c", "a", "e"]);
   });
 });
 
