@@ -189,3 +189,249 @@ faturamento no projeto.
 
 Complementos recomendados (fora desta issue): limite de tentativas por usuário/IP e regras de
 firewall da Vercel.
+
+## 10. Homologação da operação offline (#33)
+
+Roteiro para conferir a operação sem internet no ambiente alvo (Vercel + Neon), com aparelhos
+reais. Fecha a coluna **Homologação** da tabela de evidências do `docs/OFFLINE.md` (seção 9.1) e
+os itens que a suíte de navegador não cobre. As regras de negócio que cada passo confere estão no
+`docs/OFFLINE.md` (seções 3 a 7); aqui fica só o que fazer e o que esperar.
+
+Duração estimada: meio turno com duas pessoas (um operador e um gerente). Os cenários H17 e H18
+dependem de esperar um deploy novo e uma noite, e podem ser feitos em outro dia.
+
+### 10.1 Antes de começar
+
+**Ambiente e dados.** Só existe produção: tudo o que a homologação gravar fica no banco real. Não há
+estorno de venda, então as vendas de teste entram em relatórios, caixa e estoque.
+
+- [ ] **DECISÃO PENDENTE (responsável):** o que fazer com os registros da homologação.
+  - **RECOMENDAÇÃO:** fazer a homologação **antes** de a loja operar com dados reais, ou fora do
+    expediente, com um branch de backup da Neon criado logo antes. Se nenhuma operação real
+    acontecer entre o backup e o fim da homologação, restaurar o branch `production` a partir dele
+    apaga os registros de teste. Se houver operação real no meio, **não restaure** (perderia vendas
+    reais): os registros de teste ficam, identificados pelo prefixo `HOMOLOG`.
+- [ ] Branch de backup na Neon (projeto `fancy-violet-38898614`, branch `production`), com nome
+      `backup-antes-homologacao-offline-AAAAMMDD`.
+- [ ] Produção com o código da #58 ou posterior (commit `a5159a8`) e as migrations até
+      `0010_offline_reconciliation`. Conferir no console SQL da Neon (só leitura):
+
+  ```sql
+  select migration_name, finished_at from "_prisma_migrations" order by migration_name;
+  ```
+
+- [ ] Checklist de fumaça da seção 6 sem falhas.
+
+**Massa de dados** (cadastrada pelo painel, com o prefixo `HOMOLOG` para achar e limpar depois):
+
+| Cadastro | Dados                                                                                                                         |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Usuários | `HOMOLOG Operador A` e `HOMOLOG Operador B` (perfil Vendedor) e `HOMOLOG Gerente` (perfil Gerente)                            |
+| Produtos | `HOMOLOG Arroz` (UN, R$ 10,00, estoque 20, com o EAN de uma embalagem real à mão), `HOMOLOG Queijo` (KG, R$ 45,90, estoque 5) |
+|          | `HOMOLOG Último` (UN, R$ 5,00, estoque **1**) e `HOMOLOG Excluir` (UN, R$ 3,00, estoque 10)                                   |
+| Cliente  | `HOMOLOG Cliente`, com CPF fictício válido                                                                                    |
+| Loja     | Fiado permitido nas Configurações da Loja (para conferir que ele some no `/pdv`)                                              |
+
+**Aparelhos** (matriz de navegadores do `docs/OFFLINE.md`, seção 3.5):
+
+- **Computador:** Windows com Chrome instalado e Edge (aparelho 1).
+- **Celular:** Android real com Chrome, câmera e economia de bateria disponíveis (aparelho 2).
+- Um terceiro navegador ou aparelho para o gerente agir no painel enquanto os outros estão sem rede.
+
+"Sem rede" é sempre a rede do aparelho desligada (Wi-Fi e dados, ou modo avião), nunca o DevTools,
+exceto onde o passo diz o contrário.
+
+**Registro.** Para cada cenário anote: data, aparelho, navegador, resultado (OK ou falhou) e a
+evidência (print do recibo, da tela ou do resultado da consulta SQL). Falha vira issue com o print e
+o passo. Ao fim, preencha a coluna Homologação da tabela 9.1 do `docs/OFFLINE.md`.
+
+### 10.2 Cenários
+
+Cada cenário indica o critério da tabela 9.1 que ele fecha. Faça na ordem: os primeiros preparam
+os aparelhos para os seguintes.
+
+**H1. Preparar, cortar a rede, recarregar e reabrir** (critério: preparar, cortar a rede...)
+
+1. Aparelho 1, `HOMOLOG Operador A`: abrir o caixa no painel e entrar no **PDV sem internet**
+   (`/pdv`). **Preparar este aparelho**; esperar sumir "Guardando o app no aparelho...".
+2. Desligar a rede. Recarregar a página; depois fechar o navegador inteiro e abrir o `/pdv` de novo.
+3. Esperado: o PDV abre com "Sem conexão com o servidor", a idade dos dados e a validade no topo;
+   a busca acha os produtos `HOMOLOG` e o cliente (documento mascarado); a forma **Fiado não
+   aparece** no pagamento; o painel **Estoque** abre só para leitura, sem botões de entrada ou ajuste.
+4. Repetir 1 a 3 no aparelho 2 com `HOMOLOG Operador B` (o caixa dele aberto por ele).
+
+**H2. Vender sem rede; vendas sobrevivem a fechar e reabrir** (critério: vendas pendentes...)
+
+1. Aparelho 1, sem rede: três vendas.
+   - 2 × `HOMOLOG Arroz`, Dinheiro, recebido R$ 50,00 (troco R$ 30,00).
+   - 0,375 kg de `HOMOLOG Queijo`, PIX.
+   - 1 × `HOMOLOG Excluir`, Débito, com desconto de R$ 0,50.
+2. Esperado: cada recibo sai como **PENDENTE DE SINCRONIZAÇÃO**, com o código do aparelho; a busca e
+   o painel Estoque mostram o saldo já descontado (Arroz 18).
+3. Fechar o navegador, reabrir o `/pdv` ainda sem rede: **Vendas deste aparelho** lista as três como
+   "Pendente de envio"; o saldo continua descontado.
+4. No aparelho do gerente, conferir que nada chegou: o Relatório de Vendas não tem essas vendas.
+
+**H3. Carrinho em montagem sobrevive a fechar e reabrir** (critério: carrinho em montagem...)
+
+1. Aparelho 1, sem rede: montar um carrinho com 1 × Arroz, `HOMOLOG Cliente` e desconto de
+   R$ 1,00. Recarregar; depois fechar e reabrir o navegador.
+2. Esperado: o carrinho volta com itens, cliente e desconto ("Carrinho da venda em andamento
+   restaurado"). Abrir **Finalizar Venda**, escolher PIX, recarregar: volta na tela de pagamento.
+3. Confirmar a venda. Recarregar logo depois: o carrinho está **vazio** (a venda não volta).
+
+**H4. Reconectar: uma venda para cada operação** (critério: uma única venda...)
+
+1. Religar a rede do aparelho 1. Esperado: em até 30 s as vendas ficam "Sincronizada" e o recibo
+   (em Vendas deste aparelho) passa a mostrar **VENDA #código**.
+2. Painel (gerente): Relatório de Vendas com as 4 vendas do H2 e H3, na **hora em que foram feitas**
+   (não na hora da reconexão), operador A, caixa do operador A; Estoque: Arroz 17 e movimentações
+   uma vez cada.
+3. Consulta de conferência (deve voltar **zero linhas**: nenhuma operação com mais de uma venda):
+
+   ```sql
+   select o.id, count(s.id) from "SyncOperation" o join "Sale" s on s.id = o."saleId"
+   group by o.id having count(s.id) > 1;
+   ```
+
+4. Cliques repetidos e duas abas: com rede, abrir o `/pdv` em **duas abas** do aparelho 1 e, em cada
+   uma, finalizar uma venda apertando **F10 duas vezes seguidas** na confirmação. Esperado: duas
+   vendas no total (uma por aba), nunca quatro.
+
+**H5. Servidor fora do ar com internet; resposta perdida** (critério: cota, banco indisponível...)
+
+1. Aparelho 1 (Chrome do computador), com rede: DevTools → **Network request blocking** → bloquear
+   `*/api/offline/*`. Fazer uma venda.
+2. Esperado: recibo PENDENTE DE SINCRONIZAÇÃO; a venda fica "Falha ao enviar" ou "Pendente de envio"
+   com a mensagem de que nada foi gravado; nada no servidor.
+3. Tirar o bloqueio e clicar **Sincronizar**: a venda chega uma vez.
+4. Resposta perdida: com rede, clicar **Confirmar Venda** e desligar a rede do aparelho logo em
+   seguida. Religar depois de 1 min: uma única venda no servidor, mesmo que o recibo tenha saído
+   provisório.
+
+**H6. Preço alterado e produto excluído enquanto o aparelho estava sem rede** (critérios:
+atualizações e exclusões; preço alterado, produto removido)
+
+1. Aparelho 1 sem rede. No painel (gerente): mudar o preço de `HOMOLOG Arroz` para R$ 12,00 e
+   **excluir** `HOMOLOG Excluir`.
+2. Aparelho 1, ainda sem rede: vender 1 × Arroz (sai a R$ 10,00) e 1 × `HOMOLOG Excluir`.
+3. Religar a rede. Esperado: as vendas são aceitas **com o preço praticado** (R$ 10,00), e a
+   Sincronização offline → **Pendências** mostra "Preço diferente do atual". Depois da
+   sincronização, o `/pdv` mostra Arroz a R$ 12,00 e não acha mais `HOMOLOG Excluir`; nenhuma
+   venda pendente sumiu.
+4. Montar um carrinho com Arroz **antes** de reconectar, reconectar, esperar sincronizar e
+   recarregar: o carrinho volta com aviso de preço novo.
+
+**H7. Dois terminais com o último saldo** (critério: estoque disputado)
+
+1. Aparelhos 1 e 2 preparados (operadores A e B), os dois sem rede.
+2. Cada um vende 1 × `HOMOLOG Último` (estoque 1).
+3. Religar os dois. Esperado: as **duas** vendas entram, o estoque fica **-1** (em destaque) e
+   aparece a pendência "Estoque negativo". O gerente dá ciência (**Dar ciência**) ou faz o ajuste
+   de estoque.
+
+**H8. Caixa fechado enquanto o aparelho estava sem rede** (critério: caixa fechado)
+
+1. Aparelho 1, sem rede: vender 1 × Arroz em dinheiro.
+2. No próprio aparelho 1, com rede só no painel: **Fechar Caixa** fica bloqueado com atalho para o
+   `/pdv` enquanto houver venda pendente deste navegador.
+3. Em outro aparelho, o operador A (ou o gerente) fecha o caixa do operador A. Esperado: o
+   fechamento **avisa** que o aparelho 1 pode ter vendas guardadas (ou está sem contato), sem
+   bloquear.
+4. Religar o aparelho 1. Esperado: a venda vai para o **caixa original** como "Venda depois do
+   fechamento"; o resumo do fechamento não muda; o detalhe do caixa mostra o ajuste pós-fechamento.
+   O `/pdv` pede **Preparar para o novo caixa** depois que o caixa estiver aberto de novo.
+
+**H9. Fiado bloqueado offline** (critério: Fiado bloqueado)
+
+1. Com o Fiado permitido na loja: no `/pdv`, com e sem rede, a forma Fiado não aparece.
+2. No `/admin/pdv` (online), o Fiado continua disponível para `HOMOLOG Cliente`.
+
+**H10. Operador desativado, envio assistido e aparelho revogado** (critério: operador inativo...)
+
+1. Aparelho 1, operador A, sem rede: duas vendas.
+2. Gerente, em outro aparelho: desativar `HOMOLOG Operador A` em Usuários.
+3. Religar o aparelho 1. Esperado: o operador A não consegue enviar; ao recarregar cai em
+   `/login?sessao=invalida`, com a explicação. As vendas continuam no aparelho.
+4. No mesmo navegador, entrar como `HOMOLOG Gerente` e abrir o `/pdv`: botão **2 de outros
+   operadores** → **Enviar para conferência**. Esperado: as duas vendas viram conflito "Enviada pelo
+   gerente" em Sincronização offline → Conflitos, com o operador A como autor e o gerente como quem
+   enviou.
+5. **Aprovar** uma: a venda é gravada com o operador A e o caixa original. **Descartar** a outra:
+   ela some da fila e devolve a reserva de estoque.
+6. Reativar o operador A. Na aba **Aparelhos**, **Revogar** o aparelho 2; vender sem rede no
+   aparelho 2 e reconectar: a venda vira conflito "Aparelho revogado".
+
+**H11. Troca de usuário com fila e sessão expirada** (critério: sessão expirada; autoria e
+isolamento)
+
+1. Aparelho 1, operador A, sem rede: uma venda. **Encerrar neste aparelho** → **Encerrar**.
+2. Religar a rede e entrar como `HOMOLOG Operador B` no mesmo navegador. Esperado: B não vê produtos
+   nem vendas de A até preparar; a venda de A não é enviada em nome de B.
+3. Entrar de novo como A: a venda de A é enviada com a autoria de A.
+4. Sessão expirada: Chrome do computador, DevTools → Application → Cookies → apagar **só** o cookie
+   `__Secure-authjs.session-token`. Fazer uma venda e clicar Sincronizar. Esperado: "Sessão
+   expirada: entre de novo..."; a venda continua guardada; depois de entrar, ela é enviada.
+
+**H12. Valores, troco, unidades fracionadas e datas** (critério: dinheiro, desconto/troco...)
+
+1. Sem rede: venda com 0,375 kg de Queijo e 3 × Arroz, desconto R$ 0,75, Dinheiro com R$ 100,00.
+2. Anotar subtotal, desconto, total e troco do recibo provisório.
+3. Depois de sincronizar, conferir os mesmos valores no recibo oficial, no Relatório de Vendas e no
+   detalhe do caixa (sem diferença de centavo). A data e a hora são as da venda, no fuso da loja.
+
+**H13. Atualização do app com a fila cheia** (critério: atualização do app; item "dois builds
+trocando `_next/static`")
+
+1. Com o `/pdv` preparado e **duas vendas pendentes sem rede**, publicar um deploy novo (o próximo
+   merge real na `main`; um _Redeploy_ do mesmo commit não troca a versão).
+2. Religar a rede. Esperado: aparece **Atualizar o app**; ao atualizar, as vendas pendentes
+   continuam na fila e são enviadas uma vez; o PDV abre sem rede logo depois, já na versão nova.
+
+**H14. Câmera do Android sem rede** (item "aparelho Android real")
+
+1. Aparelho 2, sem rede: ler o EAN da embalagem real de `HOMOLOG Arroz` pela câmera. Esperado: o
+   item entra no carrinho; a venda segue pela fila.
+
+**H15. Economia de bateria e armazenamento do Android** (item "armazenamento, economia de bateria")
+
+1. Aparelho 2 com a economia de bateria ligada e vendas pendentes: deixar o Chrome em segundo plano
+   por 15 min, com a tela apagada.
+2. Esperado: ao voltar, o PDV continua aberto ou abre sem rede, com as vendas pendentes.
+3. Chrome → Configurações do site do domínio: o armazenamento aparece em uso. Anotar o tamanho.
+
+**H16. Cota de armazenamento** (item "cota real do navegador")
+
+1. Chrome do computador, DevTools → Application → Storage → **Simulate custom storage quota** com um
+   valor pouco acima do uso atual (anotado no H15 ou na mesma tela).
+2. Sem rede, fazer vendas até a gravação falhar. Esperado: aparece "Sem espaço no aparelho...", o
+   **carrinho é mantido**, nenhum recibo sai para a venda que falhou, e ao tirar a simulação a
+   nova tentativa grava uma única venda.
+
+**H17. Validade de 12 h e dados de até 24 h** (opcional, depende de esperar)
+
+1. Deixar o aparelho 1 preparado de um dia para o outro. No dia seguinte, sem rede: o `/pdv` mostra
+   "Autorização sem internet vencida" e **não deixa vender**.
+2. Com rede: **Renovar** prepara de novo e as vendas antigas (se houver) são enviadas.
+
+**H18. Desempenho com o catálogo real** (item "desempenho com o catálogo real")
+
+1. Com o catálogo real cadastrado, preparar um aparelho e anotar o tempo até o PDV abrir.
+   Referência: até 1 min no Wi-Fi da loja.
+2. Sem rede, a busca por nome e por código de barras responde sem atraso perceptível; anotar o uso
+   de armazenamento (H15).
+
+**H19. Fluxos online continuam funcionando** (critério: fluxos online)
+
+1. Checklist de fumaça da seção 6 e uma venda pelo `/admin/pdv` com cada forma de pagamento,
+   inclusive Fiado.
+
+### 10.3 Depois da homologação
+
+- [ ] Preencher a coluna Homologação da tabela 9.1 do `docs/OFFLINE.md` (OK com data e aparelho, ou
+      o número da issue aberta para a falha).
+- [ ] Fechar os caixas `HOMOLOG`, revogar os aparelhos de teste (aba Aparelhos), desativar os
+      usuários `HOMOLOG` e excluir os produtos e o cliente `HOMOLOG`.
+- [ ] Aplicar a decisão de 10.1 sobre os registros (restaurar o backup da Neon só se não houve
+      operação real no meio). Sem restauração, apagar o branch de backup quando não for mais útil.
+- [ ] Com todos os critérios OK (ou cada falha com issue e decisão registrada), fechar a #33.
