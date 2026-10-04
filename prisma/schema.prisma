@@ -81,6 +81,9 @@ model User {
   cashMovements      CashMovement[]
   receivablePayments ReceivablePayment[]
   syncOperations     SyncOperation[]
+  registeredDevices  OfflineDevice[]     @relation("OfflineDeviceRegisteredBy")
+  revokedDevices     OfflineDevice[]     @relation("OfflineDeviceRevokedBy")
+  offlineGrants      OfflineGrant[]
 }
 
 // Exclusão lógica (deletedAt) e versão de sincronização (syncVersion) em Category, Product e
@@ -274,6 +277,7 @@ model CashRegister {
   movements          CashMovement[]
   receivablePayments ReceivablePayment[]
   syncOperations     SyncOperation[]
+  offlineGrants      OfflineGrant[]
 
   @@index([userId, openedAt])
 }
@@ -340,4 +344,37 @@ model SyncOperation {
   receivedAt     DateTime          @default(now()) // Instante de recebimento no servidor
 
   @@index([userId, receivedAt])
+}
+
+// Aparelho habilitado para o PDV offline (issue #37, docs/OFFLINE.md seção 7). Registrado na
+// primeira preparação e reaproveitado pelos operadores que preparam o mesmo navegador. Aparelho
+// revogado não recebe nova autorização offline.
+model OfflineDevice {
+  id             String         @id @default(uuid()) @db.Uuid
+  name           String
+  registeredById String
+  registeredBy   User           @relation("OfflineDeviceRegisteredBy", fields: [registeredById], references: [id])
+  createdAt      DateTime       @default(now())
+  lastSyncAt     DateTime? // Última preparação ou renovação neste aparelho
+  revokedAt      DateTime?
+  revokedById    String?
+  revokedBy      User?          @relation("OfflineDeviceRevokedBy", fields: [revokedById], references: [id])
+  grants         OfflineGrant[]
+}
+
+// Autorização offline (docs/OFFLINE.md seção 3.5): emitida na preparação online, vale para um
+// operador, um aparelho e o caixa aberto dele, por no máximo 12 horas. Os instantes são do
+// servidor; o aparelho só os usa para avisar e bloquear localmente.
+model OfflineGrant {
+  id             String        @id @default(uuid()) @db.Uuid
+  deviceId       String        @db.Uuid
+  device         OfflineDevice @relation(fields: [deviceId], references: [id])
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  cashRegisterId String
+  cashRegister   CashRegister  @relation(fields: [cashRegisterId], references: [id])
+  issuedAt       DateTime      @default(now())
+  expiresAt      DateTime
+
+  @@index([deviceId, userId, issuedAt])
 }

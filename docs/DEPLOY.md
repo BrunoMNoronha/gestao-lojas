@@ -112,6 +112,11 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 - [ ] Dashboard e Relatório de Vendas mostram as vendas do dia.
 - [ ] `/vendor/zxing/zxing_reader-<versão>.wasm` responde 200 (o `postinstall` rodou no build).
 - [ ] Celular: ler um EAN pela câmera no PDV (HTTPS de produção).
+- [ ] `/serwist/sw.js` responde 200 com `Service-Worker-Allowed: /` e `Cache-Control: no-cache…`.
+- [ ] PDV sem internet (`/pdv`): preparar com o caixa aberto, desligar a rede do aparelho, recarregar
+      e reabrir o navegador → o PDV abre, busca produtos e clientes e mostra "Sem conexão".
+- [ ] Depois do deploy, o `/pdv` já preparado mostra "Atualizar o app"; ao atualizar, os dados
+      continuam (idade e validade no topo).
 
 ## 7. Usabilidade e performance do PDV
 

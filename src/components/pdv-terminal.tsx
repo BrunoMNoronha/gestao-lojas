@@ -19,6 +19,7 @@ import {
   ReceiptText,
   AlertTriangle,
   Keyboard,
+  WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,11 +131,27 @@ function QuantityInput({ item, onCommit }: QuantityInputProps) {
   );
 }
 
+// Campos que o terminal usa: vêm do servidor (/admin/pdv) ou da cópia local (/pdv, issue #37)
+export type PdvProduct = Pick<
+  ProductItem,
+  "id" | "name" | "sku" | "barcode" | "salePrice" | "unit" | "currentStock"
+>;
+export type PdvCustomer = Pick<CustomerItem, "id" | "name" | "document" | "phone">;
+
+// Sem conexão com o servidor: monta o carrinho, mas a venda sem internet chega na #38
+const OFFLINE_SALE_MESSAGE =
+  "Sem conexão com o servidor: a venda não pode ser finalizada agora. Mantenha o carrinho e finalize quando a conexão voltar.";
+
 interface PdvTerminalProps {
-  products: ProductItem[];
-  customers: CustomerItem[];
+  products: PdvProduct[];
+  customers: PdvCustomer[];
   storeSettings: StoreSettingsData;
   cashRegisterId: string;
+  // PDV sem conexão (/pdv): consulta e carrinho funcionam; finalizar fica bloqueado
+  offline?: boolean;
+  // Depois da venda: por padrão recarrega os dados da página (router.refresh)
+  onSaleCompleted?: () => void;
+  className?: string;
 }
 
 export function PdvTerminal({
@@ -142,6 +159,9 @@ export function PdvTerminal({
   customers,
   storeSettings,
   cashRegisterId,
+  offline = false,
+  onSaleCompleted,
+  className,
 }: PdvTerminalProps) {
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -157,7 +177,7 @@ export function PdvTerminal({
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Customer selection
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerItem | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<PdvCustomer | null>(null);
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
 
@@ -224,7 +244,7 @@ export function PdvTerminal({
 
   // Add product to cart (respects available stock). Retorna a mensagem de erro, ou null se adicionou.
   const addToCart = useCallback(
-    (product: ProductItem, { focusSearch = true }: { focusSearch?: boolean } = {}) => {
+    (product: PdvProduct, { focusSearch = true }: { focusSearch?: boolean } = {}) => {
       const existing = cart.find((item) => item.productId === product.id);
       const nextQty = (existing?.quantity ?? 0) + 1;
       let error: string | null = null;
@@ -271,7 +291,7 @@ export function PdvTerminal({
 
   // Regra do Enter (e da leitura pela câmera): código de barras ou SKU exato; senão, o único
   // produto cujo nome, código ou SKU contenha o termo
-  const resolveProduct = (query: string): ProductItem | "none" | "many" => {
+  const resolveProduct = (query: string): PdvProduct | "none" | "many" => {
     const q = query.trim().toLowerCase();
     const exact = products.find(
       (p) => p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q,
@@ -377,6 +397,10 @@ export function PdvTerminal({
   // Open checkout
   const openCheckout = () => {
     if (cart.length === 0) return;
+    if (offline) {
+      setNotice(OFFLINE_SALE_MESSAGE);
+      return;
+    }
     setAmountPaid(total);
     setSelectedPayment("MONEY");
     setError(null);
@@ -386,6 +410,11 @@ export function PdvTerminal({
   // Finalize sale
   const finalizeSale = async () => {
     if (cart.length === 0 || loading) return;
+
+    if (offline) {
+      setError(OFFLINE_SALE_MESSAGE);
+      return;
+    }
 
     if (needsCustomer) {
       setError("Venda no Fiado exige um cliente. Selecione o cliente (F4) antes de confirmar.");
@@ -438,7 +467,8 @@ export function PdvTerminal({
       setCheckoutDialogOpen(false);
       setReceiptOpen(true);
       clearCart();
-      router.refresh();
+      if (onSaleCompleted) onSaleCompleted();
+      else router.refresh();
     } else {
       setError(res.error || "Erro ao processar a venda.");
     }
@@ -506,7 +536,7 @@ export function PdvTerminal({
 
   return (
     // Celular/tablet: colunas empilhadas; desktop: terminal na altura da tela (main tem p-8)
-    <div className="flex flex-col gap-4 lg:h-[calc(100svh-4rem)] lg:flex-row">
+    <div className={cn("flex flex-col gap-4 lg:h-[calc(100svh-4rem)] lg:flex-row", className)}>
       {/* Terminal ocupa a tela toda: título só para leitores de tela */}
       <h1 className="sr-only">Frente de Caixa (PDV)</h1>
       {/* LEFT: Product Search + Cart */}
@@ -755,10 +785,16 @@ export function PdvTerminal({
 
             {/* Action Buttons */}
             <div className="mt-4 space-y-2">
+              {offline && (
+                <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
+                  <WifiOff className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Sem conexão: finalize a venda quando a conexão voltar.
+                </p>
+              )}
               <Button
                 className="h-12 w-full gap-2 text-base"
                 onClick={openCheckout}
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || offline}
               >
                 <DollarSign className="h-5 w-5" />
                 Finalizar Venda (F10)
@@ -965,7 +1001,11 @@ export function PdvTerminal({
             <Button variant="outline" onClick={() => setCheckoutDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={finalizeSale} disabled={loading || needsCustomer} className="gap-2">
+            <Button
+              onClick={finalizeSale}
+              disabled={loading || needsCustomer || offline}
+              className="gap-2"
+            >
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" /> Processando...

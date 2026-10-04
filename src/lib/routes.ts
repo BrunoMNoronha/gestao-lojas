@@ -11,6 +11,7 @@ import {
   UserRound,
   Users,
   Wallet,
+  WifiOff,
   type LucideIcon,
 } from "lucide-react";
 import { type AppRole, type Permission, can, homePathFor } from "@/lib/permissions";
@@ -37,6 +38,8 @@ export type NavFeatures = Partial<Record<NavFeature, boolean>>;
 export const APP_ROUTES: AppRoute[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
   { href: "/admin/pdv", label: "Frente de Caixa (PDV)", icon: ShoppingCart, permission: "pdv.use" },
+  // PDV que abre sem internet depois da preparação (issue #37); fica fora do layout do /admin
+  { href: "/pdv", label: "PDV sem internet", icon: WifiOff, permission: "pdv.use" },
   { href: "/admin/caixa", label: "Caixa", icon: Wallet, permission: "cash.own" },
   {
     href: "/admin/contas-a-receber",
@@ -111,7 +114,7 @@ export function permissionForPath(path: string): Permission | null {
 
 /** Destino após o login: o caminho pedido, se interno e permitido ao perfil; senão a página inicial. */
 export function landingPathFor(role: AppRole | null | undefined, requested: string | null): string {
-  if (requested && requested.startsWith("/admin")) {
+  if (requested && (requested.startsWith("/admin") || /^\/pdv(?:[?#]|$)/.test(requested))) {
     const permission = permissionForPath(requested);
     if (permission && can(role, permission)) return requested;
   }

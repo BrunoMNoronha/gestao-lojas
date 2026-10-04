@@ -132,6 +132,14 @@ Parâmetros em `StoreSettings`, editados nas Configurações (`settings.manage`)
 - **Caixa original:** a venda leva o id do caixa aberto quando o PDV carregou e trava esse caixa (`lockOwnOpenCashRegisterById`). Se ele foi fechado, a venda é recusada, nunca vai para o caixa aberto depois.
 - **Datas:** `Sale.occurredAt` é quando a venda aconteceu e vale para relatórios, dashboard e vencimento do Fiado; `createdAt` é quando o servidor a recebeu. Na venda online as duas são iguais.
 
+### 7. PDV que abre sem internet (issue #37)
+Detalhes e decisões em `docs/OFFLINE.md` (seções 5, 6 e 7).
+- **Service Worker:** Serwist (`src/service-worker/sw.ts`, servido em `/serwist/sw.js` pela rota `src/app/serwist/[path]/route.ts`). Guarda só os arquivos da versão (`_next/static`, `public/`) e as páginas estáticas `/pdv` e `/offline`; as demais navegações vão à rede e, sem conexão, mostram `/offline`. A versão nova espera o "Atualizar o app".
+- **Tela:** `/pdv` (`src/app/pdv/page.tsx`) é estática e fora do `/admin`; o app (`src/components/offline-pdv/`) roda só no navegador e reaproveita o `PdvTerminal`. O `/admin/pdv` continua sendo o PDV online.
+- **Dados no navegador:** Dexie (`src/lib/offline/db.ts`), um banco por operador e um banco comum com o aparelho. A comunicação usa os Route Handlers `GET /api/offline/ping`, `POST /api/offline/prepare` e `GET /api/offline/snapshot` (`src/lib/offline/sync.ts`).
+- **Servidor:** `OfflineDevice` e `OfflineGrant` (autorização de 12 h vinculada ao caixa aberto), em `src/lib/offline-device.ts`.
+- **Saída:** `signOutClearingOfflineData` (`src/lib/offline/sign-out.ts`) apaga a cópia local antes de encerrar a sessão; `OfflineUserGuard`, no layout do painel, apaga a cópia de outro operador.
+
 ---
 
 ## 🧪 Boas Práticas & Validações
