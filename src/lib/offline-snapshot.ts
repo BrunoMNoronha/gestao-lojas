@@ -47,6 +47,8 @@ export type OfflineProduct =
       salePrice: string;
       unit: Unit;
       currentStock: string;
+      // Estoque mínimo (#54): só para a indicação de estoque baixo na consulta offline
+      minStock: string;
       categoryId: string | null;
       updatedAt: string;
     }
@@ -204,6 +206,7 @@ export async function readOfflineSnapshot(
             salePrice: true,
             unit: true,
             currentStock: true,
+            minStock: true,
             categoryId: true,
             updatedAt: true,
           },
@@ -274,6 +277,7 @@ export async function readOfflineSnapshot(
                 salePrice: row.salePrice.toFixed(2),
                 unit: row.unit,
                 currentStock: row.currentStock.toFixed(3),
+                minStock: row.minStock.toFixed(3),
                 categoryId: row.categoryId,
                 updatedAt: row.updatedAt.toISOString(),
               },

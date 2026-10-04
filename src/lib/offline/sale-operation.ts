@@ -79,6 +79,13 @@ export const lineSubtotal = (quantity: number, unitPrice: number) =>
   Number(lineCents(toMilli(quantity), toCents(unitPrice))) / 100;
 
 /**
+ * Saldo disponível no aparelho: saldo da cópia local menos o reservado pela fila, em milésimos
+ * (sem erro de ponto flutuante). É o limite do terminal e o saldo da consulta de estoque (#54).
+ */
+export const availableStock = (currentStock: string, reserved = 0) =>
+  Number(textToMilli(currentStock) - toMilli(reserved)) / 1000;
+
+/**
  * Monta a operação `sale.create` e o recibo provisório. Recusa o Fiado (docs/OFFLINE.md 3.4),
  * quantidade fracionada em unidade inteira, valores fora do formato do protocolo, desconto maior
  * que o subtotal e dinheiro menor que o total (o servidor transformaria em conflito).
