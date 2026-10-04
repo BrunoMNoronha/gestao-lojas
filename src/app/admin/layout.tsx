@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AdminMobileHeader, AdminSidebar } from "@/components/admin-sidebar";
 import { getSessionUser } from "@/lib/authz";
+import { INVALID_SESSION_LOGIN } from "@/lib/login-paths";
 import { getStoreBrandName } from "@/lib/store-brand";
 import { isReceivablesVisible } from "@/lib/on-account";
 import { can } from "@/lib/permissions";
@@ -9,7 +10,7 @@ import { OfflineUserGuard } from "@/components/offline-pdv/offline-user-guard";
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // O proxy já barra quem não está logado; aqui a sessão define o menu exibido para o perfil
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  if (!user) redirect(INVALID_SESSION_LOGIN);
 
   const [storeName, showReceivables] = await Promise.all([
     getStoreBrandName(),

@@ -35,6 +35,7 @@ descrito em `.env.example`).
 | `pnpm db:deploy`                | Aplica migrations pendentes (produção)        |
 | `pnpm test:integration`         | Testes de integração com PostgreSQL real      |
 | `pnpm test:unit`                | Testes unitários (fila do PDV, sem banco)     |
+| `pnpm test:e2e`                 | Build + testes de navegador (Playwright)      |
 
 ## Testes
 
@@ -53,6 +54,22 @@ No PowerShell, defina antes `$env:TEST_DATABASE_URL = "postgresql://..."` e rode
 
 Os testes unitários (`tests/unit/`, `pnpm test:unit`) não usam banco: cobrem a fila de vendas do
 PDV sem internet com o IndexedDB simulado pelo `fake-indexeddb`.
+
+### Testes de navegador
+
+Os cenários offline de ponta a ponta (`tests/e2e/`, Playwright) rodam contra o **build de
+produção** (`next start` na porta 3200), porque o Service Worker só existe nele, com o mesmo banco
+descartável dos testes de integração (`TEST_DATABASE_URL`). O login usa o reCAPTCHA de produção com
+o `siteverify` do Google simulado no servidor (`tests/e2e/support/mock-siteverify.mjs`); nenhuma
+chave real é necessária.
+
+```bash
+pnpm exec playwright install chromium
+TEST_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55432/gestao_lojas_test" pnpm test:e2e
+```
+
+`pnpm test:e2e` faz o build e roda tudo; `pnpm test:e2e:run` roda sem refazer o build. O relatório
+fica em `playwright-report/` e os rastros das falhas em `test-results/`.
 
 ## PDV sem internet
 

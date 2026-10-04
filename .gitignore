@@ -11,6 +11,9 @@
 !.yarn/versions
 
 # testing
+/test-results/
+/playwright-report/
+/playwright/.cache/
 /coverage
 
 # next.js
