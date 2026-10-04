@@ -4,6 +4,7 @@ import {
   HandCoins,
   LayoutDashboard,
   Package,
+  RefreshCw,
   Settings,
   ShoppingCart,
   Truck,
@@ -41,6 +42,13 @@ export const APP_ROUTES: AppRoute[] = [
   // PDV que abre sem internet depois da preparação (issue #37); fica fora do layout do /admin
   { href: "/pdv", label: "PDV sem internet", icon: WifiOff, permission: "pdv.use" },
   { href: "/admin/caixa", label: "Caixa", icon: Wallet, permission: "cash.own" },
+  // Conflitos, pendências e aparelhos das vendas feitas sem internet (issue #38)
+  {
+    href: "/admin/sincronizacao",
+    label: "Sincronização offline",
+    icon: RefreshCw,
+    permission: "offline.reconcile",
+  },
   {
     href: "/admin/contas-a-receber",
     label: "Contas a Receber",

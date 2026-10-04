@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
-import { CashMovementType, CashRegisterStatus, Prisma } from "@prisma/client";
+import {
+  CashMovementType,
+  CashRegisterStatus,
+  Prisma,
+  ReconciliationIssueType,
+} from "@prisma/client";
 import {
   CashRegisterSummary,
   computeCashSummary,
@@ -12,6 +17,7 @@ import {
   parseMoney,
 } from "@/lib/cash-register";
 import type { PaymentMethodValue } from "@/lib/payments";
+import { offlinePendingForCashRegister, type OfflineDevicePending } from "@/lib/offline-pending";
 
 export type CashMovementTypeValue = "SUPPLY" | "WITHDRAWAL";
 
@@ -20,6 +26,8 @@ export interface CurrentCashRegister {
   userName: string;
   openedAt: string;
   summary: CashRegisterSummary;
+  // Aparelhos com vendas deste caixa ainda não enviadas, para o aviso do fechamento (#38)
+  offlinePending: OfflineDevicePending[];
 }
 
 export interface CashRegisterHistoryItem {
@@ -63,6 +71,14 @@ export interface CashRegisterDetail extends CashRegisterHistoryItem {
     saleCode: number;
     createdAt: string;
   }[];
+  // Vendas offline deste caixa recebidas depois do fechamento (docs/OFFLINE.md seção 3.3): ficam
+  // fora do resumo e do esperado gravados no fechamento
+  postClosing: {
+    count: number;
+    total: number;
+    cash: number;
+    sales: { code: number; total: number; method: PaymentMethodValue; appliedAt: string }[];
+  } | null;
 }
 
 export interface CashOperator {
@@ -133,11 +149,17 @@ export async function getCurrentCashRegister(): Promise<CurrentCashRegister | nu
   if (!register) return null;
 
   const { summary } = await computeCashSummary(prisma, register.id);
+  // Só um aviso: sem ele (falha ao consultar), o fechamento continua possível
+  const offlinePending = await offlinePendingForCashRegister(register.id).catch((error) => {
+    console.error("Erro ao consultar as vendas offline pendentes do caixa:", error);
+    return [];
+  });
   return {
     id: register.id,
     userName: register.user.name,
     openedAt: register.openedAt.toISOString(),
     summary,
+    offlinePending,
   };
 }
 
@@ -385,6 +407,22 @@ export async function getCashRegisterDetail(id: string): Promise<CashRegisterDet
     }
 
     const { summary } = await computeCashSummary(prisma, register.id);
+    // Vendas aplicadas com o caixa já fechado: a pendência é gravada na transação da venda, e a
+    // data dela é a da aplicação (a de uma venda aprovada é a do envio, que pode ser anterior)
+    const lateIssues = register.closedAt
+      ? await prisma.reconciliationIssue.findMany({
+          where: {
+            type: ReconciliationIssueType.POST_CLOSING_SALE,
+            sale: { cashRegisterId: register.id },
+          },
+          orderBy: { createdAt: "asc" },
+          select: {
+            createdAt: true,
+            sale: { select: { code: true, total: true, paymentMethod: true } },
+          },
+        })
+      : [];
+    const lateSales = lateIssues.map((issue) => ({ ...issue.sale, appliedAt: issue.createdAt }));
 
     return {
       ...toHistoryItem(register),
@@ -406,6 +444,25 @@ export async function getCashRegisterDetail(id: string): Promise<CashRegisterDet
         saleCode: p.receivable.sale.code,
         createdAt: p.createdAt.toISOString(),
       })),
+      postClosing:
+        lateSales.length === 0
+          ? null
+          : {
+              count: lateSales.length,
+              total: lateSales
+                .reduce((sum, s) => sum.add(s.total), new Prisma.Decimal(0))
+                .toNumber(),
+              cash: lateSales
+                .filter((s) => s.paymentMethod === "MONEY")
+                .reduce((sum, s) => sum.add(s.total), new Prisma.Decimal(0))
+                .toNumber(),
+              sales: lateSales.map((s) => ({
+                code: s.code,
+                total: s.total.toNumber(),
+                method: s.paymentMethod as PaymentMethodValue,
+                appliedAt: s.appliedAt.toISOString(),
+              })),
+            },
     };
   } catch (error) {
     console.error("Erro ao buscar detalhe do caixa:", error);

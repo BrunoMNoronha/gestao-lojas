@@ -154,6 +154,13 @@ Estados e regras em `docs/OFFLINE.md` (seções 3.2, 3.3, 4 e 6.2).
 - **Saldo reservado:** o terminal desconta do saldo da cópia as vendas que ela ainda não mostra; uma venda sincronizada deixa de reservar quando o `appliedTxid` dela fica abaixo do `watermark` da cópia.
 - **Telas:** lista "Vendas deste aparelho" no cabeçalho do `/pdv` (situação e recibo, provisório ou oficial) e bloqueio do "Fechar Caixa" com vendas do caixa ainda não enviadas por este navegador.
 
+### 10. Conciliação e aparelhos (issue #38, parte 3)
+Detalhes em `docs/OFFLINE.md` (seções 3.3, 3.5 e 4). Migration `0010_offline_reconciliation`.
+- **Tela:** `/admin/sincronizacao` (`requirePageAccess("offline.reconcile")`, `src/components/offline-reconciliation-manager.tsx`): conflitos (aprovar ou descartar com motivo), pendências (ciência) e aparelhos (`listOfflineDevices`, `revokeOfflineDevice` em `src/actions/offline-reconciliation.ts`).
+- **Envio assistido:** `syncOfflineOperation` aceita a operação de outro operador só de quem tem `offline.reconcile` e a grava sempre como conflito (`ASSISTED_SUBMISSION` ou o motivo encontrado), com `SyncOperation.submittedById`. No `/pdv`, `AssistedQueuePanel` lista as filas de outros operadores guardadas no navegador.
+- **Aviso do fechamento:** `POST /api/offline/report` grava `OfflineGrant.pendingCount`/`pendingReportedAt` (`src/lib/offline-pending.ts`); `getCurrentCashRegister` devolve `offlinePending` (aparelhos que nunca informaram, com vendas ou sem contato há mais de 10 min).
+- **Caixa e estoque:** `computeCashSummary` deixa de fora as vendas com pendência `POST_CLOSING_SALE`; o detalhe do caixa as mostra como ajuste pós-fechamento. A tela de estoque destaca saldos negativos.
+
 ---
 
 ## 🧪 Boas Práticas & Validações

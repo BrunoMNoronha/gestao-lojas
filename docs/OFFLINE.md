@@ -106,14 +106,25 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
 - O resumo gravado no fechamento (`expectedAmount`, `countedAmount`, `difference`) **não é
   alterado**.
 - O detalhe do caixa mostra, separado do resumo, o **ajuste pós-fechamento**: vendas daquele caixa
-  recebidas depois de `closedAt` (total e parte em dinheiro). Não precisa de campo novo: é derivado
-  de `Sale.cashRegisterId` e da data de recebimento.
+  lançadas depois do fechamento (total e parte em dinheiro). Não precisa de campo novo.
+- Implementado na #38, parte 3: a venda pós-fechamento é a que tem a pendência `POST_CLOSING_SALE`,
+  gravada na mesma transação quando a venda é aplicada (sincronizada ou aprovada) com o caixa já
+  fechado. A data de recebimento não serve de critério: a venda aprovada guarda a data do envio,
+  que pode ser anterior ao fechamento. O resumo do caixa (`computeCashSummary`) deixa essas vendas
+  de fora, e o detalhe as lista à parte, com a data em que foram lançadas.
 - O aparelho **bloqueia o fechamento do caixa** enquanto houver vendas pendentes dele. No servidor, o
   fechamento mostra um aviso quando algum aparelho preparado para aquele caixa ainda não sincronizou.
 - Implementado na #38, parte 2: o banco comum do navegador guarda, por operador, as vendas ainda não
   gravadas no servidor por caixa; o "Fechar Caixa" do painel lê esse número e fica bloqueado,
-  com atalho para o `/pdv`. Só enxerga o navegador em que está aberto; o aviso do servidor para os
-  demais aparelhos é da parte 3.
+  com atalho para o `/pdv`. Só enxerga o navegador em que está aberto.
+- Implementado na #38, parte 3 (migration `0010_offline_reconciliation`): o `/pdv` com conexão
+  informa ao servidor, a cada envio da fila (no máximo a cada 2 min com o mesmo conteúdo), quantas
+  vendas de cada autorização ainda não chegaram (`POST /api/offline/report`, colunas
+  `OfflineGrant.pendingCount` e `pendingReportedAt`). O "Fechar Caixa" mostra um **aviso**, sem
+  bloquear, para cada aparelho não revogado preparado para o caixa que nunca informou, tinha
+  vendas no último informe ou está **sem contato há mais de 10 minutos**. O servidor não tem como
+  saber das vendas de um aparelho sem internet: o "sem contato" é o sinal de risco. Um aparelho
+  que só fechou o `/pdv` também aparece assim; o texto diz que ele "pode ter" vendas.
 
 ### 3.4 Fiado e formas de pagamento offline
 
@@ -147,6 +158,14 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
 - Usuário desativado ou sem sessão não consegue enviar (o `authorize` responde 401): as vendas ficam
   guardadas no aparelho. O envio delas por um gerente, chegando como conflito com a autoria
   original (fluxo assistido, seção 5), é da terceira parte da #38.
+- Implementado na #38, parte 3: no `/pdv`, quem tem `offline.reconcile` vê "de outros operadores"
+  quando o navegador guarda vendas de outro usuário (que saiu, foi desativado ou perdeu o acesso)
+  e as envia para conferência. O servidor aceita a operação de outro operador só de quem tem
+  `offline.reconcile` e **nunca a aplica**: ela é sempre conflito, com o motivo encontrado na
+  avaliação ou `ASSISTED_SUBMISSION` se não houver outro, com a autoria original e quem enviou
+  (`SyncOperation.submittedById`). Aprovar grava a venda com o operador e o caixa originais.
+- Revogação pela tela "Sincronização offline" (aba Aparelhos), com quem revogou e quando. Não há
+  como desfazer pela tela.
 
 ### 3.6 Qual data vale para relatórios, caixa e vencimento
 
@@ -218,7 +237,8 @@ exposto a quem tiver acesso físico ao aparelho (LGPD).
   operador (`CASH_REGISTER_MISMATCH`); preço inexistente no período (`PRICE_NOT_VALID`); produto ou
   cliente que nunca existiu (`PRODUCT_NOT_FOUND`, `CUSTOMER_NOT_FOUND`); quantidade fracionada em
   produto vendido por UN ou CX (`FRACTIONAL_QUANTITY`); Fiado (`ON_ACCOUNT_OFFLINE`); desconto maior
-  que o subtotal ou dinheiro menor que o total (`INVALID_AMOUNTS`). Usuário inativo ou sem `pdv.use`
+  que o subtotal ou dinheiro menor que o total (`INVALID_AMOUNTS`); venda de outro operador enviada
+  por um gerente, sem outro motivo (`ASSISTED_SUBMISSION`). Usuário inativo ou sem `pdv.use`
   não chega a enviar (3.5).
 - **Pendências** (`ReconciliationIssue`, venda aplicada): `NEGATIVE_STOCK`, `POST_CLOSING_SALE`,
   `PRICE_DIVERGENCE`, `DATE_ADJUSTED` e `DELETED_CUSTOMER` (cliente excluído depois da venda: a
@@ -458,7 +478,7 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
 - Implementado na #37 (migration `0008_offline_devices`): tabelas `OfflineDevice` (o aparelho,
   compartilhado pelos operadores do mesmo navegador) e `OfflineGrant` (operador, aparelho, caixa,
   emissão e expiração). O `deviceId` fica no banco comum do navegador. Limite: apagar os dados do
-  site no navegador gera um aparelho novo na próxima preparação. A interface de revogação é da #38.
+  site no navegador gera um aparelho novo na próxima preparação. A interface de revogação entrou na parte 3 da #38 (seção 3.5).
 - **Preparação** (online, por operador): caixa aberto, `pdv.use`, download da cópia mínima e emissão
   da autorização offline (3.5).
 - **Quem opera offline:** só o usuário que preparou o aparelho, enquanto a autorização for válida.
@@ -487,7 +507,7 @@ Nada abaixo é feito nesta issue; serve de referência para as próximas.
 | #35 Idempotência e testes | Tabela de operações (`operationId` único, aparelho, operador, hash, estado, resultado); `Sale.occurredAt`; venda travando o caixa pelo id original; relatórios e vencimento por `occurredAt`; testes de integração com PostgreSQL                                                                                                                                                 |
 | #36 Cópia local           | Exclusão lógica em produtos, clientes e categorias (índices únicos parciais); datas em `Category`; histórico de preços; Route Handlers de cópia com cursor e campos de 3.8                                                                                                                                                                                                        |
 | #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                                                                                                                                                                             |
-| #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Parte 2 (navegador, feita): fila no Dexie, saldo reservado, envio entre abas, recibo provisório e bloqueio do fechamento. Parte 3: telas. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
+| #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Parte 2 (navegador, feita): fila no Dexie, saldo reservado, envio entre abas, recibo provisório e bloqueio do fechamento. Parte 3 (feita): migration `0010_offline_reconciliation`, tela "Sincronização offline" (conflitos, pendências e aparelhos), envio assistido, aviso do servidor no fechamento, ajuste pós-fechamento e saldo negativo em destaque. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
 | #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila)                                                                                                                                                                                                                          |
 | #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                                                                                                                                                                   |
 

@@ -1,4 +1,10 @@
-import { CashMovementType, CashRegisterStatus, PaymentMethod, Prisma } from "@prisma/client";
+import {
+  CashMovementType,
+  CashRegisterStatus,
+  PaymentMethod,
+  Prisma,
+  ReconciliationIssueType,
+} from "@prisma/client";
 import type { PaymentMethodValue } from "@/lib/payments";
 
 // Usado apenas no servidor (Server Actions). Os valores monetários são sempre somados em
@@ -73,8 +79,14 @@ export async function lockCashRegisterById(tx: Db, cashRegisterId: string) {
  * Regra única do dinheiro esperado na gaveta:
  * abertura + vendas em dinheiro + suprimentos − sangrias + recebimentos de fiado em dinheiro.
  * O troco sai da própria gaveta, por isso conta o total da venda (não o valor recebido).
+ * Vendas offline aplicadas com o caixa já fechado (pendência POST_CLOSING_SALE, gravada na mesma
+ * transação da venda) ficam de fora: o dinheiro delas não estava na conferência da gaveta e
+ * aparecem à parte como ajuste pós-fechamento (docs/OFFLINE.md seção 3.3).
  */
 export async function computeCashSummary(tx: Db, cashRegisterId: string) {
+  const beforeClosing = {
+    reconciliationIssues: { none: { type: ReconciliationIssueType.POST_CLOSING_SALE } },
+  };
   const register = await tx.cashRegister.findUniqueOrThrow({
     where: { id: cashRegisterId },
     select: { openingAmount: true },
@@ -83,7 +95,7 @@ export async function computeCashSummary(tx: Db, cashRegisterId: string) {
   const [sales, movements, received] = await Promise.all([
     tx.sale.groupBy({
       by: ["paymentMethod"],
-      where: { cashRegisterId },
+      where: { cashRegisterId, ...beforeClosing },
       _sum: { total: true },
       _count: { _all: true },
     }),

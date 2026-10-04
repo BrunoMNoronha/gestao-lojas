@@ -10,6 +10,7 @@ import {
 } from "@prisma/client";
 import { authorize } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
+import { parseOperationId } from "@/lib/sync-operation";
 import {
   acknowledgeIssue,
   approveConflict,
@@ -19,8 +20,8 @@ import {
 
 // Conciliação das vendas offline (issue #38, docs/OFFLINE.md seção 4): conflitos (vendas não
 // aplicadas, aguardando aprovação ou descarte) e pendências (vendas aplicadas que exigem
-// acompanhamento). Tudo exige "offline.reconcile" (ADMIN e MANAGER). As regras ficam em
-// src/lib/offline-sale.ts; a tela é da etapa seguinte da #38.
+// acompanhamento), e os aparelhos preparados, com revogação. Tudo exige "offline.reconcile" (ADMIN
+// e MANAGER). As regras ficam em src/lib/offline-sale.ts; a tela é /admin/sincronizacao.
 
 const PAGE_SIZE = 50;
 const RECONCILIATION_PATH = "/admin/sincronizacao";
@@ -42,6 +43,8 @@ export interface OfflineConflictItem {
   resolvedAt: string | null;
   resolutionNote: string | null;
   saleCode: number | null;
+  // Gerente que enviou a venda em nome do operador (envio assistido)
+  submittedByName: string | null;
 }
 
 export interface ReconciliationIssueItem {
@@ -112,6 +115,7 @@ export async function listOfflineConflicts(
         user: { select: { name: true } },
         device: { select: { name: true } },
         resolvedBy: { select: { name: true } },
+        submittedBy: { select: { name: true } },
         sale: { select: { code: true } },
       },
     });
@@ -152,6 +156,7 @@ export async function listOfflineConflicts(
           resolvedAt: row.resolvedAt?.toISOString() ?? null,
           resolutionNote: row.resolutionNote,
           saleCode: row.sale?.code ?? null,
+          submittedByName: row.submittedBy?.name ?? null,
         };
       }),
     };
@@ -253,5 +258,102 @@ export async function acknowledgeReconciliationIssue(issueId: string, note?: str
   } catch (error) {
     console.error("Erro ao registrar ciência da pendência:", error);
     return { success: false, error: "Não foi possível registrar agora. Tente novamente." };
+  }
+}
+
+export interface OfflineDeviceItem {
+  id: string;
+  name: string;
+  registeredByName: string;
+  createdAt: string;
+  // Última preparação ou renovação
+  lastSyncAt: string | null;
+  revokedAt: string | null;
+  revokedByName: string | null;
+  // Operadores que já prepararam o aparelho, do mais recente para o mais antigo
+  operators: string[];
+  // Validade da autorização mais recente
+  grantExpiresAt: string | null;
+  // Vendas ainda não enviadas no último informe de cada autorização (null: nunca informou)
+  pending: number | null;
+}
+
+/** Aparelhos preparados para o PDV sem internet: ativos primeiro, depois os revogados. */
+export async function listOfflineDevices(): Promise<ListResult<OfflineDeviceItem>> {
+  try {
+    const authz = await authorize("offline.reconcile");
+    if (!authz.ok) return { success: false, error: authz.error };
+
+    const devices = await prisma.offlineDevice.findMany({
+      orderBy: [{ revokedAt: { sort: "desc", nulls: "first" } }, { lastSyncAt: "desc" }],
+      take: 200,
+      include: {
+        registeredBy: { select: { name: true } },
+        revokedBy: { select: { name: true } },
+        grants: {
+          orderBy: { issuedAt: "desc" },
+          take: 20,
+          select: {
+            expiresAt: true,
+            pendingCount: true,
+            pendingReportedAt: true,
+            user: { select: { name: true } },
+          },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      hasMore: false,
+      data: devices.map((device) => {
+        const reported = device.grants.filter((g) => g.pendingReportedAt);
+        return {
+          id: device.id,
+          name: device.name,
+          registeredByName: device.registeredBy.name,
+          createdAt: device.createdAt.toISOString(),
+          lastSyncAt: device.lastSyncAt?.toISOString() ?? null,
+          revokedAt: device.revokedAt?.toISOString() ?? null,
+          revokedByName: device.revokedBy?.name ?? null,
+          operators: [...new Set(device.grants.map((g) => g.user.name))],
+          grantExpiresAt: device.grants[0]?.expiresAt.toISOString() ?? null,
+          pending: reported.length
+            ? reported.reduce((sum, g) => sum + (g.pendingCount ?? 0), 0)
+            : null,
+        };
+      }),
+    };
+  } catch (error) {
+    console.error("Erro ao listar aparelhos offline:", error);
+    return { success: false, error: "Não foi possível carregar os aparelhos agora." };
+  }
+}
+
+/**
+ * Revoga o aparelho (docs/OFFLINE.md seções 3.5 e 7): ele não é mais preparado, e as vendas dele
+ * que chegarem depois viram conflito (DEVICE_REVOKED) para um gerente decidir. Não tem volta pela
+ * tela: para usar o navegador de novo, apague os dados do site nele e prepare outra vez.
+ */
+export async function revokeOfflineDevice(deviceId: string) {
+  try {
+    const authz = await authorize("offline.reconcile");
+    if (!authz.ok) return { success: false, error: authz.error };
+
+    const id = parseOperationId(deviceId);
+    const updated = id
+      ? await prisma.offlineDevice.updateMany({
+          where: { id, revokedAt: null },
+          data: { revokedAt: new Date(), revokedById: authz.user.id },
+        })
+      : { count: 0 };
+    if (updated.count === 0) {
+      return { success: false, error: "Este aparelho já foi revogado ou não existe." };
+    }
+    revalidatePath(RECONCILIATION_PATH);
+    return { success: true };
+  } catch (error) {
+    console.error("Erro ao revogar aparelho offline:", error);
+    return { success: false, error: "Não foi possível revogar agora. Tente novamente." };
   }
 }

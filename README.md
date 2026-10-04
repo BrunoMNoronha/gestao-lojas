@@ -60,7 +60,9 @@ O app é instalável (manifest e Service Worker com Serwist). Em `/pdv`, o opera
 prepara o aparelho uma vez com internet; depois o PDV abre e consulta produtos e clientes sem
 conexão por até 12 horas, com os dados da última sincronização. Toda venda do `/pdv` é gravada
 no aparelho e enviada ao servidor na hora, se houver conexão, ou quando ela voltar; o recibo sai
-provisório até a venda ser sincronizada. O Service Worker só é registrado no build de produção
+provisório até a venda ser sincronizada. Conflitos, pendências e aparelhos ficam em
+**Sincronização offline** (`/admin/sincronizacao`, ADMIN e MANAGER). O Service Worker só é
+registrado no build de produção
 (`pnpm build` / `pnpm start`); em `pnpm dev` ele fica desligado. Detalhes em
 [`docs/OFFLINE.md`](docs/OFFLINE.md).
 

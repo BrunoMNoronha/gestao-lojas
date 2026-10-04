@@ -509,10 +509,10 @@ describe("autorização offline e aparelho (seção 3.5)", () => {
     expect(await issueTypes()).toEqual(["DATE_ADJUSTED"]);
   });
 
-  it("operação de outro operador é recusada sem gravar nada", async () => {
+  it("operação de outro operador é recusada sem gravar nada para quem não é gerente", async () => {
     const other = await createUser("Outro operador");
     const result = await syncOfflineOperation(
-      { id: other.id, name: other.name, role: "MANAGER" },
+      { id: other.id, name: other.name, role: "SELLER" },
       offlineSale(store, ctx),
     );
     expect(result.status).toBe("forbidden");

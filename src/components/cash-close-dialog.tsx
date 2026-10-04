@@ -12,14 +12,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/money-input";
 import { Button } from "@/components/ui/button";
-import { CloudOff, Lock, Loader2 } from "lucide-react";
+import { CloudOff, Lock, Loader2, Smartphone } from "lucide-react";
 import { closeCashRegister } from "@/actions/cash-register";
 import { cn, formatCurrency } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
+import type { OfflineDevicePending } from "@/lib/offline-pending";
+import { formatStoreDateTime } from "@/lib/store-time";
 
 interface CashCloseDialogProps {
   open: boolean;
   cashRegisterId: string;
+  // Outros aparelhos com vendas deste caixa ainda não enviadas, segundo o servidor (#38)
+  offlinePending?: OfflineDevicePending[];
   onOpenChange: (open: boolean) => void;
   expectedCash: number;
   onSuccess: () => void;
@@ -31,6 +35,7 @@ const roundMoney = (value: number) => Math.round(value * 100) / 100;
 export function CashCloseDialog({
   open,
   cashRegisterId,
+  offlinePending = [],
   onOpenChange,
   expectedCash,
   onSuccess,
@@ -99,6 +104,33 @@ export function CashCloseDialog({
               </a>{" "}
               com conexão para enviá-las antes de fechar.
             </span>
+          </div>
+        )}
+
+        {unsent === 0 && offlinePending.length > 0 && (
+          <div
+            role="status"
+            className="border-warning/30 bg-warning/10 text-warning space-y-1 rounded-md border p-2.5 text-xs"
+          >
+            <p className="flex items-start gap-2">
+              <Smartphone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                Aparelhos preparados para este caixa podem ter vendas feitas sem internet ainda não
+                enviadas. Se fechar agora, elas entram depois como ajuste pós-fechamento.
+              </span>
+            </p>
+            <ul className="list-disc pl-10">
+              {offlinePending.map((d) => (
+                <li key={d.deviceId}>
+                  {d.deviceName} ({d.userName}):{" "}
+                  {d.status === "never"
+                    ? "ainda não informou as vendas guardadas"
+                    : d.status === "pending"
+                      ? `${d.pending} ${d.pending === 1 ? "venda" : "vendas"} a enviar em ${formatStoreDateTime(d.reportedAt!)}`
+                      : `sem contato desde ${formatStoreDateTime(d.reportedAt!)}`}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 

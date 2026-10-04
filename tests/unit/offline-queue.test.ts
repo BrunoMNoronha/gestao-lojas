@@ -9,7 +9,7 @@ import {
   userDb,
   type LocalOperation,
 } from "@/lib/offline/db";
-import { recordSale, sendQueue } from "@/lib/offline/queue";
+import { pendingByGrant, recordSale, sendQueue } from "@/lib/offline/queue";
 import {
   buildSaleOperation,
   newLocalOperation,
@@ -382,5 +382,57 @@ describe("atualização da estrutura (versão 1 → 2)", () => {
       request: full.request,
     });
     reopened.close();
+  });
+});
+
+describe("pendingByGrant (informe ao servidor)", () => {
+  it("conta só as vendas não gravadas, por autorização, e zera a atual sem vendas", async () => {
+    const a = await recordSale(userId, draft());
+    const b = await recordSale(userId, draft());
+    const c = await recordSale(userId, draft());
+    const db = userDb(userId);
+    await db.operations.update(b.id, { status: "conflict" });
+    await db.operations.update(c.id, { status: "synced" });
+    const old = { ...a, id: "velha", status: "rejected" as const };
+    old.request = { ...a.request, grantId: "autorizacao-antiga" };
+    const ops = [...(await db.operations.toArray()), old];
+
+    expect(pendingByGrant(ops, a.request.grantId)).toEqual([
+      { grantId: a.request.grantId, pending: 1 },
+      { grantId: "autorizacao-antiga", pending: 1 },
+    ]);
+    expect(pendingByGrant([], "atual")).toEqual([{ grantId: "atual", pending: 0 }]);
+  });
+
+  it("envio da fila do operador informa o servidor; envio assistido, não", async () => {
+    await recordSale(userId, draft());
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push(url);
+        if (url.endsWith("/report")) return Response.json({ updated: 1 });
+        const body = JSON.parse(String(init.body)) as { operations: { operationId: string }[] };
+        return Response.json({ protocolVersion: 1, results: body.operations.map(applied) });
+      }),
+    );
+    // O banco comum precisa do aparelho para o informe
+    const { savePreparation } = await import("@/lib/offline/db");
+    const grant = await readMeta(userDb(userId), "grant");
+    await savePreparation(
+      {
+        device: { id: grant!.deviceId, name: "Teste" },
+        grant: { ...grant! },
+        user: { id: userId, name: "Operador", role: "SELLER" },
+      },
+      true,
+    );
+
+    await sendQueue(userId, { report: true });
+    expect(calls).toEqual(["/api/offline/operations", "/api/offline/report"]);
+    calls.length = 0;
+    await recordSale(userId, draft());
+    await sendQueue(userId);
+    expect(calls).toEqual(["/api/offline/operations"]);
   });
 });

@@ -134,6 +134,52 @@ export function CashRegisterDetailDialog({
               )}
             </div>
 
+            {detail.postClosing && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold">Ajuste pós-fechamento</h3>
+                <p className="text-muted-foreground text-xs">
+                  Vendas feitas sem internet neste caixa lançadas depois do fechamento. Não alteram
+                  o esperado, o contado nem o resumo acima: o dinheiro delas não estava na
+                  conferência da gaveta.
+                </p>
+                <div className="grid grid-cols-3 gap-3 rounded-lg border p-3 text-sm">
+                  <div>
+                    <div className="text-muted-foreground text-xs">Vendas</div>
+                    <div className="font-semibold">{detail.postClosing.count}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Total</div>
+                    <div className="font-mono font-semibold">
+                      {formatCurrency(detail.postClosing.total)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground text-xs">Em dinheiro</div>
+                    <div className="font-mono font-semibold">
+                      {formatCurrency(detail.postClosing.cash)}
+                    </div>
+                  </div>
+                </div>
+                <ul className="divide-y rounded-lg border text-sm">
+                  {detail.postClosing.sales.map((s) => (
+                    <li key={s.code} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <span>
+                        Venda #{s.code} · {PAYMENT_METHOD_LABELS[s.method]}
+                      </span>
+                      <div className="text-muted-foreground flex items-center gap-3 text-xs">
+                        <span suppressHydrationWarning>
+                          lançada em {formatDateTime(s.appliedAt)}
+                        </span>
+                        <span className="text-foreground font-mono text-sm">
+                          {formatCurrency(s.total)}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {detail.receivablePayments.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold">Recebimentos de fiado</h3>
