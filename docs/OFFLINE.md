@@ -420,6 +420,27 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
     quando o operador confirma. Os caches antigos são apagados na troca; o IndexedDB não é tocado;
   - em `next dev` o registro fica desligado.
 
+### 6.1.1 Instalação do app (#61)
+
+- **Oferta na tela:** "Instalar app Gestão Lojas" no menu do painel (barra lateral e menu do celular)
+  e no cabeçalho do `/pdv` (`src/components/install-app-button.tsx`). O evento
+  `beforeinstallprompt` do Chrome/Edge é guardado num estado único (`src/lib/pwa-install.ts`,
+  carregado pelo layout raiz) e só abre a janela do navegador depois do clique, uma vez por evento.
+  Aceitar a janela mostra "instalação iniciada"; só o evento `appinstalled` conta como instalado.
+- **Sem o evento** (Safari, Firefox, app já instalado ou navegador que ainda não ofereceu), o botão
+  vira "Como instalar o app" e abre a orientação da plataforma: Chrome/Edge no computador e no
+  Android, Safari no iPhone/iPad (Compartilhar → Adicionar à Tela de Início) e no Mac (Arquivo →
+  Adicionar ao Dock). Os nomes das opções mudam com a versão do navegador.
+- **App aberto como instalado** (`display-mode: standalone` ou `navigator.standalone`): a oferta some.
+- **Instalar não é preparar:** o app instalado abre em `/`, com login e destino por perfil, como no
+  navegador. O PDV sem internet continua exigindo a preparação no `/pdv`, e a matriz de navegadores
+  da seção 3.5 não muda: no iPhone/iPad o app instalado é para uso com internet.
+- **Metadados:** manifest em `/manifest.webmanifest` (`src/app/manifest.ts`), ícone Apple
+  (`/icons/apple-touch-icon.png`, 180×180), `appleWebApp` e `theme-color` no layout raiz. Manifest,
+  ícones e `/serwist/sw.js` respondem sem login (`tests/e2e/install-app.spec.ts`).
+- **Validação:** os testes simulam o evento do navegador; eles conferem a tela, não a instalação
+  nativa. A instalação real precisa de HTTPS (ou `localhost`) e de conferência em cada aparelho.
+
 ### 6.2 Tela do PDV offline
 
 - O PDV atual não pode ser guardado: a página usa `connection()`, recebe os dados do servidor, e o

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,16 @@ export const metadata: Metadata = {
     template: "%s | Gestão de Lojas",
   },
   description: "Sistema de gestão comercial e frente de caixa (PDV) para lojas físicas.",
+  applicationName: "Gestão Lojas",
+  // Instalação no iPhone/iPad (issue #61): ícone e nome na Tela de Início, abrindo em tela cheia.
+  // O manifest (src/app/manifest.ts) cobre Chrome e Edge.
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Gestão Lojas", statusBarStyle: "default" },
+};
+
+// Cor da barra do navegador e da janela do app instalado, a mesma do manifest
+export const viewport: Viewport = {
+  themeColor: "#126a70",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

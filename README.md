@@ -90,6 +90,12 @@ registrado no build de produção
 (`pnpm build` / `pnpm start`); em `pnpm dev` ele fica desligado. Detalhes em
 [`docs/OFFLINE.md`](docs/OFFLINE.md).
 
+**Instalar o app:** use "Instalar app Gestão Lojas" no menu do painel ou no cabeçalho do `/pdv`
+(Chrome e Edge abrem a janela de instalação). Quando o navegador não oferece a janela, o botão vira
+"Como instalar o app", com o passo a passo da plataforma (no iPhone/iPad: Compartilhar → Adicionar à
+Tela de Início). Instalar não prepara o PDV para uso sem internet: a preparação continua no `/pdv`,
+com conexão. Detalhes em [`docs/OFFLINE.md`](docs/OFFLINE.md), seção 6.1.1.
+
 ## Documentação
 
 - [`AGENTS.md`](AGENTS.md) — convenções para agentes de IA e desenvolvedores
