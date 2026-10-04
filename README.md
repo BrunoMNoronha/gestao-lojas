@@ -71,6 +71,12 @@ TEST_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55432/gestao_lojas_t
 `pnpm test:e2e` faz o build e roda tudo; `pnpm test:e2e:run` roda sem refazer o build. O relatório
 fica em `playwright-report/` e os rastros das falhas em `test-results/`.
 
+Cada cenário roda em três navegadores: `chromium`, `msedge` (o Edge instalado na máquina) e
+`android` (Chrome no Android emulado). Para rodar só um, use `--project`, por exemplo
+`pnpm test:e2e:run --project=chromium`. A câmera do leitor de código de barras é simulada com um
+vídeo gerado no início da suíte. O que cada camada de teste comprova, e o que fica para a
+homologação, está em `docs/OFFLINE.md`, seção 9.1.
+
 ## PDV sem internet
 
 O app é instalável (manifest e Service Worker com Serwist). Em `/pdv`, o operador com o caixa aberto

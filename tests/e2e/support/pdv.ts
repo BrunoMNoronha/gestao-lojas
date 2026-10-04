@@ -75,11 +75,8 @@ export interface SaleLine {
   name?: string;
 }
 
-/**
- * Faz uma venda pela tela e devolve o texto do recibo. Funciona com e sem conexão: no /pdv a
- * venda sempre entra na fila do aparelho antes de o recibo aparecer.
- */
-export async function sell(page: Page, lines: SaleLine[], payment: Payment = "PIX") {
+/** Põe os itens no carrinho pela busca (SKU ou código de barras). */
+export async function addToCart(page: Page, lines: SaleLine[]) {
   for (const line of lines) {
     const units = typeof line.quantity === "number" ? line.quantity : 1;
     for (let i = 0; i < units; i++) {
@@ -93,17 +90,35 @@ export async function sell(page: Page, lines: SaleLine[], payment: Payment = "PI
       await input.press("Enter");
     }
   }
+}
+
+/** Abre o "Finalizar Venda", escolhe o pagamento e confirma. Devolve o diálogo. */
+export async function confirmCheckout(page: Page, payment: Payment = "PIX") {
   await page.getByRole("button", { name: "Finalizar Venda (F10)" }).click();
   const checkout = page.getByRole("dialog", { name: "Finalizar Venda" });
   await checkout.getByRole("button", { name: payment, exact: true }).click();
   await checkout.getByRole("button", { name: "Confirmar Venda (F10)" }).click();
+  return checkout;
+}
 
+/** Espera o recibo, devolve o texto dele e começa uma nova venda. */
+export async function takeReceipt(page: Page) {
   const receipt = page.locator("#receipt-print-area");
   await expect(receipt).toBeVisible();
   const text = await receipt.innerText();
   await page.getByRole("button", { name: "Nova Venda" }).click();
   await expect(receipt).toHaveCount(0);
   return text;
+}
+
+/**
+ * Faz uma venda pela tela e devolve o texto do recibo. Funciona com e sem conexão: no /pdv a
+ * venda sempre entra na fila do aparelho antes de o recibo aparecer.
+ */
+export async function sell(page: Page, lines: SaleLine[], payment: Payment = "PIX") {
+  await addToCart(page, lines);
+  await confirmCheckout(page, payment);
+  return takeReceipt(page);
 }
 
 export interface QueuedOperation {

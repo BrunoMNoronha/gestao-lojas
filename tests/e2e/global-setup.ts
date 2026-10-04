@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { testDatabaseUrl } from "../integration/test-database";
+import { restoreAppVersion } from "./support/app-version";
+import { writeBarcodeVideo } from "./support/fake-camera";
 
 // Aplica as migrations no banco de teste e confere que ele ficou igual ao schema, como nos testes
 // de integração (mesmo TEST_DATABASE_URL e mesmas regras de segurança). O Playwright carrega este
@@ -34,6 +36,10 @@ function schemaMatches(url: string): boolean {
 }
 
 export default function globalSetup() {
+  // Vídeo da câmera falsa (lido pelo navegador ao abrir) e Service Worker do build
+  writeBarcodeVideo();
+  restoreAppVersion();
+
   const url = testDatabaseUrl();
   // Logo após subir o container, o primeiro deploy pode terminar sem aplicar nada: tenta de novo
   for (let attempt = 1; attempt <= 2; attempt++) {
