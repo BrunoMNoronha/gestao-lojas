@@ -153,6 +153,7 @@ Estados e regras em `docs/OFFLINE.md` (seções 3.2, 3.3, 4 e 6.2).
 - **Envio:** `sendQueue` (`src/lib/offline/queue.ts`) manda lotes de até 50 ao `POST /api/offline/operations`, com uma aba por vez (Web Locks), logo depois da venda, a cada checagem de conexão e no botão "Sincronizar". Roda em qualquer tela do `/pdv` com conexão, inclusive com caixa fechado ou autorização vencida.
 - **Saldo reservado:** o terminal desconta do saldo da cópia as vendas que ela ainda não mostra; uma venda sincronizada deixa de reservar quando o `appliedTxid` dela fica abaixo do `watermark` da cópia.
 - **Telas:** lista "Vendas deste aparelho" no cabeçalho do `/pdv` (situação e recibo, provisório ou oficial) e bloqueio do "Fechar Caixa" com vendas do caixa ainda não enviadas por este navegador.
+- **Consulta de estoque (#54):** botão "Estoque" no cabeçalho do `/pdv` (`offline-stock-panel.tsx`), só leitura, com e sem conexão: saldo da cópia menos as vendas da fila ainda não refletidas (`availableStock`, o mesmo limite do terminal), estoque baixo pelo `isStockLow` e filtros (`src/lib/offline/stock-view.ts`). Abre por cima do terminal, sem rota nova. A cópia leva o `minStock` (`docs/OFFLINE.md` 3.8).
 
 ### 10. Conciliação e aparelhos (issue #38, parte 3)
 Detalhes em `docs/OFFLINE.md` (seções 3.3, 3.5 e 4). Migration `0010_offline_reconciliation`.

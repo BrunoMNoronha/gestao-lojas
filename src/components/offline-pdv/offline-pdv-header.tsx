@@ -17,6 +17,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-dialog";
 import { OfflineQueuePanel } from "@/components/offline-pdv/offline-queue-panel";
 import { AssistedQueuePanel } from "@/components/offline-pdv/assisted-queue-panel";
+import { OfflineStockPanel } from "@/components/offline-pdv/offline-stock-panel";
 import type { SessionUser } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { readMeta, userDb } from "@/lib/offline/db";
@@ -25,7 +26,8 @@ import { formatStoreDateTime } from "@/lib/store-time";
 import { cn } from "@/lib/utils";
 
 // Cabeçalho do /pdv (issue #37): conexão real com o serviço, última sincronização e idade dos
-// dados, validade da autorização offline, arquivos do app guardados e atualização de versão.
+// dados, validade da autorização offline, arquivos do app guardados e atualização de versão. Dá
+// acesso à fila de vendas (#38) e à consulta de estoque (#54).
 
 function formatAge(ms: number) {
   const minutes = Math.max(0, Math.floor(ms / 60_000));
@@ -207,6 +209,13 @@ export function OfflinePdvHeader({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {sessionUser && can(sessionUser.role, "offline.reconcile") && (
             <AssistedQueuePanel sessionUserId={sessionUser.id} />
+          )}
+          {userId && (
+            <OfflineStockPanel
+              userId={userId}
+              online={online}
+              canManageStock={!!sessionUser && can(sessionUser.role, "stock.manage")}
+            />
           )}
           {queueUserId && (
             <OfflineQueuePanel
