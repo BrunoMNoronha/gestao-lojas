@@ -482,8 +482,8 @@ model OfflineGrant {
 // Histórico da seção "Dados de teste" em Configurações (issue #57): cada geração de dados de teste
 // e cada restauração do banco, inclusive as recusadas. O id é o do pedido gerado no navegador: a
 // mesma geração repetida (clique duplo, resposta perdida) devolve o resultado já gravado. A
-// restauração nunca apaga esta tabela, e o último RESET concluído marca a época dos dados usada no
-// cursor da cópia local do PDV.
+// restauração nunca apaga esta tabela, e a quantidade de RESET concluídos é a época dos dados usada
+// no cursor da cópia local do PDV.
 model TestDataRun {
   id        String            @id @db.Uuid
   kind      TestDataRunKind
