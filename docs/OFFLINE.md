@@ -496,6 +496,11 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
   nunca recebeu vendas antes da #38) vira `rejected`, visível, em vez de ser apagada.
 - O aparelho pede `navigator.storage.persist()` na preparação. Falha de gravação ou de cota **impede**
   confirmar a venda localmente e mantém o carrinho.
+- Quando o navegador não confirma a persistência (recusa, erro ou API ausente), o cabeçalho do `/pdv`
+  mostra **"Armazenamento não garantido pelo navegador"**. O aviso é um botão que abre uma explicação
+  (#59, `src/components/offline-pdv/storage-warning.tsx`): os dados ficam no aparelho mas podem ser
+  apagados pelo navegador, e a orientação é sincronizar e evitar aba anônima ou limpar os dados do
+  site com vendas pendentes. Só explica: não pede a permissão de novo nem altera fila ou carrinho.
 - **Rascunho do carrinho (#53, versão 3 do banco do operador):** a tabela `drafts` guarda uma linha
   com o carrinho em montagem no `/pdv`: itens (com o preço exibido), cliente, desconto, o pagamento
   escolhido quando o "Finalizar Venda" está aberto e a chave da tentativa de venda

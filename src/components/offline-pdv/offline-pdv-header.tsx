@@ -3,21 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useSerwist } from "@serwist/turbopack/react";
-import {
-  ArrowLeft,
-  CircleAlert,
-  Cloud,
-  CloudOff,
-  Download,
-  LogOut,
-  RefreshCw,
-  Store,
-} from "lucide-react";
+import { ArrowLeft, Cloud, CloudOff, Download, LogOut, RefreshCw, Store } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useConfirm } from "@/components/confirm-dialog";
 import { OfflineQueuePanel } from "@/components/offline-pdv/offline-queue-panel";
 import { AssistedQueuePanel } from "@/components/offline-pdv/assisted-queue-panel";
 import { OfflineStockPanel } from "@/components/offline-pdv/offline-stock-panel";
+import { StorageWarning } from "@/components/offline-pdv/storage-warning";
 import type { SessionUser } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { readMeta, userDb } from "@/lib/offline/db";
@@ -197,12 +189,7 @@ export function OfflinePdvHeader({
           {userId && !app.controlled && (
             <span className="text-muted-foreground">Guardando o app no aparelho...</span>
           )}
-          {meta && meta.persisted === false && (
-            <span className="text-warning inline-flex items-center gap-1">
-              <CircleAlert className="h-3.5 w-3.5" />
-              Armazenamento não garantido pelo navegador
-            </span>
-          )}
+          {meta && meta.persisted === false && <StorageWarning />}
           {syncError && online && <span className="text-destructive">{syncError}</span>}
         </div>
 
