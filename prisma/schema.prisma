@@ -90,6 +90,18 @@ enum ReconciliationIssueType {
   DELETED_CUSTOMER // Cliente excluído depois da venda offline
 }
 
+// Execuções da seção "Dados de teste" em Configurações (issue #57)
+enum TestDataRunKind {
+  GENERATE // Gerar dados de teste
+  RESET // Restaurar o banco (mantém usuários e configurações da loja)
+}
+
+enum TestDataRunStatus {
+  COMPLETED // Efeitos gravados
+  REJECTED // Recusada (confirmação errada, impedimento ou limite), sem efeito
+  FAILED // Erro inesperado; a transação foi desfeita
+}
+
 enum ReceivableStatus {
   OPEN
   PARTIAL
@@ -118,6 +130,7 @@ model User {
   revokedDevices     OfflineDevice[]     @relation("OfflineDeviceRevokedBy")
   offlineGrants      OfflineGrant[]
   acknowledgedIssues ReconciliationIssue[]
+  testDataRuns       TestDataRun[]
 }
 
 // Exclusão lógica (deletedAt) e versão de sincronização (syncVersion) em Category, Product e
@@ -464,4 +477,24 @@ model OfflineGrant {
 
   @@index([deviceId, userId, issuedAt])
   @@index([cashRegisterId])
+}
+
+// Histórico da seção "Dados de teste" em Configurações (issue #57): cada geração de dados de teste
+// e cada restauração do banco, inclusive as recusadas. O id é o do pedido gerado no navegador: a
+// mesma geração repetida (clique duplo, resposta perdida) devolve o resultado já gravado. A
+// restauração nunca apaga esta tabela, e o último RESET concluído marca a época dos dados usada no
+// cursor da cópia local do PDV.
+model TestDataRun {
+  id        String            @id @db.Uuid
+  kind      TestDataRunKind
+  status    TestDataRunStatus
+  userId    String
+  user      User              @relation(fields: [userId], references: [id])
+  params    Json? // Quantidades pedidas na geração
+  counts    Json? // Registros criados (GENERATE) ou apagados por tabela (RESET)
+  message   String? // Motivo da recusa ou da falha
+  createdAt DateTime          @default(now())
+
+  @@index([kind, status, createdAt])
+  @@index([userId, createdAt])
 }
