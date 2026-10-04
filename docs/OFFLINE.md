@@ -432,7 +432,9 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
     (subtotal de cada item com meio para cima). O terminal usa o mesmo cálculo na tela, também no
     `/admin/pdv`: em ponto flutuante, 0,01 kg x R$ 14,50 apareceria como R$ 0,14 e não R$ 0,15.
   - Envio pelo `sendQueue`: lotes de até 50, na ordem das vendas, uma aba por vez (Web Locks;
-    sem Web Locks envia sem trava, o que continua seguro pela idempotência). Roda em qualquer tela
+    sem Web Locks envia sem trava, o que continua seguro pela idempotência). A ordem é o relógio
+    do aparelho (`createdAt`) e, no mesmo milissegundo, o número de gravação (`seq`, crescente no
+    banco do operador e atribuído na mesma transação da gravação). Roda em qualquer tela
     do `/pdv` com conexão, inclusive na de preparação (caixa fechado ou autorização vencida), e
     sincroniza a cópia depois de uma venda aplicada.
   - Recibo provisório com o código do aparelho (8 primeiros caracteres do `operationId`) e a

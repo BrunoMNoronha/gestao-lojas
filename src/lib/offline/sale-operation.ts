@@ -192,6 +192,18 @@ export function newLocalOperation(
   };
 }
 
+/**
+ * Ordem das vendas na fila: relógio do aparelho e, no mesmo milissegundo, a ordem de gravação.
+ * Linhas sem `seq` (gravadas antes do campo) vêm antes; a chave fecha o desempate.
+ */
+export function compareQueueOrder(a: LocalOperation, b: LocalOperation): number {
+  return (
+    a.createdAt - b.createdAt ||
+    (a.seq ?? 0) - (b.seq ?? 0) ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+}
+
 /** A baixa de estoque da venda sincronizada já chegou à cópia local? */
 export function isReflected(op: LocalOperation, watermark: string | null | undefined): boolean {
   if (op.status !== "synced" || !op.appliedTxid || !watermark) return false;

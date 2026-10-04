@@ -9,6 +9,7 @@ import {
 } from "@/lib/offline/db";
 import {
   buildSaleOperation,
+  compareQueueOrder,
   newLocalOperation,
   prunableOperationIds,
   SaleDraftError,
@@ -84,8 +85,17 @@ export async function recordSale(userId: string, draft: PdvSaleDraft): Promise<L
     }),
     now.getTime(),
   );
-  // add (e não put): a mesma chave nunca sobrescreve uma venda já gravada
-  await db.operations.add(op);
+  // Número de ordem e gravação na mesma transação: duas abas gravando juntas nunca repetem o
+  // número. A fila é pequena (finalizadas saem em 24 h), então ler todas não pesa
+  await db.transaction("rw", db.operations, async () => {
+    let last = 0;
+    await db.operations.each((row) => {
+      last = Math.max(last, row.seq ?? 0);
+    });
+    op.seq = last + 1;
+    // add (e não put): a mesma chave nunca sobrescreve uma venda já gravada
+    await db.operations.add(op);
+  });
   await refreshPendingCount(userId).catch((error) =>
     console.error("Não foi possível atualizar a contagem de pendências:", error),
   );
@@ -251,7 +261,7 @@ async function sendBatches(userId: string, includeConflicts: boolean): Promise<S
             !op.lastAttemptAt ||
             now - op.lastAttemptAt >= CONFLICT_POLL_MS),
       )
-      .sort((a, b) => a.createdAt - b.createdAt)
+      .sort(compareQueueOrder)
       .slice(0, MAX_BATCH);
     if (batch.length === 0) return { status: "done", applied };
     for (const op of batch) sent.add(op.id);

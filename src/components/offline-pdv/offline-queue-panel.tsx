@@ -21,7 +21,7 @@ import {
   type LocalOperation,
   type LocalOperationStatus,
 } from "@/lib/offline/db";
-import { localSaleCode, toCompletedSale } from "@/lib/offline/sale-operation";
+import { compareQueueOrder, localSaleCode, toCompletedSale } from "@/lib/offline/sale-operation";
 import { formatStoreDateTime } from "@/lib/store-time";
 import { cn, formatCurrency } from "@/lib/utils";
 
@@ -77,7 +77,7 @@ export function OfflineQueuePanel({ userId, online, busy, onSend }: OfflineQueue
   const data = useLiveQuery(async () => {
     const db = userDb(userId);
     const [operations, store] = await Promise.all([
-      db.operations.orderBy("createdAt").reverse().toArray(),
+      db.operations.toArray().then((rows) => rows.sort((a, b) => compareQueueOrder(b, a))),
       readMeta(db, "store"),
     ]);
     return { operations, store: store ?? null };

@@ -274,6 +274,32 @@ describe("sendQueue", () => {
     expect(batches.flat().map((op) => op.operationId)).toEqual(ids);
   });
 
+  it("vendas no mesmo milissegundo saem na ordem em que foram gravadas", async () => {
+    // Só o Date é congelado: os temporizadores do fake-indexeddb seguem reais
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-04T12:00:00.000Z") });
+    const ids: string[] = [];
+    try {
+      for (let i = 0; i < 20; i++) ids.push((await recordSale(userId, draft())).id);
+    } finally {
+      vi.useRealTimers();
+    }
+    const stored = await Promise.all(ids.map(get));
+    expect(new Set(stored.map((op) => op.createdAt)).size).toBe(1);
+
+    const { batches } = server(applied);
+    await sendQueue(userId);
+    expect(batches.flat().map((op) => op.operationId)).toEqual(ids);
+    expect(stored.map((op) => op.seq)).toEqual(ids.map((_, i) => i + 1));
+  });
+
+  it("o número de ordem continua depois das vendas já gravadas, mesmo após a limpeza", async () => {
+    const db = userDb(userId);
+    const first = await recordSale(userId, draft());
+    const second = await recordSale(userId, draft());
+    await db.operations.delete(first.id);
+    expect((await recordSale(userId, draft())).seq).toBe((second.seq ?? 0) + 1);
+  });
+
   it("uma aba por vez: com a trava ocupada por outra aba, não envia", async () => {
     await recordSale(userId, draft());
     const { batches } = server(applied);
