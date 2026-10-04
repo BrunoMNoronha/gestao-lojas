@@ -263,7 +263,10 @@ describe("GET /api/offline/snapshot", () => {
     });
     const noSession = await GET(request());
     expect(noSession.status).toBe(401);
-    expect(await noSession.json()).toEqual({ error: "Sessão expirada. Faça login novamente." });
+    expect(await noSession.json()).toEqual({
+      error: "Sessão expirada. Faça login novamente.",
+      code: "unauthenticated",
+    });
 
     authorize.mockResolvedValueOnce({
       ok: false,
