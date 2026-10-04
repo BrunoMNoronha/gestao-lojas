@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
 import { LogOut, Menu, Store, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
@@ -11,6 +10,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { AppRole, ROLE_LABELS } from "@/lib/permissions";
 import { type NavFeatures, routesFor } from "@/lib/routes";
 import { cn } from "@/lib/utils";
+import { signOutClearingOfflineData } from "@/lib/offline/sign-out";
 
 interface AdminNavProps {
   user: { name: string; role: AppRole };
@@ -104,7 +104,7 @@ function SidebarContent({
         <Button
           variant="ghost"
           className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-full justify-start gap-3"
-          onClick={() => signOut({ callbackUrl: "/login" })}
+          onClick={() => signOutClearingOfflineData()}
         >
           <LogOut />
           Sair do sistema

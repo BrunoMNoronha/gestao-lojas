@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/authz";
 import { getStoreBrandName } from "@/lib/store-brand";
 import { isReceivablesVisible } from "@/lib/on-account";
 import { can } from "@/lib/permissions";
+import { OfflineUserGuard } from "@/components/offline-pdv/offline-user-guard";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // O proxy já barra quem não está logado; aqui a sessão define o menu exibido para o perfil
@@ -29,6 +30,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       >
         Pular para o conteúdo
       </a>
+      {/* Outro usuário entrou no aparelho: apaga a cópia local do PDV do anterior (#37) */}
+      <OfflineUserGuard userId={user.id} />
       <AdminSidebar {...navProps} />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminMobileHeader {...navProps} />
