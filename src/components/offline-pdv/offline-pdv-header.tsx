@@ -10,6 +10,7 @@ import { OfflineQueuePanel } from "@/components/offline-pdv/offline-queue-panel"
 import { AssistedQueuePanel } from "@/components/offline-pdv/assisted-queue-panel";
 import { OfflineStockPanel } from "@/components/offline-pdv/offline-stock-panel";
 import { StorageWarning } from "@/components/offline-pdv/storage-warning";
+import { InstallAppButton } from "@/components/install-app-button";
 import type { SessionUser } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { readMeta, userDb } from "@/lib/offline/db";
@@ -212,6 +213,7 @@ export function OfflinePdvHeader({
               onSend={onSync}
             />
           )}
+          <InstallAppButton variant="pdv" />
           {app.waiting && (
             <Button size="sm" className="gap-1.5" onClick={app.update}>
               <Download className="h-4 w-4" />

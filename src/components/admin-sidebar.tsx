@@ -7,6 +7,7 @@ import { LogOut, Menu, Store, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { InstallAppButton } from "@/components/install-app-button";
 import { AppRole, ROLE_LABELS } from "@/lib/permissions";
 import { type NavFeatures, routesFor } from "@/lib/routes";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,7 @@ function SidebarContent({
       </nav>
 
       <div className="space-y-2 border-t pt-4">
+        <InstallAppButton variant="menu" />
         <div className="flex items-center gap-1">
           <Link
             href="/admin/minha-conta"
