@@ -77,6 +77,11 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
   existiam recebem o preço atual com `validFrom` na data da migration (não há histórico anterior).
 - Diferença entre o preço praticado e o preço atual é gravada na venda para auditoria
   (pendência informativa, sem bloquear).
+- Implementado na #38 (`src/lib/offline-sale.ts`): o período vai de `issuedAt` da autorização
+  **menos 15 minutos** até `min(expiresAt, recebimento)`, e vale o preço vigente no início dele e
+  todo preço que começou dentro dele. A tolerância cobre uma borda da carga completa: o histórico
+  grava o início da transação que mudou o preço, e uma alteração iniciada pouco antes da emissão e
+  confirmada depois da leitura deixa no aparelho o preço anterior. Pendência: `PRICE_DIVERGENCE`.
 - Vendas online continuam com o preço calculado no servidor, como hoje.
 
 ### 3.2 Estoque insuficiente ao sincronizar / dois terminais vendendo o mesmo saldo
@@ -126,6 +131,13 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
 - **Revogação:** se o usuário for desativado, perder a permissão `pdv.use` ou o aparelho for revogado
   durante a desconexão, as vendas dele **viram conflito** para aprovação de um gerente. Nunca são
   aplicadas automaticamente nem descartadas.
+- **Autorização vencida na hora do envio não é conflito** (decisão do responsável em 04/10/2026,
+  #38): quem vende às 11 h e só reconecta às 13 h é o uso normal. A data da venda já fica limitada à
+  validade (3.6). Conflito por autorização só quando ela não existe ou não corresponde ao operador,
+  ao aparelho ou ao caixa da venda, ou quando o aparelho foi revogado.
+- Usuário desativado ou sem sessão não consegue enviar (o `authorize` responde 401): as vendas ficam
+  guardadas no aparelho. O envio delas por um gerente, chegando como conflito com a autoria
+  original (fluxo assistido, seção 5), é da terceira parte da #38.
 
 ### 3.6 Qual data vale para relatórios, caixa e vencimento
 
@@ -191,8 +203,21 @@ exposto a quem tiver acesso físico ao aparelho (LGPD).
 
 - **Pendência de conciliação** é diferente de conflito: a operação foi aplicada, mas exige
   acompanhamento (estoque negativo, venda pós-fechamento, preço divergente, data ajustada).
-- **Conflitos** (não aplicados): usuário inativo ou sem `pdv.use`, aparelho revogado, autorização
-  offline inválida ou expirada, preço inexistente no período, caixa original de outro operador.
+- **Conflitos** (não aplicados; `SyncOperation.status = CONFLICT`, com o payload e o motivo em
+  `conflictReason`): aparelho revogado (`DEVICE_REVOKED`); autorização ou aparelho inexistente, ou
+  autorização de outro operador, aparelho ou caixa (`GRANT_MISMATCH`); caixa inexistente ou de outro
+  operador (`CASH_REGISTER_MISMATCH`); preço inexistente no período (`PRICE_NOT_VALID`); produto ou
+  cliente que nunca existiu (`PRODUCT_NOT_FOUND`, `CUSTOMER_NOT_FOUND`); quantidade fracionada em
+  produto vendido por UN ou CX (`FRACTIONAL_QUANTITY`); Fiado (`ON_ACCOUNT_OFFLINE`); desconto maior
+  que o subtotal ou dinheiro menor que o total (`INVALID_AMOUNTS`). Usuário inativo ou sem `pdv.use`
+  não chega a enviar (3.5).
+- **Pendências** (`ReconciliationIssue`, venda aplicada): `NEGATIVE_STOCK`, `POST_CLOSING_SALE`,
+  `PRICE_DIVERGENCE`, `DATE_ADJUSTED` e `DELETED_CUSTOMER` (cliente excluído depois da venda: a
+  venda é aceita). Cada uma guarda os valores do caso em `details` e recebe uma ciência, com nota.
+- **Aprovação** (#38): grava a venda com a autoria, o caixa e os preços originais, mesmo com o caixa
+  já fechado, gera as pendências de sempre e, numa venda no Fiado, o título. Quantidade fracionada
+  fica a critério do gerente. Produto, cliente ou caixa inexistente e valores inconsistentes não
+  podem ser aprovados: só descartados. Aprovar ou descartar de novo não tem efeito.
 - Resolver conflito exige a nova permissão `offline.reconcile` (ADMIN e MANAGER). Aprovação e
   descarte registram quem decidiu, quando e o motivo.
 - "Resposta perdida" não é estado: o reenvio com a mesma chave devolve o resultado já gravado.
@@ -223,6 +248,24 @@ Cada operação leva:
 | `payloadHash`     | SHA-256 do `payload` canônico                                                                 |
 
 O servidor grava `receivedAt` e o resultado.
+
+Implementado na #38: `POST /api/offline/operations` com `authorize("pdv.use")`, corpo JSON
+`{ "protocolVersion": 1, "operations": [...] }` e até 50 operações por lote (400 acima disso, com
+versão desconhecida, lote vazio ou corpo que não é JSON; 401/403 como os demais handlers).
+
+- Decimais chegam **como texto** (`"quantity": "0.333"`, `"unitPrice": "45.90"`, `"discount"`,
+  `"amountPaid"` só em dinheiro); número é recusado, para não perder precisão.
+- O servidor calcula o `payloadHash` sobre a operação normalizada (envelope e venda, itens em ordem
+  estável); o aparelho não precisa enviá-lo. Itens repetidos com o mesmo preço são somados.
+- Resultado por operação: `applied` ou `approved` (com `sale.id`, `sale.code`, `sale.occurredAt` e
+  `appliedTxid`), `conflict` (com `reason` e `message`), `discarded`, `invalid` (formato),
+  `protocol_error` (mesma chave com outros dados), `forbidden` (operação de outro operador, nada é
+  gravado) e `retry` (falha temporária, nada foi gravado). `replayed: true` indica resultado de um
+  envio anterior.
+- `appliedTxid` é o id da transação que gravou a venda. A resposta da cópia local
+  (`GET /api/offline/snapshot`) traz `watermark`: depois da última página, toda transação com id
+  menor já está refletida. Assim o aparelho sabe quando parar de descontar do saldo local uma venda
+  já sincronizada.
 
 - **Idempotência:** tabela de operações com `operationId` único, inserida **na mesma transação** da
   venda, dos itens, do estoque e do caixa. Mesma chave e mesmo hash devolvem o resultado anterior;
@@ -326,11 +369,17 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
 - **Decisões da #37 (aprovadas pelo responsável em 03/10/2026):**
   1. O `/admin/pdv` fica como está (PDV online). O `/pdv` entra no menu como "PDV sem internet"
      (`APP_ROUTES`) e é aceito como destino do login. O redirecionamento fica para a #38.
-  2. No `/pdv` a venda só é finalizada com conexão, pelo `createSale` com a idempotência da #35. Sem
+  2. (Substituída na #38, abaixo.) No `/pdv` a venda só é finalizada com conexão, pelo `createSale` com a idempotência da #35. Sem
      conexão, o carrinho é montado normalmente e o botão de finalizar fica desativado com aviso.
   3. A tela de aparelhos e a revogação pela interface vão para a #38; aqui entram o campo
      `revokedAt` e a recusa na preparação.
   4. O acesso segue esta seção, não o `requirePageAccess` citado no escopo da issue.
+- **Decisões da #38 (aprovadas pelo responsável em 04/10/2026):**
+  1. Caminho único no `/pdv`: toda venda entra na fila do aparelho e é enviada na hora pelo
+     `POST /api/offline/operations`, com as regras offline. O `/admin/pdv` continua com o
+     `createSale` e as regras online. Sem redirecionar o `/admin/pdv` para o `/pdv` até a #39.
+  2. A #38 é entregue em três partes: servidor; fila no navegador; telas de conciliação, aparelhos,
+     caixa e estoque, com o envio assistido por um gerente.
 - O terminal é o mesmo do `/admin/pdv` (`src/components/pdv-terminal.tsx`), com os dados da cópia
   local. O Fiado não é oferecido no `/pdv`: a cópia não leva os parâmetros dele (3.4 e 3.8).
 - Abre sem conexão só com: operador ativo preparado, cópia completa, autorização válida, dados com
@@ -391,14 +440,14 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
 
 Nada abaixo é feito nesta issue; serve de referência para as próximas.
 
-| Etapa                     | Mudanças decorrentes deste documento                                                                                                                                                                                              |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #35 Idempotência e testes | Tabela de operações (`operationId` único, aparelho, operador, hash, estado, resultado); `Sale.occurredAt`; venda travando o caixa pelo id original; relatórios e vencimento por `occurredAt`; testes de integração com PostgreSQL |
-| #36 Cópia local           | Exclusão lógica em produtos, clientes e categorias (índices únicos parciais); datas em `Category`; histórico de preços; Route Handlers de cópia com cursor e campos de 3.8                                                        |
-| #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                             |
-| #38 Fila e conciliação    | Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja                              |
-| #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila)                                                                          |
-| #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                   |
+| Etapa                     | Mudanças decorrentes deste documento                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #35 Idempotência e testes | Tabela de operações (`operationId` único, aparelho, operador, hash, estado, resultado); `Sale.occurredAt`; venda travando o caixa pelo id original; relatórios e vencimento por `occurredAt`; testes de integração com PostgreSQL                                                                                                                                                 |
+| #36 Cópia local           | Exclusão lógica em produtos, clientes e categorias (índices únicos parciais); datas em `Category`; histórico de preços; Route Handlers de cópia com cursor e campos de 3.8                                                                                                                                                                                                        |
+| #37 PWA                   | Teste do Serwist (6.1); manifest; rota `/pdv` (6.2); Dexie (6.3); registro de aparelho e autorização offline (7); limpeza na saída e troca de usuário                                                                                                                                                                                                                             |
+| #38 Fila e conciliação    | Parte 1 (servidor, feita): migration `0009_offline_sync`, envio por lote, pendências, `offline.reconcile` e actions de conciliação. Partes 2 e 3: fila no navegador e telas. Estados (4); envio por lote; estoque negativo só pela sincronização; ajuste pós-fechamento no detalhe do caixa; permissão `offline.reconcile` e tela de conflitos; recibo provisório no fuso da loja |
+| #39 Testes de navegador   | Playwright com os cenários da #33 (rede cortada, recarga, resposta perdida, dois terminais, caixa fechado, usuário revogado, cota, atualização com fila)                                                                                                                                                                                                                          |
+| #40 Expansão              | Módulos marcados como "Expansão" na matriz (2), seguindo o critério de expansão                                                                                                                                                                                                                                                                                                   |
 
 Migrations seguem o fluxo de `docs/DEPLOY.md` (aplicação explícita com `pnpm db:deploy`, nunca no
 build).

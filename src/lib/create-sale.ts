@@ -7,7 +7,8 @@ import { hashPayload, isDuplicateOperation, parseOperationId } from "@/lib/sync-
 import { formatCurrency } from "@/lib/utils";
 
 // Registro da venda (usado apenas no servidor). A Server Action createSale autoriza o operador
-// e chama registerSale; a sincronização offline (#38) vai reaproveitar o mesmo núcleo.
+// e chama registerSale. A sincronização offline (#38) tem regras próprias (src/lib/offline-sale.ts)
+// e usa a mesma SyncOperation como chave de idempotência.
 //
 // Idempotência (issue #35): cada tentativa de venda tem um operationId gerado no cliente. A
 // SyncOperation é gravada na mesma transação da venda, dos itens, do estoque e do título:

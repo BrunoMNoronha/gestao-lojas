@@ -93,3 +93,67 @@ export async function stockOf(productId: string) {
   const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
   return product.currentStock.toString();
 }
+
+/** Aparelho registrado e autorização offline de 12 horas para o operador e o caixa (#37). */
+export async function prepareOffline(
+  userId: string,
+  cashRegisterId: string,
+  issuedAt: Date = new Date(),
+) {
+  const device = await prisma.offlineDevice.create({
+    data: { name: "Chrome · Windows", registeredById: userId, lastSyncAt: issuedAt },
+  });
+  const grant = await prisma.offlineGrant.create({
+    data: {
+      deviceId: device.id,
+      userId,
+      cashRegisterId,
+      issuedAt,
+      expiresAt: new Date(issuedAt.getTime() + 12 * 60 * 60 * 1000),
+    },
+  });
+  return { device, grant };
+}
+
+export type OfflineContext = {
+  userId: string;
+  deviceId: string;
+  grantId: string;
+  cashRegisterId: string;
+};
+
+/**
+ * Venda offline no formato do protocolo v1 (decimais como texto): 2 arroz a 10,00 + 0,5 kg de
+ * queijo a 45,90 (total 42,95) em dinheiro, com chave nova.
+ */
+export function offlineSale(
+  store: Store,
+  ctx: OfflineContext,
+  overrides: Record<string, unknown> = {},
+  payload: Record<string, unknown> = {},
+) {
+  return {
+    protocolVersion: 1,
+    kind: "sale.create",
+    operationId: randomUUID(),
+    occurredAt: new Date().toISOString(),
+    ...ctx,
+    ...overrides,
+    payload: {
+      customerId: null,
+      paymentMethod: PaymentMethod.MONEY,
+      discount: "0.00",
+      amountPaid: "50.00",
+      items: [
+        { productId: store.rice.id, quantity: "2", unitPrice: "10.00" },
+        { productId: store.cheese.id, quantity: "0.5", unitPrice: "45.90" },
+      ],
+      ...payload,
+    },
+  };
+}
+
+/** Efeitos de uma venda mais as pendências de conciliação. */
+export async function offlineEffectCounts() {
+  return { ...(await effectCounts()), issues: await prisma.reconciliationIssue.count() };
+}
