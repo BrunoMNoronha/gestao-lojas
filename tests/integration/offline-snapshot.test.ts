@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
+import bcrypt from "bcryptjs";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { registerSale } from "@/lib/create-sale";
+import { resetStoreData } from "@/lib/test-data";
 import type { SessionUser } from "@/lib/authz";
 import {
   readOfflineSnapshot,
@@ -276,6 +279,99 @@ describe("readOfflineSnapshot", () => {
       after.products.map((p: OfflineProduct) => [p.id, "salePrice" in p ? p.salePrice : null]),
     );
     expect(prices).toEqual({ [store.rice.id]: "11.00", [store.cheese.id]: "50.00" });
+  });
+});
+
+// Restauração do banco (issue #57): o TRUNCATE não deixa exclusões para enviar, então o cursor
+// guarda a época dos dados, e um cursor de antes da restauração recomeça do zero.
+describe("readOfflineSnapshot depois de restaurar o banco", () => {
+  const PASSWORD = "senha-do-admin-123";
+  const cursorJson = (cursor: string) =>
+    JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as Record<string, unknown>;
+  const toCursor = (json: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify(json)).toString("base64url");
+
+  /** Restauração real: caixa do operador fechado, loja salva e confirmação do ADMIN. */
+  async function restoreDatabase() {
+    await prisma.cashRegister.update({
+      where: { id: store.cashRegister.id },
+      data: { status: "CLOSED", openUserId: null, closedAt: new Date() },
+    });
+    await prisma.storeSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", companyName: "Loja Ltda", tradeName: "Loja" },
+      update: {},
+    });
+    const admin = await prisma.user.create({
+      data: {
+        name: "Admin",
+        email: `${randomUUID()}@teste.local`,
+        password: await bcrypt.hash(PASSWORD, 4),
+        role: "ADMIN",
+      },
+    });
+    const result = await resetStoreData(
+      { id: admin.id, name: admin.name, role: "ADMIN" },
+      randomUUID(),
+      { tradeName: "Loja", password: PASSWORD },
+    );
+    expect(result.ok).toBe(true);
+  }
+
+  it("cursor de antes da restauração recebe carga completa só com os dados novos", async () => {
+    const full = await readAll(null);
+    expect(full.products.length).toBe(2);
+    expect(cursorJson(full.cursor).e).toBe("");
+
+    await restoreDatabase();
+    const fresh = await prisma.product.create({
+      data: { name: "Produto novo", costPrice: 1, salePrice: 2 },
+    });
+
+    const after = await readOfflineSnapshot(user, { cursor: full.cursor });
+    expect(after.reset).toBe(true);
+    expect(after.products.map((p) => p.id)).toEqual([fresh.id]);
+    expect(after.customers).toEqual([]);
+    expect(after.cashRegister).toBeNull();
+    expect(cursorJson(after.cursor).e).toBe("1");
+
+    // Com o cursor novo, volta ao incremental
+    const idle = await readOfflineSnapshot(user, { cursor: after.cursor });
+    expect(idle.reset).toBe(false);
+    expect(idle.products).toEqual([]);
+  });
+
+  it("restauração no meio das páginas recomeça a sequência", async () => {
+    const first = await readOfflineSnapshot(user, { limit: 1 });
+    expect(first.hasMore).toBe(true);
+
+    await restoreDatabase();
+
+    const second = await readOfflineSnapshot(user, { cursor: first.cursor, limit: 1 });
+    expect(second.reset).toBe(true);
+    expect(second.products).toEqual([]);
+    expect(second.hasMore).toBe(false);
+  });
+
+  it("cursor anterior à época (sem o campo e) continua incremental sem restauração", async () => {
+    const full = await readAll(null);
+    const legacy = cursorJson(full.cursor);
+    delete legacy.e;
+    await prisma.product.update({ where: { id: store.rice.id }, data: { salePrice: 12 } });
+
+    const next = await readOfflineSnapshot(user, { cursor: toCursor(legacy) });
+    expect(next.reset).toBe(false);
+    expect(next.products.map((p) => p.id)).toEqual([store.rice.id]);
+  });
+
+  it("recusa época inválida no cursor", async () => {
+    const full = await readAll(null);
+    for (const e of ["abc", 1, null, "1".repeat(20)]) {
+      const cursor = toCursor({ ...cursorJson(full.cursor), e });
+      await expect(readOfflineSnapshot(user, { cursor })).rejects.toThrow(
+        "Cursor de sincronização inválido.",
+      );
+    }
   });
 });
 

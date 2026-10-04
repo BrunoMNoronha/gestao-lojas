@@ -2,6 +2,7 @@ import { Prisma, type Unit } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/authz";
 import { maskDocument } from "@/lib/masks";
+import { getDataEpoch } from "@/lib/test-data";
 
 // Cópia local dos dados do PDV (issue #36, docs/OFFLINE.md seções 3.8 e 5). Usado apenas no
 // servidor, pelo Route Handler GET /api/offline/snapshot, que autoriza com "pdv.use" antes.
@@ -78,7 +79,8 @@ export interface OfflineStore {
 export interface OfflineSnapshot {
   protocolVersion: number;
   generatedAt: string;
-  // Sem cursor na requisição: carga completa, o aparelho substitui a cópia local inteira
+  // Sem cursor na requisição, ou cursor de antes de uma restauração do banco (#57): carga
+  // completa, o aparelho substitui a cópia local inteira
   reset: boolean;
   // Limite seguro desta leitura (texto: bigint): toda transação com id menor já está refletida
   // na cópia depois da última página. O aparelho compara com o appliedTxid das vendas
@@ -96,19 +98,24 @@ export interface OfflineSnapshot {
   user: SessionUser;
 }
 
-// Cursor opaco para o aparelho: base64url de {"p":[versão,id],"c":[...],"k":[...]}
+// Cursor opaco para o aparelho: base64url de {"p":[versão,id],"c":[...],"k":[...],"e":época}
 const CURSOR_KEYS: Record<Entity, string> = { products: "p", categories: "c", customers: "k" };
+// Época dos dados (issue #57): muda a cada restauração do banco, que apaga as tabelas sem deixar
+// exclusões para enviar. Cursor de outra época recomeça do zero (carga completa com reset).
+// Cursores anteriores à #57 não têm "e" e valem como época "" (nenhuma restauração).
+const EPOCH_KEY = "e";
 const MAX_CURSOR_LENGTH = 1024;
 
-export function encodeCursor(cursor: Cursor): string {
-  const json: Record<string, [string, string]> = {};
+export function encodeCursor(cursor: Cursor, epoch: string): string {
+  const json: Record<string, [string, string] | string> = {};
   for (const entity of ENTITIES) {
     json[CURSOR_KEYS[entity]] = [cursor[entity].version.toString(), cursor[entity].id];
   }
+  json[EPOCH_KEY] = epoch;
   return Buffer.from(JSON.stringify(json)).toString("base64url");
 }
 
-export function decodeCursor(value: string): Cursor {
+export function decodeCursor(value: string): { positions: Cursor; epoch: string } {
   const invalid = new SnapshotRequestError("Cursor de sincronização inválido.");
   if (value.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(value)) throw invalid;
   let json: unknown;
@@ -128,7 +135,9 @@ export function decodeCursor(value: string): Cursor {
     if (typeof id !== "string" || id.length > 64) throw invalid;
     cursor[entity] = { version: BigInt(version), id };
   }
-  return cursor;
+  const epoch = EPOCH_KEY in json ? (json as Record<string, unknown>)[EPOCH_KEY] : "";
+  if (typeof epoch !== "string" || !/^\d{0,19}$/.test(epoch)) throw invalid;
+  return { positions: cursor, epoch };
 }
 
 export function parseLimit(value: string | null): number {
@@ -172,24 +181,27 @@ function nextPosition(
 
 /**
  * Lê uma página da cópia local para o operador já autorizado. Sem cursor, começa do zero (carga
- * completa); com cursor, devolve só o que mudou, inclusive exclusões (exclusão lógica).
+ * completa); com cursor, devolve só o que mudou, inclusive exclusões (exclusão lógica). Cursor de
+ * outra época (o banco foi restaurado depois dele, #57) também recomeça do zero.
  */
 export async function readOfflineSnapshot(
   user: SessionUser,
   options: { cursor?: string | null; limit?: number } = {},
 ): Promise<OfflineSnapshot> {
-  const reset = !options.cursor;
-  const after: Cursor = options.cursor
-    ? decodeCursor(options.cursor)
-    : { products: START, categories: START, customers: START };
+  const decoded = options.cursor ? decodeCursor(options.cursor) : null;
   const limit = options.limit ?? SNAPSHOT_DEFAULT_LIMIT;
 
-  // REPEATABLE READ: o limite seguro e as consultas usam o mesmo retrato do banco
+  // REPEATABLE READ: o limite seguro, a época e as consultas usam o mesmo retrato do banco
   return prisma.$transaction(
     async (tx) => {
       const [{ watermark }] = await tx.$queryRaw<{ watermark: bigint }[]>`
         SELECT pg_snapshot_xmin(pg_current_snapshot())::text::bigint AS watermark
       `;
+      const epoch = await getDataEpoch(tx);
+      const reset = !decoded || decoded.epoch !== epoch;
+      const after: Cursor = reset
+        ? { products: START, categories: START, customers: START }
+        : decoded.positions;
 
       const [products, categories, customers, settings, cashRegister] = await Promise.all([
         tx.product.findMany({
@@ -263,7 +275,7 @@ export async function readOfflineSnapshot(
         generatedAt: new Date().toISOString(),
         reset,
         watermark: watermark.toString(),
-        cursor: encodeCursor(next),
+        cursor: encodeCursor(next, epoch),
         hasMore: p.hasMore || c.hasMore || k.hasMore,
         products: p.rows.map((row): OfflineProduct =>
           row.deletedAt
