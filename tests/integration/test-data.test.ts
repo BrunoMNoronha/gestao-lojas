@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { Prisma, Role } from "@prisma/client";
+import { PaymentMethod, Prisma, Role } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/authz";
@@ -19,13 +19,16 @@ import {
   KEPT_TABLES,
   MAX_RESET_CONFIRMATION_FAILURES,
   RESET_TABLES,
+  removeTestData,
   resetStoreData,
+  TEST_TOOLS_DISABLED,
 } from "@/lib/test-data";
 import { offlineSale, prepareOffline, resetDatabase, saleInput, seedStore } from "./fixtures";
 
 // Dados de teste e restauração do banco (issue #57): geração coerente e idempotente, sem tocar no
 // que existe; restauração só com confirmação, sem impedimentos, apagando a lista fechada de
-// tabelas e mantendo usuários, configurações da loja e o histórico.
+// tabelas e mantendo usuários, configurações da loja e o histórico. Issue #67: tudo desligado sem a
+// variável de ambiente, registros gerados marcados e remoção seletiva só deles.
 
 const PASSWORD = "senha-do-admin-123";
 const TRADE_NAME = "Loja Teste";
@@ -120,9 +123,17 @@ describe("generateTestData", () => {
     const run = await prisma.testDataRun.findUniqueOrThrow({ where: { id: requestId } });
     expect(run).toMatchObject({ kind: "GENERATE", status: "COMPLETED", userId: admin.id });
     expect(run.params).toEqual(MAX);
+
+    // Todo registro gerado leva o id da geração; clientes e fornecedores, sem CPF/CNPJ
+    const marked = { testDataRunId: requestId };
+    expect(await prisma.category.count({ where: marked })).toBe(15);
+    expect(await prisma.product.count({ where: marked })).toBe(50);
+    expect(await prisma.customer.count({ where: { ...marked, document: null } })).toBe(10);
+    expect(await prisma.supplier.count({ where: { ...marked, document: null } })).toBe(5);
+    expect(await prisma.stockMovement.count({ where: marked })).toBe(50);
   });
 
-  it("não altera cadastros existentes e evita nomes, códigos e documentos já usados", async () => {
+  it("não altera cadastros existentes e evita nomes e códigos já usados", async () => {
     const seed = 99;
     const planned = buildTestData(MAX, createSeededRandom(seed));
     const store = await seedStore();
@@ -132,17 +143,7 @@ describe("generateTestData", () => {
       where: { id: store.rice.id },
       data: { sku: planned.products[0].sku, barcode: planned.products[0].barcode },
     });
-    // Documento gravado com a pontuação antiga também conta
-    const cpf = planned.customers[0].document;
-    await prisma.customer.update({
-      where: { id: store.customer.id },
-      data: {
-        document: `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9)}`,
-      },
-    });
-    await prisma.supplier.create({
-      data: { name: "Fornecedor Real", document: planned.suppliers[0].document },
-    });
+    await prisma.supplier.create({ data: { name: "Fornecedor Real", document: "11222333000181" } });
 
     const snapshot = async () => ({
       products: await prisma.product.findMany({ orderBy: { id: "asc" } }),
@@ -174,10 +175,9 @@ describe("generateTestData", () => {
     expect(generated).toHaveLength(MAX.products);
     expect(generated.some((p) => p.sku === planned.products[0].sku)).toBe(false);
     expect(generated.some((p) => p.barcode === planned.products[0].barcode)).toBe(false);
-    expect(await prisma.customer.count({ where: { document: cpf } })).toBe(0);
-    expect(
-      await prisma.supplier.count({ where: { document: planned.suppliers[0].document } }),
-    ).toBe(1);
+    // Existentes continuam sem marcação
+    expect(await prisma.product.count({ where: { testDataRunId: null } })).toBe(2);
+    expect(await prisma.supplier.count({ where: { testDataRunId: null } })).toBe(1);
     expect(
       await prisma.category.count({ where: { name: `${planned.categories[0].name} 2` } }),
     ).toBe(1);
@@ -247,6 +247,9 @@ describe("generateTestData", () => {
       expect(runs).toHaveLength(1);
       expect(runs[0]).toMatchObject({ status: "FAILED" });
       expect(runs[0].id).not.toBe(requestId);
+      // Só o código do erro vai para o histórico (que chega à tela), nunca a mensagem interna
+      expect(runs[0].message).toMatch(/^Erro inesperado \(.+\)\.$/);
+      expect(runs[0].message).not.toMatch(/falha simulada/);
     } finally {
       await prisma.$executeRawUnsafe(`DROP TRIGGER test_fail_movement ON "StockMovement"`);
       await prisma.$executeRawUnsafe(`DROP FUNCTION test_fail_movement()`);
@@ -429,6 +432,22 @@ describe("resetStoreData", () => {
     expect((await resetStoreData(admin, randomUUID(), confirm, later)).ok).toBe(true);
   });
 
+  it("tentativas erradas em paralelo não passam do limite", async () => {
+    await saveSettings();
+    const results = await Promise.all(
+      Array.from({ length: MAX_RESET_CONFIRMATION_FAILURES + 3 }, () =>
+        resetStoreData(admin, randomUUID(), { ...confirm, password: "errada" }),
+      ),
+    );
+
+    const wrong = results.filter((r) => !r.ok && r.error === "Nome da loja ou senha incorretos.");
+    expect(wrong).toHaveLength(MAX_RESET_CONFIRMATION_FAILURES);
+    expect(results.filter((r) => !r.ok && /Aguarde 15 minutos/.test(r.error))).toHaveLength(3);
+    expect(await prisma.testDataRun.count({ where: { kind: "RESET", status: "REJECTED" } })).toBe(
+      MAX_RESET_CONFIRMATION_FAILURES,
+    );
+  });
+
   it("geração e restauração simultâneas ficam em sequência, sem efeito parcial", async () => {
     await saveSettings();
     await generateTestData(admin, randomUUID(), MAX);
@@ -467,5 +486,158 @@ describe("getDataEpoch", () => {
     await resetStoreData(admin, second, confirm);
     await resetStoreData(admin, second, confirm);
     expect(await getDataEpoch()).toBe("2");
+  });
+});
+
+describe("removeTestData", () => {
+  it("remove só os registros gerados e mantém os que dados reais usam", async () => {
+    await saveSettings();
+    const store = await seedStore();
+    const runId = randomUUID();
+    const generated = await generateTestData(admin, runId, {
+      categories: 3,
+      products: 6,
+      customers: 3,
+      suppliers: 2,
+    });
+    expect(generated.ok).toBe(true);
+    const genProducts = await prisma.product.findMany({ where: { testDataRunId: runId } });
+    const [genCategory] = await prisma.category.findMany({ where: { testDataRunId: runId } });
+    const [genCustomer] = await prisma.customer.findMany({ where: { testDataRunId: runId } });
+    const [genSupplier] = await prisma.supplier.findMany({ where: { testDataRunId: runId } });
+
+    // Dados reais: venda com produto gerado, produto real em categoria gerada, Fiado em aberto de
+    // cliente gerado e entrada real com fornecedor gerado
+    const sale = await registerSale(
+      store.user.id,
+      saleInput(store, {
+        items: [{ productId: genProducts[0].id, quantity: 1 }],
+        amountPaid: 9999,
+      }),
+    );
+    expect(sale.success).toBe(true);
+    await prisma.product.update({
+      where: { id: store.rice.id },
+      data: { categoryId: genCategory.id },
+    });
+    const onAccount = await prisma.sale.create({
+      data: {
+        total: new Prisma.Decimal(20),
+        paymentMethod: PaymentMethod.ON_ACCOUNT,
+        userId: store.user.id,
+        customerId: genCustomer.id,
+        occurredAt: new Date(),
+      },
+    });
+    await prisma.receivable.create({
+      data: { saleId: onAccount.id, customerId: genCustomer.id, amount: new Prisma.Decimal(20) },
+    });
+    await prisma.stockMovement.create({
+      data: {
+        productId: store.cheese.id,
+        type: "IN",
+        quantity: new Prisma.Decimal(1),
+        supplierId: genSupplier.id,
+        userId: admin.id,
+      },
+    });
+
+    const realSnapshot = async () => ({
+      products: await prisma.product.findMany({
+        where: { testDataRunId: null },
+        orderBy: { id: "asc" },
+      }),
+      customers: await prisma.customer.findMany({
+        where: { testDataRunId: null },
+        orderBy: { id: "asc" },
+      }),
+      movements: await prisma.stockMovement.findMany({
+        where: { testDataRunId: null },
+        orderBy: { id: "asc" },
+      }),
+      sales: await prisma.sale.count(),
+      saleItems: await prisma.saleItem.count(),
+      receivables: await prisma.receivable.findMany({ orderBy: { id: "asc" } }),
+    });
+    const before = await realSnapshot();
+    const syncBefore = new Map(genProducts.map((p) => [p.id, p.syncVersion]));
+
+    const requestId = randomUUID();
+    const result = await removeTestData(admin, requestId);
+
+    expect(result).toEqual({
+      ok: true,
+      replayed: false,
+      counts: {
+        Product: 6,
+        Category: 2,
+        Customer: 2,
+        Supplier: 1,
+        StockMovement: 6,
+        keptCategories: 1,
+        keptCustomers: 1,
+        keptSuppliers: 1,
+      },
+    });
+    expect(await realSnapshot()).toEqual(before);
+
+    // Exclusão lógica: o PDV offline recebe a exclusão (syncVersion avança)
+    const removed = await prisma.product.findMany({ where: { testDataRunId: runId } });
+    for (const product of removed) {
+      expect(product.deletedAt).not.toBeNull();
+      expect(product.syncVersion > syncBefore.get(product.id)!).toBe(true);
+    }
+    expect(
+      await prisma.category.findUniqueOrThrow({ where: { id: genCategory.id } }),
+    ).toMatchObject({ deletedAt: null });
+    expect(
+      await prisma.customer.findUniqueOrThrow({ where: { id: genCustomer.id } }),
+    ).toMatchObject({ deletedAt: null });
+    expect(await prisma.supplier.findUnique({ where: { id: genSupplier.id } })).not.toBeNull();
+    expect(await prisma.stockMovement.count({ where: { testDataRunId: { not: null } } })).toBe(0);
+
+    const run = await prisma.testDataRun.findUniqueOrThrow({ where: { id: requestId } });
+    expect(run).toMatchObject({ kind: "CLEANUP", status: "COMPLETED", userId: admin.id });
+
+    // O mesmo pedido devolve o resultado gravado
+    expect(await removeTestData(admin, requestId)).toEqual({ ...result, replayed: true });
+  });
+
+  it("sem registros gerados, recusa sem gravar nada", async () => {
+    await saveSettings();
+    await seedStore();
+
+    const result = await removeTestData(admin, randomUUID());
+
+    expect(result).toEqual({ ok: false, error: expect.stringMatching(/Não há dados de teste/) });
+    expect(await prisma.testDataRun.count()).toBe(0);
+    expect(await prisma.product.count({ where: { deletedAt: null } })).toBe(2);
+  });
+});
+
+describe("ambiente (#67)", () => {
+  it("sem ENABLE_STORE_TEST_TOOLS=true nada é gerado, restaurado ou removido", async () => {
+    await saveSettings();
+    await generateTestData(admin, randomUUID(), { ...MAX, products: 3 });
+    const countsBefore = await tableCounts();
+    const runsBefore = await prisma.testDataRun.count();
+
+    const previous = process.env.ENABLE_STORE_TEST_TOOLS;
+    try {
+      for (const value of [undefined, "", "false", "1", "TRUE"]) {
+        if (value === undefined) delete process.env.ENABLE_STORE_TEST_TOOLS;
+        else process.env.ENABLE_STORE_TEST_TOOLS = value;
+
+        const disabled = { ok: false, error: TEST_TOOLS_DISABLED };
+        expect(await generateTestData(admin, randomUUID(), MAX)).toEqual(disabled);
+        expect(await resetStoreData(admin, randomUUID(), confirm)).toEqual(disabled);
+        expect(await removeTestData(admin, randomUUID())).toEqual(disabled);
+      }
+    } finally {
+      process.env.ENABLE_STORE_TEST_TOOLS = previous;
+    }
+
+    expect(await tableCounts()).toEqual(countsBefore);
+    expect(await prisma.testDataRun.count()).toBe(runsBefore);
   });
 });

@@ -11,14 +11,22 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 import {
   generateTestDataAction,
+  removeTestDataAction,
   type GenerateTestDataResponse,
+  type RemoveTestDataResponse,
   type ResetStoreDataResponse,
   type TestDataOverview,
 } from "@/actions/test-data";
-import type { ResetBlockers, TestDataRunItem } from "@/lib/test-data";
+import type {
+  CleanupCounts,
+  GeneratedActiveCounts,
+  ResetBlockers,
+  TestDataRunItem,
+} from "@/lib/test-data";
 import {
   TEST_DATA_ENTITIES,
   validateTestDataCounts,
@@ -26,6 +34,7 @@ import {
   type TestDataEntity,
 } from "@/lib/test-data-generator";
 import { ResetStoreDialog } from "@/components/reset-store-dialog";
+import { useConfirm } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,8 +45,9 @@ import { formatDateTime } from "@/lib/dates";
 import { newOperationId } from "@/lib/operation-id";
 import { cn } from "@/lib/utils";
 
-// Seção "Dados de teste" em Configurações (issue #57), só para ADMIN: gera dados sintéticos e
-// restaura o banco com confirmação forte. As regras ficam no servidor (src/lib/test-data.ts).
+// Seção "Dados de teste" em Configurações (issue #57), só para ADMIN: gera dados sintéticos, remove
+// só os gerados (issue #67) e restaura o banco com confirmação forte. Só aparece com
+// ENABLE_STORE_TEST_TOOLS=true. As regras ficam no servidor (src/lib/test-data.ts).
 
 const ENTITY_LABELS: Record<TestDataEntity, string> = {
   categories: "Categorias",
@@ -75,9 +85,32 @@ function describeCounts(counts: Record<string, number> | null) {
   return parts.length > 0 ? parts.join(", ") : "nenhum registro";
 }
 
+/** Gerados que ficaram por estarem em uso por dados reais. */
+function describeKept(counts: Partial<CleanupCounts>) {
+  const parts = [
+    plural(counts.keptCategories ?? 0, "categoria com produto real", "categorias com produto real"),
+    plural(
+      counts.keptCustomers ?? 0,
+      "cliente com Fiado em aberto",
+      "clientes com Fiado em aberto",
+    ),
+    plural(
+      counts.keptSuppliers ?? 0,
+      "fornecedor com entrada real",
+      "fornecedores com entrada real",
+    ),
+  ].filter((part) => !part.startsWith("0 "));
+  return parts.length > 0 ? ` Mantidos por uso: ${parts.join(", ")}.` : "";
+}
+
+function describeCleanup(counts: Partial<CleanupCounts>) {
+  return `Removidos: ${describeCounts(counts as Record<string, number>)}.${describeKept(counts)}`;
+}
+
 function describeRun(run: TestDataRunItem) {
   if (run.status === "FAILED") return "Erro inesperado; nada foi alterado.";
   if (run.status === "REJECTED") return run.message ?? "Recusada.";
+  if (run.kind === "CLEANUP") return describeCleanup(run.counts ?? {});
   if (run.kind === "RESET") {
     // O total inclui tabelas de apoio (itens de venda, preços históricos...) fora do resumo
     const total = Object.values(run.counts ?? {}).reduce((sum, n) => sum + n, 0);
@@ -86,6 +119,12 @@ function describeRun(run: TestDataRunItem) {
   }
   return `Criados: ${describeCounts(run.counts)}`;
 }
+
+const KIND_LABELS = {
+  GENERATE: "Geração",
+  CLEANUP: "Remoção dos dados gerados",
+  RESET: "Restauração",
+} as const;
 
 const STATUS_BADGES = {
   COMPLETED: { label: "Concluída", variant: "success" },
@@ -121,6 +160,7 @@ export function TestDataPanel({ overview }: TestDataPanelProps) {
         </p>
       </div>
       <GenerateCard limits={overview.limits} defaults={overview.defaults} />
+      <CleanupCard generated={overview.generated} />
       <ResetCard blockers={overview.blockers} tradeName={overview.tradeName} />
       <RunHistory runs={overview.runs} />
     </section>
@@ -191,7 +231,8 @@ function GenerateCard({ limits, defaults }: { limits: TestDataCounts; defaults: 
         <CardDescription>
           Cria categorias, produtos com estoque inicial, clientes e fornecedores fictícios, sem
           alterar os cadastros existentes. Os produtos ficam fora do catálogo público, e o estoque
-          inicial entra como compra de um fornecedor gerado.
+          inicial entra como compra de um fornecedor gerado. Clientes e fornecedores não recebem
+          CPF/CNPJ. Os registros ficam marcados e podem ser removidos depois sem afetar os reais.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -244,6 +285,92 @@ function GenerateCard({ limits, defaults }: { limits: TestDataCounts; defaults: 
             </Button>
           </div>
         </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CleanupCard({ generated }: { generated: GeneratedActiveCounts }) {
+  const router = useRouter();
+  const [askConfirm, confirmDialog] = useConfirm();
+  const [loading, setLoading] = useState(false);
+  // Mantido enquanto não houver resposta: repetir depois de uma resposta perdida não remove de novo
+  const requestId = useRef<string | null>(null);
+  const total = Object.values(generated).reduce((sum, n) => sum + n, 0);
+  const summary = describeCounts({
+    products: generated.products,
+    categories: generated.categories,
+    customers: generated.customers,
+    suppliers: generated.suppliers,
+  });
+
+  const handleRemove = async () => {
+    if (loading) return;
+    const ok = await askConfirm({
+      title: "Remover os dados gerados?",
+      description:
+        "Saem só os registros criados por esta seção. Vendas, títulos e cadastros reais continuam como estão; produto, categoria e cliente gerados que ainda estiverem em uso ficam.",
+      confirmLabel: "Remover",
+      destructive: true,
+    });
+    if (!ok) return;
+
+    requestId.current ??= newOperationId();
+    setLoading(true);
+    let response: RemoveTestDataResponse;
+    try {
+      response = await removeTestDataAction({ requestId: requestId.current });
+    } catch {
+      setLoading(false);
+      toast.error("Sem resposta do servidor. Confira a conexão e tente de novo.");
+      return;
+    }
+    setLoading(false);
+    requestId.current = null;
+
+    if (!response.success) {
+      toast.error(response.error);
+    } else {
+      toast.success(describeCleanup(response.data.counts));
+    }
+    router.refresh();
+  };
+
+  return (
+    <Card>
+      {confirmDialog}
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Trash2 className="text-primary h-5 w-5" />
+          Remover dados gerados
+        </CardTitle>
+        <CardDescription>
+          Remove só o que foi criado em &quot;Gerar dados de teste&quot;, sem tocar nos dados reais.
+          Produtos, categorias e clientes saem como na exclusão manual (os aparelhos do PDV recebem
+          a exclusão na próxima sincronização).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-muted-foreground">
+          {total === 0 ? "Nenhum registro gerado ativo." : `Ativos agora: ${summary}.`}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleRemove}
+          disabled={loading || total === 0}
+          className="w-full sm:w-auto"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Removendo...
+            </>
+          ) : (
+            <>
+              <Trash2 className="mr-2 h-4 w-4" /> Remover dados gerados
+            </>
+          )}
+        </Button>
       </CardContent>
     </Card>
   );
@@ -383,7 +510,9 @@ function RunHistory({ runs }: { runs: TestDataRunItem[] }) {
           <History className="text-primary h-5 w-5" />
           Histórico
         </CardTitle>
-        <CardDescription>Últimas gerações e restaurações, inclusive as recusadas.</CardDescription>
+        <CardDescription>
+          Últimas gerações, remoções e restaurações, inclusive as recusadas.
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {runs.length === 0 ? (
@@ -395,9 +524,7 @@ function RunHistory({ runs }: { runs: TestDataRunItem[] }) {
               return (
                 <li key={run.id} className="flex flex-col gap-1 py-3 text-sm first:pt-0 last:pb-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">
-                      {run.kind === "RESET" ? "Restauração" : "Geração"}
-                    </span>
+                    <span className="font-medium">{KIND_LABELS[run.kind]}</span>
                     <Badge variant={badge.variant}>{badge.label}</Badge>
                     <span className="text-muted-foreground text-xs">
                       {formatDateTime(run.createdAt)} · {run.userName}

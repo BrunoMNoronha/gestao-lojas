@@ -94,6 +94,7 @@ enum ReconciliationIssueType {
 enum TestDataRunKind {
   GENERATE // Gerar dados de teste
   RESET // Restaurar o banco (mantém usuários e configurações da loja)
+  CLEANUP // Remover só os registros gerados (#67)
 }
 
 enum TestDataRunStatus {
@@ -146,6 +147,7 @@ model Category {
   deletedAt   DateTime?
   syncVersion BigInt    @default(0)
   products    Product[]
+  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
 
   @@index([syncVersion, id])
 }
@@ -170,6 +172,7 @@ model Product {
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
   syncVersion    BigInt          @default(0)
+  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
   saleItems      SaleItem[]
   stockMovements StockMovement[]
   priceHistory   ProductPrice[]
@@ -204,6 +207,7 @@ model Customer {
   syncVersion BigInt       @default(0)
   sales       Sale[]
   receivables Receivable[]
+  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
 
   @@index([syncVersion, id])
 }
@@ -260,6 +264,7 @@ model StockMovement {
   supplierId String?
   supplier   Supplier?    @relation(fields: [supplierId], references: [id])
   createdAt  DateTime     @default(now())
+  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
 
   @@index([productId, createdAt])
 }
@@ -304,6 +309,7 @@ model Supplier {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   stockMovements StockMovement[]
+  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
 }
 
 // Turno de caixa por operador. openUserId fica preenchido apenas enquanto o caixa está

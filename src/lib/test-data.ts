@@ -3,18 +3,16 @@ import bcrypt from "bcryptjs";
 import {
   MovementType,
   Prisma,
+  ReceivableStatus,
   TestDataRunKind,
   TestDataRunStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/authz";
-import { documentLookupValues } from "@/lib/masks";
 import { parseOperationId } from "@/lib/sync-operation";
 import {
   buildTestData,
-  randomCnpj,
-  randomCpf,
   randomEan13,
   randomSku,
   uniqueName,
@@ -35,6 +33,17 @@ import {
 // - A restauração apaga, com TRUNCATE de lista fechada e sem CASCADE, todas as tabelas exceto as
 //   de KEPT_TABLES. Se surgir tabela nova que dependa das apagadas, o Postgres recusa o comando
 //   em vez de apagar além da lista (e o teste de integração obriga a classificá-la).
+// - Issue #67: tudo fica desligado sem ENABLE_STORE_TEST_TOOLS=true (padrão, e o caso da
+//   produção). Os registros gerados guardam o id da geração em `testDataRunId`, e a remoção
+//   seletiva tira só eles, sem tocar nos dados reais.
+
+/** Ferramentas de dados de teste habilitadas neste ambiente (variável explícita). */
+export function testToolsEnabled(): boolean {
+  return process.env.ENABLE_STORE_TEST_TOOLS === "true";
+}
+
+export const TEST_TOOLS_DISABLED =
+  "Os dados de teste estão desligados neste ambiente (ENABLE_STORE_TEST_TOOLS).";
 
 /** Tabelas apagadas pela restauração, na ordem do TRUNCATE. */
 export const RESET_TABLES = [
@@ -70,8 +79,11 @@ export interface GeneratedCounts {
   stockMovements: number;
 }
 
-// Trava consultiva compartilhada pela geração e pela restauração (número fixo da issue #57)
+// Trava consultiva compartilhada pela geração, pela restauração e pela remoção seletiva (número
+// fixo da issue #57)
 const LOCK_SQL = "SELECT pg_advisory_xact_lock(57057)";
+// Trava por usuário na conferência da confirmação: tentativas em paralelo contam uma a uma (#67)
+const CONFIRMATION_LOCK_KEY = 57067;
 // Espera máxima por travas de tabela na restauração: falha em vez de ficar parada
 const RESET_LOCK_TIMEOUT_SQL = "SET LOCAL lock_timeout = '10s'";
 const TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 30_000 };
@@ -102,6 +114,20 @@ class TestDataRejection extends Error {
 }
 
 // Histórico
+
+/**
+ * Mensagem de falha guardada no histórico, que também vai para a tela: só o código do erro (ex.:
+ * P2028 do Prisma), nunca a mensagem interna. O detalhe fica no log do servidor.
+ */
+export function failureMessage(error: unknown): string {
+  const code =
+    error && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code
+      : error instanceof Error
+        ? error.name
+        : "desconhecido";
+  return `Erro inesperado (${code.slice(0, 40)}).`;
+}
 
 /** Grava recusa ou falha com id próprio (fora da transação, que foi desfeita). */
 async function recordUnsuccessfulRun(
@@ -207,16 +233,6 @@ async function avoidExisting(
   throw new Error("Não foi possível evitar colisões com os dados existentes.");
 }
 
-/** Valor normalizado (só dígitos) presente no banco, inclusive gravado com pontuação antiga. */
-function existingDocuments(rows: { document: string | null }[], candidates: string[]) {
-  const found = new Set<string>();
-  for (const candidate of candidates) {
-    const forms = new Set(documentLookupValues(candidate));
-    if (rows.some((row) => row.document !== null && forms.has(row.document))) found.add(candidate);
-  }
-  return found;
-}
-
 /** Ajusta o conjunto gerado para não colidir com o que já existe no banco. */
 async function resolveCollisions(tx: Tx, data: TestDataSet, random: Random) {
   // Categoria: nome único só entre as ativas; colisão ganha sufixo numérico
@@ -258,51 +274,29 @@ async function resolveCollisions(tx: Tx, data: TestDataSet, random: Random) {
     product.sku = skus[i];
     product.barcode = barcodes[i];
   });
-
-  // Cliente: documento único só entre os ativos
-  const cpfs = await avoidExisting(
-    data.customers.map((c) => c.document),
-    async (candidates) => {
-      const rows = await tx.customer.findMany({
-        where: { document: { in: candidates.flatMap(documentLookupValues) }, deletedAt: null },
-        select: { document: true },
-      });
-      return existingDocuments(rows, candidates);
-    },
-    () => randomCpf(random),
-  );
-  data.customers.forEach((customer, i) => (customer.document = cpfs[i]));
-
-  // Fornecedor: documento único no banco inteiro
-  const cnpjs = await avoidExisting(
-    data.suppliers.map((s) => s.document),
-    async (candidates) => {
-      const rows = await tx.supplier.findMany({
-        where: { document: { in: candidates.flatMap(documentLookupValues) } },
-        select: { document: true },
-      });
-      return existingDocuments(rows, candidates);
-    },
-    () => randomCnpj(random),
-  );
-  data.suppliers.forEach((supplier, i) => (supplier.document = cnpjs[i]));
 }
 
-/** Grava o conjunto e devolve as contagens. Chamado dentro da transação. */
-async function insertTestData(tx: Tx, user: SessionUser, data: TestDataSet) {
+/**
+ * Grava o conjunto e devolve as contagens. Chamado dentro da transação. Todo registro recebe o id
+ * da geração (`testDataRunId`) para a remoção seletiva.
+ */
+async function insertTestData(tx: Tx, user: SessionUser, data: TestDataSet, testDataRunId: string) {
   const categories = await tx.category.createManyAndReturn({
-    data: data.categories.map((c) => ({ name: c.name })),
+    data: data.categories.map((c) => ({ name: c.name, testDataRunId })),
     select: { id: true, name: true },
   });
   const categoryIdByName = new Map(categories.map((c) => [c.name, c.id]));
 
+  // Nomes de fornecedor são únicos dentro do conjunto gerado
   const suppliers = await tx.supplier.createManyAndReturn({
-    data: data.suppliers,
-    select: { id: true, document: true },
+    data: data.suppliers.map((s) => ({ ...s, testDataRunId })),
+    select: { id: true, name: true },
   });
-  const supplierIdByDocument = new Map(suppliers.map((s) => [s.document!, s.id]));
+  const supplierIdByName = new Map(suppliers.map((s) => [s.name, s.id]));
 
-  const customers = await tx.customer.createMany({ data: data.customers });
+  const customers = await tx.customer.createMany({
+    data: data.customers.map((c) => ({ ...c, testDataRunId })),
+  });
 
   // Os gatilhos do banco preenchem syncVersion e gravam a primeira linha de ProductPrice
   const products = await tx.product.createManyAndReturn({
@@ -317,6 +311,7 @@ async function insertTestData(tx: Tx, user: SessionUser, data: TestDataSet) {
       minStock: p.minStock,
       categoryId: categoryIdByName.get(data.categories[p.categoryIndex].name)!,
       showInCatalog: false,
+      testDataRunId,
     })),
     select: { id: true, sku: true },
   });
@@ -331,7 +326,8 @@ async function insertTestData(tx: Tx, user: SessionUser, data: TestDataSet) {
       reason: STOCK_REASON,
       unitCost: p.costPrice,
       userId: user.id,
-      supplierId: supplierIdByDocument.get(data.suppliers[p.supplierIndex].document)!,
+      supplierId: supplierIdByName.get(data.suppliers[p.supplierIndex].name)!,
+      testDataRunId,
     })),
   });
 
@@ -357,6 +353,7 @@ export async function generateTestData(
   rawCounts: unknown,
   random: Random = Math.random,
 ): Promise<GenerateResult> {
+  if (!testToolsEnabled()) return { ok: false, error: TEST_TOOLS_DISABLED };
   const requestId = parseOperationId(rawRequestId);
   if (!requestId) return { ok: false, error: INVALID_REQUEST };
 
@@ -384,7 +381,7 @@ export async function generateTestData(
 
       const data = buildTestData(counts, random);
       await resolveCollisions(tx, data, random);
-      const created = await insertTestData(tx, user, data);
+      const created = await insertTestData(tx, user, data, requestId);
 
       await tx.testDataRun.create({
         data: {
@@ -405,7 +402,7 @@ export async function generateTestData(
       TestDataRunKind.GENERATE,
       TestDataRunStatus.FAILED,
       user,
-      error instanceof Error ? error.message.slice(0, 500) : "Erro desconhecido",
+      failureMessage(error),
       { requestId, ...counts },
     );
     return { ok: false, error: "Falha ao gerar os dados de teste. Nada foi gravado." };
@@ -494,8 +491,8 @@ async function countResetTables(tx: Tx): Promise<ResetCounts> {
 }
 
 /** Tentativas de confirmação erradas recentes do usuário (limite de tentativas). */
-async function recentConfirmationFailures(userId: string, now: Date) {
-  return prisma.testDataRun.count({
+async function recentConfirmationFailures(db: Db, userId: string, now: Date) {
+  return db.testDataRun.count({
     where: {
       userId,
       kind: TestDataRunKind.RESET,
@@ -516,6 +513,60 @@ export type ResetResult =
   | { ok: false; error: string; blockers?: ResetBlockers };
 
 /**
+ * Confere o nome fantasia e a senha. Roda sob uma trava por usuário: a contagem de tentativas
+ * erradas e o registro de cada nova tentativa acontecem um de cada vez, então pedidos em paralelo
+ * não passam do limite.
+ */
+async function checkResetConfirmation(
+  user: SessionUser,
+  requestId: string,
+  confirmation: ResetConfirmation,
+  now: Date,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CONFIRMATION_LOCK_KEY}::int, hashtext(${user.id}))`;
+
+    if ((await recentConfirmationFailures(tx, user.id, now)) >= MAX_RESET_CONFIRMATION_FAILURES) {
+      return {
+        ok: false as const,
+        error: "Muitas tentativas com nome da loja ou senha incorretos. Aguarde 15 minutos.",
+      };
+    }
+
+    const [settings, account] = await Promise.all([
+      tx.storeSettings.findUnique({ where: { id: "default" }, select: { tradeName: true } }),
+      tx.user.findUnique({ where: { id: user.id }, select: { password: true } }),
+    ]);
+    if (!settings) {
+      return {
+        ok: false as const,
+        error: "Salve as configurações da loja antes de restaurar o banco.",
+      };
+    }
+    const tradeName = typeof confirmation.tradeName === "string" ? confirmation.tradeName : "";
+    const password = typeof confirmation.password === "string" ? confirmation.password : "";
+    const nameMatches = tradeName.trim() !== "" && tradeName.trim() === settings.tradeName.trim();
+    // Compara a senha mesmo com o nome errado: o tempo de resposta não indica qual dos dois falhou
+    const passwordMatches =
+      !!account && password !== "" && (await bcrypt.compare(password, account.password));
+    if (!nameMatches || !passwordMatches) {
+      await tx.testDataRun.create({
+        data: {
+          id: randomUUID(),
+          kind: TestDataRunKind.RESET,
+          status: TestDataRunStatus.REJECTED,
+          userId: user.id,
+          message: CONFIRMATION_ERROR,
+          params: { requestId, reason: CONFIRMATION_REASON },
+        },
+      });
+      return { ok: false as const, error: CONFIRMATION_ERROR };
+    }
+    return { ok: true as const };
+  }, TRANSACTION_OPTIONS);
+}
+
+/**
  * Restaura o banco: apaga dados operacionais e cadastrais e mantém usuários, configurações da loja
  * e o histórico desta seção. Exige o nome fantasia da loja e a senha do usuário, e é recusada com
  * caixa aberto ou aparelho com vendas offline não enviadas.
@@ -526,6 +577,7 @@ export async function resetStoreData(
   confirmation: ResetConfirmation,
   now: Date = new Date(),
 ): Promise<ResetResult> {
+  if (!testToolsEnabled()) return { ok: false, error: TEST_TOOLS_DISABLED };
   const requestId = parseOperationId(rawRequestId);
   if (!requestId) return { ok: false, error: INVALID_REQUEST };
 
@@ -539,39 +591,8 @@ export async function resetStoreData(
       return { ok: true, counts: previous.counts as unknown as ResetCounts, replayed: true };
     }
 
-    if ((await recentConfirmationFailures(user.id, now)) >= MAX_RESET_CONFIRMATION_FAILURES) {
-      return {
-        ok: false,
-        error: "Muitas tentativas com nome da loja ou senha incorretos. Aguarde 15 minutos.",
-      };
-    }
-
-    const [settings, account] = await Promise.all([
-      prisma.storeSettings.findUnique({ where: { id: "default" }, select: { tradeName: true } }),
-      prisma.user.findUnique({ where: { id: user.id }, select: { password: true } }),
-    ]);
-    if (!settings) {
-      return {
-        ok: false,
-        error: "Salve as configurações da loja antes de restaurar o banco.",
-      };
-    }
-    const tradeName = typeof confirmation.tradeName === "string" ? confirmation.tradeName : "";
-    const password = typeof confirmation.password === "string" ? confirmation.password : "";
-    const nameMatches = tradeName.trim() !== "" && tradeName.trim() === settings.tradeName.trim();
-    // Compara a senha mesmo com o nome errado: o tempo de resposta não indica qual dos dois falhou
-    const passwordMatches =
-      !!account && password !== "" && (await bcrypt.compare(password, account.password));
-    if (!nameMatches || !passwordMatches) {
-      await recordUnsuccessfulRun(
-        TestDataRunKind.RESET,
-        TestDataRunStatus.REJECTED,
-        user,
-        CONFIRMATION_ERROR,
-        { requestId, reason: CONFIRMATION_REASON },
-      );
-      return { ok: false, error: CONFIRMATION_ERROR };
-    }
+    const confirmed = await checkResetConfirmation(user, requestId, confirmation, now);
+    if (!confirmed.ok) return confirmed;
 
     return await prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(RESET_LOCK_TIMEOUT_SQL);
@@ -626,9 +647,137 @@ export async function resetStoreData(
       TestDataRunKind.RESET,
       TestDataRunStatus.FAILED,
       user,
-      error instanceof Error ? error.message.slice(0, 500) : "Erro desconhecido",
+      failureMessage(error),
       { requestId },
     );
     return { ok: false, error: `${GENERIC_ERROR} Nada foi apagado.` };
+  }
+}
+
+// Remoção seletiva (issue #67)
+
+/** Registros gerados ainda ativos, para a tela. */
+export interface GeneratedActiveCounts {
+  products: number;
+  categories: number;
+  customers: number;
+  suppliers: number;
+}
+
+export async function getGeneratedActiveCounts(db: Db = prisma): Promise<GeneratedActiveCounts> {
+  const marked = { testDataRunId: { not: null } };
+  const [products, categories, customers, suppliers] = await Promise.all([
+    db.product.count({ where: { ...marked, deletedAt: null } }),
+    db.category.count({ where: { ...marked, deletedAt: null } }),
+    db.customer.count({ where: { ...marked, deletedAt: null } }),
+    db.supplier.count({ where: marked }),
+  ]);
+  return { products, categories, customers, suppliers };
+}
+
+export interface CleanupCounts {
+  Product: number;
+  Category: number;
+  Customer: number;
+  Supplier: number;
+  StockMovement: number;
+  // Gerados que ficaram por estarem em uso por dados reais (mesmas regras da exclusão manual)
+  keptCategories: number;
+  keptCustomers: number;
+  keptSuppliers: number;
+}
+
+export type CleanupResult =
+  { ok: true; counts: CleanupCounts; replayed: boolean } | { ok: false; error: string };
+
+/**
+ * Remove só os registros gerados (marcados com `testDataRunId`), com as mesmas regras da exclusão
+ * manual. Produtos, categorias e clientes saem por exclusão lógica, para que o PDV offline receba
+ * a exclusão na próxima sincronização. As entradas de estoque geradas são apagadas, e o fornecedor
+ * gerado só é apagado se nenhuma outra entrada o usar. Vendas, títulos e cadastros reais ficam como
+ * estão. Corre sob a mesma trava da geração e da restauração.
+ */
+export async function removeTestData(
+  user: SessionUser,
+  rawRequestId: unknown,
+  now: Date = new Date(),
+): Promise<CleanupResult> {
+  if (!testToolsEnabled()) return { ok: false, error: TEST_TOOLS_DISABLED };
+  const requestId = parseOperationId(rawRequestId);
+  if (!requestId) return { ok: false, error: INVALID_REQUEST };
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(LOCK_SQL);
+
+      const previous = await findCompletedRun(tx, requestId, TestDataRunKind.CLEANUP);
+      if (previous) {
+        return { ok: true, counts: previous.counts as unknown as CleanupCounts, replayed: true };
+      }
+
+      const marked = { testDataRunId: { not: null } };
+      const products = await tx.product.updateMany({
+        where: { ...marked, deletedAt: null },
+        data: { deletedAt: now },
+      });
+      // Categoria que recebeu produto real ativo fica, como na exclusão manual
+      const categories = await tx.category.updateMany({
+        where: { ...marked, deletedAt: null, products: { none: { deletedAt: null } } },
+        data: { deletedAt: now },
+      });
+      // Cliente com Fiado em aberto fica, como na exclusão manual
+      const customers = await tx.customer.updateMany({
+        where: {
+          ...marked,
+          deletedAt: null,
+          receivables: {
+            none: { status: { in: [ReceivableStatus.OPEN, ReceivableStatus.PARTIAL] } },
+          },
+        },
+        data: { deletedAt: now },
+      });
+      const movements = await tx.stockMovement.deleteMany({ where: marked });
+      // Fornecedor usado em entrada real fica: apagar tiraria o vínculo do histórico
+      const suppliers = await tx.supplier.deleteMany({
+        where: { ...marked, stockMovements: { none: {} } },
+      });
+      const kept = await getGeneratedActiveCounts(tx);
+
+      const counts: CleanupCounts = {
+        Product: products.count,
+        Category: categories.count,
+        Customer: customers.count,
+        Supplier: suppliers.count,
+        StockMovement: movements.count,
+        keptCategories: kept.categories,
+        keptCustomers: kept.customers,
+        keptSuppliers: kept.suppliers,
+      };
+      if (Object.values(counts).every((value) => value === 0)) {
+        throw new TestDataRejection("Não há dados de teste para remover.");
+      }
+
+      await tx.testDataRun.create({
+        data: {
+          id: requestId,
+          kind: TestDataRunKind.CLEANUP,
+          status: TestDataRunStatus.COMPLETED,
+          userId: user.id,
+          counts: { ...counts },
+        },
+      });
+      return { ok: true as const, counts, replayed: false };
+    }, TRANSACTION_OPTIONS);
+  } catch (error) {
+    if (error instanceof TestDataRejection) return { ok: false, error: error.message };
+    console.error("Erro ao remover dados de teste:", error);
+    await recordUnsuccessfulRun(
+      TestDataRunKind.CLEANUP,
+      TestDataRunStatus.FAILED,
+      user,
+      failureMessage(error),
+      { requestId },
+    );
+    return { ok: false, error: `${GENERIC_ERROR} Nada foi removido.` };
   }
 }

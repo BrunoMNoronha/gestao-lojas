@@ -211,6 +211,11 @@ registrada aqui, chave de operação idempotente no servidor e testes dos cenár
   cursor (seção 5) e precisam ser preparados de novo, porque `OfflineDevice` e `OfflineGrant` também
   são apagados. Venda guardada num aparelho que nunca informou pendências volta como conflito na
   sincronização.
+- **Remoção dos dados gerados (#67):** tira só os registros marcados pela geração de dados de teste.
+  Produtos, categorias e clientes saem por exclusão lógica (os aparelhos recebem a exclusão pelo
+  cursor, sem mudar a época); só as entradas de estoque geradas e os fornecedores gerados sem uso
+  são apagados de fato. Geração, remoção e restauração só existem com
+  `ENABLE_STORE_TEST_TOOLS=true`, desligada em produção.
 
 ### 3.8 Campos gravados no aparelho
 

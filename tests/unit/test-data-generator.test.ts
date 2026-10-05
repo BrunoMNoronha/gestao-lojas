@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isValidCnpj, isValidCpf, normalizePhone } from "@/lib/masks";
+import { normalizePhone } from "@/lib/masks";
 import {
   buildTestData,
   createSeededRandom,
   ean13CheckDigit,
-  randomCnpj,
-  randomCpf,
   randomEan13,
   randomSku,
   TEST_DATA_LIMITS,
@@ -14,7 +12,7 @@ import {
   validateTestDataCounts,
 } from "@/lib/test-data-generator";
 
-// Gerador de dados de teste (issue #57): documentos e códigos válidos, unidades inteiras ou
+// Gerador de dados de teste (issue #57): códigos válidos, pessoas sem CPF/CNPJ (#67), unidades inteiras ou
 // fracionadas, preços em centavos, limites e combinações recusadas.
 
 const MAX = { ...TEST_DATA_LIMITS };
@@ -47,19 +45,8 @@ describe("validateTestDataCounts", () => {
   });
 });
 
-describe("documentos e códigos", () => {
+describe("códigos", () => {
   const random = createSeededRandom(57);
-
-  it("gera CPF e CNPJ com dígitos verificadores válidos", () => {
-    for (let i = 0; i < 200; i++) {
-      const cpf = randomCpf(random);
-      expect(cpf).toMatch(/^\d{11}$/);
-      expect(isValidCpf(cpf)).toBe(true);
-      const cnpj = randomCnpj(random);
-      expect(cnpj).toMatch(/^\d{8}0001\d{2}$/);
-      expect(isValidCnpj(cnpj)).toBe(true);
-    }
-  });
 
   it("calcula o dígito do EAN-13 e usa a faixa interna (prefixo 2)", () => {
     // 789100031550-7: código real conhecido
@@ -101,16 +88,14 @@ describe("buildTestData", () => {
     expect(data.suppliers).toHaveLength(MAX.suppliers);
   });
 
-  it("não repete nomes, SKU, códigos de barras nem documentos", () => {
+  it("não repete nomes, SKU nem códigos de barras", () => {
     const distinct = <T>(values: T[]) => new Set(values).size === values.length;
     expect(distinct(data.categories.map((c) => c.name))).toBe(true);
     expect(distinct(data.products.map((p) => p.name))).toBe(true);
     expect(distinct(data.products.map((p) => p.sku))).toBe(true);
     expect(distinct(data.products.map((p) => p.barcode))).toBe(true);
     expect(distinct(data.customers.map((c) => c.name))).toBe(true);
-    expect(distinct(data.customers.map((c) => c.document))).toBe(true);
     expect(distinct(data.suppliers.map((s) => s.name))).toBe(true);
-    expect(distinct(data.suppliers.map((s) => s.document))).toBe(true);
   });
 
   it("gera preços com 2 casas, custo positivo e venda acima do custo", () => {
@@ -145,15 +130,15 @@ describe("buildTestData", () => {
     expect(new Set(data.products.map((p) => p.categoryIndex)).size).toBe(MAX.categories);
   });
 
-  it("gera clientes com CPF e fornecedores com CNPJ, telefones e e-mails válidos", () => {
+  it("gera clientes e fornecedores sem CPF/CNPJ, com telefones e e-mails válidos", () => {
     for (const customer of data.customers) {
-      expect(isValidCpf(customer.document)).toBe(true);
+      expect(customer).not.toHaveProperty("document");
       expect(customer.phone).toHaveLength(11);
       expect(normalizePhone(customer.phone)).toEqual({ ok: true, value: customer.phone });
       expect(customer.email).toMatch(/^[a-z0-9.]+@exemplo\.test$/);
     }
     for (const supplier of data.suppliers) {
-      expect(isValidCnpj(supplier.document)).toBe(true);
+      expect(supplier).not.toHaveProperty("document");
       expect(supplier.phone).toHaveLength(10);
       expect(normalizePhone(supplier.phone)).toEqual({ ok: true, value: supplier.phone });
       expect(supplier.email).toMatch(/^contato@[a-z0-9.]+\.exemplo\.test$/);
@@ -180,8 +165,7 @@ describe("buildTestData", () => {
     for (let seed = 0; seed < 50; seed++) {
       const set = buildTestData(MAX, createSeededRandom(seed));
       expect(new Set(set.products.map((p) => p.sku)).size).toBe(MAX.products);
-      expect(set.customers.every((c) => isValidCpf(c.document))).toBe(true);
-      expect(set.suppliers.every((s) => isValidCnpj(s.document))).toBe(true);
+      expect(new Set(set.suppliers.map((s) => s.name)).size).toBe(MAX.suppliers);
     }
   });
 });

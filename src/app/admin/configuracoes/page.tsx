@@ -30,7 +30,8 @@ export default async function SettingsPage() {
 
       <StoreSettingsForm initialSettings={settings} />
 
-      <TestDataPanel overview={testData} />
+      {/* Sem ENABLE_STORE_TEST_TOOLS=true (produção), a seção não aparece (issue #67) */}
+      {testData !== "disabled" && <TestDataPanel overview={testData} />}
     </div>
   );
 }

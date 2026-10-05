@@ -5,3 +5,5 @@ import { testDatabaseUrl } from "./test-database";
 const url = testDatabaseUrl();
 process.env.DATABASE_URL = url;
 process.env.DIRECT_URL = url;
+// Dados de teste (issue #67): ligados nos testes; cada teste de ambiente desliga por conta própria
+process.env.ENABLE_STORE_TEST_TOOLS = "true";
