@@ -20,6 +20,7 @@ import {
   updateProduct,
   UnitType,
 } from "@/actions/products";
+import { ProductLookup } from "@/components/async-lookup";
 import { OptionSelect } from "@/components/option-select";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -93,17 +94,10 @@ export function ProductDialog({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const eligibleUnits = products.filter(
-    (product) =>
-      product.unit === "UN" &&
-      product.id !== productToEdit?.id &&
-      !products.some(
-        (box) => box.id !== productToEdit?.id && box.containedProductId === product.id,
-      ),
-  );
-  const originBox = productToEdit
-    ? products.find((box) => box.containedProductId === productToEdit.id)
-    : undefined;
+  const [selectedUnit, setSelectedUnit] = useState<ProductItem | null>(null);
+  const originBox =
+    productToEdit?.sourceBox ??
+    products.find((box) => box.containedProductId === productToEdit?.id);
 
   // Reinicia o formulário ao abrir ou trocar o produto editado (ajuste durante o render, sem efeito)
   const [syncedWith, setSyncedWith] = useState({ productToEdit, initialBarcode, open });
@@ -287,20 +281,29 @@ export function ProductDialog({
                 <Label htmlFor="product-avulso" className="text-xs font-medium">
                   Produto avulso gerado ao abrir a caixa
                 </Label>
-                <OptionSelect
-                  id="product-avulso"
+                <ProductLookup
+                  label="Produto avulso gerado ao abrir a caixa"
                   value={formData.containedProductId ?? ""}
-                  onValueChange={(value) =>
+                  boxId={productToEdit?.id ?? ""}
+                  selected={
+                    selectedUnit?.id === formData.containedProductId
+                      ? selectedUnit
+                      : formData.containedProductId
+                        ? {
+                            id: formData.containedProductId,
+                            name: productToEdit?.containedProductName ?? "Produto avulso vinculado",
+                          }
+                        : null
+                  }
+                  onSelect={(item) => {
+                    setSelectedUnit(item);
                     setFormData({
                       ...formData,
-                      containedProductId: value || null,
-                      unitsPerBox: value ? (formData.unitsPerBox ?? null) : null,
-                    })
-                  }
-                  options={[
-                    { value: "", label: "Sem desmembramento" },
-                    ...eligibleUnits.map((product) => ({ value: product.id, label: product.name })),
-                  ]}
+                      containedProductId: item?.id ?? null,
+                      unitsPerBox: item ? (formData.unitsPerBox ?? null) : null,
+                    });
+                  }}
+                  emptyLabel="Sem vínculo"
                 />
               </div>
               {formData.containedProductId && (

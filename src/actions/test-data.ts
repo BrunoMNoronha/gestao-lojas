@@ -1,5 +1,6 @@
 "use server";
 
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import { authorize } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
@@ -55,6 +56,7 @@ export type RemoveTestDataResponse =
 function revalidateAffectedPaths() {
   revalidatePath("/admin", "layout");
   revalidatePath("/catalogo", "layout");
+  invalidateCatalog();
 }
 
 /**

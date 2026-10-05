@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { authorize, type SessionUser } from "@/lib/authz";
 import { can } from "@/lib/permissions";
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
 import { isHttpUrl } from "@/lib/catalog-shared";
@@ -21,6 +22,9 @@ export interface ProductItem {
   salePrice: number;
   unit: UnitType;
   containedProductId?: string | null;
+  containedProductName?: string | null;
+  containedProduct?: { id: string; name: string; unit: UnitType; currentStock: number } | null;
+  sourceBox?: { id: string; name: string; unitsPerBox: number | null } | null;
   unitsPerBox?: number | null;
   currentStock: number;
   minStock: number;
@@ -87,6 +91,7 @@ function revalidateProductPaths() {
   revalidatePath("/admin/estoque");
   revalidatePath("/admin/pdv");
   revalidatePath("/catalogo", "layout");
+  invalidateCatalog();
 }
 
 // Chamado sob a trava exclusiva de configuração: nenhuma abertura ou edição concorrente
@@ -194,11 +199,15 @@ async function readProducts(
   user: SessionUser,
   searchQuery?: string,
   categoryId?: string,
+  ids?: string[],
 ): Promise<ProductItem[]> {
   const canSeeCost = can(user.role, "catalog.manage");
 
   // Produtos excluídos (exclusão lógica) não aparecem nas listagens
-  const whereClause: Prisma.ProductWhereInput = { deletedAt: null };
+  const whereClause: Prisma.ProductWhereInput = {
+    deletedAt: null,
+    ...(ids ? { id: { in: ids.slice(0, 200) } } : {}),
+  };
 
   if (searchQuery && searchQuery.trim() !== "") {
     const q = searchQuery.trim();
@@ -216,6 +225,8 @@ async function readProducts(
   const products = await prisma.product.findMany({
     where: whereClause,
     include: {
+      containedProduct: { select: { id: true, name: true, unit: true, currentStock: true } },
+      sourceBox: { select: { id: true, name: true, unitsPerBox: true } },
       category: {
         select: { id: true, name: true },
       },
@@ -232,6 +243,11 @@ async function readProducts(
     salePrice: Number(p.salePrice),
     unit: p.unit as UnitType,
     containedProductId: p.containedProductId,
+    containedProductName: p.containedProduct?.name,
+    containedProduct: p.containedProduct
+      ? { ...p.containedProduct, currentStock: Number(p.containedProduct.currentStock) }
+      : null,
+    sourceBox: p.sourceBox,
     unitsPerBox: p.unitsPerBox,
     currentStock: Number(p.currentStock),
     minStock: Number(p.minStock),
@@ -261,13 +277,13 @@ export async function getProducts(
 
 // A atualização depois de uma abertura distingue lista vazia legítima de falha do servidor.
 // Produtos excluídos não impedem verificar uma abertura que já tem histórico confirmado.
-export async function refreshUnpackProducts(): Promise<
-  { success: true; products: ProductItem[] } | { success: false; error: string }
-> {
+export async function refreshUnpackProducts(
+  ids?: string[],
+): Promise<{ success: true; products: ProductItem[] } | { success: false; error: string }> {
   try {
     const authz = await authorize("catalog.view");
     if (!authz.ok) return { success: false, error: authz.error };
-    return { success: true, products: await readProducts(authz.user) };
+    return { success: true, products: await readProducts(authz.user, undefined, undefined, ids) };
   } catch (error) {
     console.error("Erro ao atualizar produtos após abertura:", error);
     return {

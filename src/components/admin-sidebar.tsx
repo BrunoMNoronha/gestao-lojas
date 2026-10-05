@@ -62,6 +62,7 @@ function SidebarContent({
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               onClick={onNavigate}
               aria-current={isActive ? "page" : undefined}
               className={cn(
@@ -83,6 +84,7 @@ function SidebarContent({
         <div className="flex items-center gap-1">
           <Link
             href="/admin/minha-conta"
+            prefetch={false}
             onClick={onNavigate}
             aria-current={accountActive ? "page" : undefined}
             className={cn(

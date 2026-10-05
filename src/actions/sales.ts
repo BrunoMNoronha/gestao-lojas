@@ -1,6 +1,7 @@
 "use server";
 
 import { authorize } from "@/lib/authz";
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import { registerSale, type CreateSaleInput } from "@/lib/create-sale";
 
@@ -21,6 +22,7 @@ export async function createSale(data: CreateSaleInput) {
 
     // Também num reenvio: a resposta original pode ter se perdido antes de atualizar as telas
     revalidatePath("/admin/pdv");
+    invalidateCatalog();
     revalidatePath("/admin/produtos");
     revalidatePath("/admin/estoque");
     revalidatePath("/admin/caixa");

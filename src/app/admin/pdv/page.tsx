@@ -1,7 +1,7 @@
-import { getProducts } from "@/actions/products";
-import { getCustomers } from "@/actions/customers";
+import { getPdvProducts } from "@/actions/browse";
+import { getCustomerOptions } from "@/actions/browse";
 import { getStoreSettings } from "@/actions/settings";
-import { getCurrentCashRegister } from "@/actions/cash-register";
+import { getOpenCashRegister } from "@/actions/cash-register";
 import { connection } from "next/server";
 import Link from "next/link";
 import { Wallet } from "lucide-react";
@@ -56,6 +56,7 @@ export default async function PdvPage() {
 
   return (
     <PdvTerminal
+      remoteSearch
       products={data.products}
       customers={data.customers}
       storeSettings={data.storeSettings}
@@ -65,13 +66,13 @@ export default async function PdvPage() {
   );
 }
 
-// As listas têm fallback próprio; getCurrentCashRegister propaga falhas do banco
+// As listas têm fallback próprio; getOpenCashRegister propaga falhas do banco
 async function loadPdvData() {
   const [products, customers, storeSettings, cashRegister] = await Promise.all([
-    getProducts(),
-    getCustomers(),
+    getPdvProducts(),
+    getCustomerOptions(),
     getStoreSettings(),
-    getCurrentCashRegister(),
+    getOpenCashRegister(),
   ]);
   // A venda leva o id do caixa em que começou: se ele for fechado antes do envio, o servidor recusa
   return { products, customers, storeSettings, cashRegisterId: cashRegister?.id ?? null };

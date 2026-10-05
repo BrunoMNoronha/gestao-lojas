@@ -1,0 +1,66 @@
+{
+  "viewport": "Pixel 7",
+  "counts": {
+    "products": 10000,
+    "customers": 50000,
+    "sales": 100000
+  },
+  "results": [
+    {
+      "path": "/admin/pdv",
+      "htmlBytes": 71181,
+      "responseMs": 322,
+      "rows": 0,
+      "databaseCalls": 6
+    },
+    {
+      "path": "/admin/produtos",
+      "htmlBytes": 453794,
+      "responseMs": 124,
+      "rows": 51,
+      "databaseCalls": 6
+    },
+    {
+      "path": "/admin/clientes",
+      "htmlBytes": 316937,
+      "responseMs": 83,
+      "rows": 51,
+      "databaseCalls": 5
+    },
+    {
+      "path": "/admin/estoque",
+      "htmlBytes": 114742,
+      "responseMs": 85,
+      "rows": 0,
+      "databaseCalls": 12
+    },
+    {
+      "path": "/catalogo",
+      "htmlBytes": 166680,
+      "responseMs": 56,
+      "rows": 0,
+      "databaseCalls": 4
+    },
+    {
+      "path": "/catalogo",
+      "htmlBytes": 167370,
+      "responseMs": 20,
+      "rows": 0,
+      "databaseCalls": 0
+    }
+  ],
+  "customerButtons": 52,
+  "offline": {
+    "saleUiMs": 423,
+    "fullProductReads": 0,
+    "fullCustomerReads": 0,
+    "maxLongTaskMs": 0
+  },
+  "sync": {
+    "operations": 5,
+    "elapsedMs": 943,
+    "fullProductReads": 1,
+    "fullCustomerReads": 0,
+    "maxLongTaskMs": 0
+  }
+}

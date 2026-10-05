@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { ListPagination, useListFilters } from "@/components/list-pagination";
+import type { PageInfo } from "@/lib/pagination";
 import {
   Package,
   Plus,
@@ -25,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
+import { getProductOptions } from "@/actions/browse";
 import { ProductItem, deleteProduct } from "@/actions/products";
 import { CategoryData } from "@/actions/categories";
 import { ProductDialog } from "@/components/product-dialog";
@@ -41,6 +43,7 @@ import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
 
 interface ProductsManagerProps {
   initialProducts: ProductItem[];
+  pagination: PageInfo;
   initialCategories: CategoryData[];
   // Cadastro, edição e exclusão restritos por perfil (catalog.manage)
   canManage: boolean;
@@ -48,35 +51,26 @@ interface ProductsManagerProps {
 
 export function ProductsManager({
   initialProducts,
+  pagination,
   initialCategories,
   canManage,
 }: ProductsManagerProps) {
-  const router = useRouter();
   const [askConfirm, confirmDialog] = useConfirm();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("ALL");
-  // Filtro do catálogo público: todos, só os exibidos ou só os ocultos
-  const [catalogFilter, setCatalogFilter] = useState("ALL");
+  const [listFilters, setListFilters] = useListFilters({ q: "", category: "ALL", catalog: "ALL" });
+  const searchQuery = listFilters.q;
+  const selectedCategory = listFilters.category;
+  const catalogFilter = listFilters.catalog;
+  const setSearchQuery = (q: string) => setListFilters({ q });
+  const setSelectedCategory = (category: string) => setListFilters({ category });
+  const setCatalogFilter = (catalog: string) => setListFilters({ catalog });
 
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<ProductItem | null>(null);
   const [newProductBarcode, setNewProductBarcode] = useState<string | undefined>();
 
-  const filteredProducts = initialProducts.filter((p) => {
-    const matchesSearch =
-      !searchQuery.trim() ||
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.barcode?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesCategory = selectedCategory === "ALL" || p.categoryId === selectedCategory;
-
-    const matchesCatalog = catalogFilter === "ALL" || (catalogFilter === "IN") === p.showInCatalog;
-
-    return matchesSearch && matchesCategory && matchesCatalog;
-  });
+  const filteredProducts = initialProducts;
 
   const handleOpenNewProduct = (barcode?: string) => {
     setProductToEdit(null);
@@ -85,12 +79,12 @@ export function ProductsManager({
   };
 
   // Consulta pela câmera: filtra a lista pelo código; sem produto, oferece o cadastro (catalog.manage)
-  const handleScannedCode = (code: string) => {
+  const handleScannedCode = async (code: string) => {
     setSearchQuery(code);
     setSelectedCategory("ALL");
     setCatalogFilter("ALL");
     const q = code.toLowerCase();
-    const found = initialProducts.some(
+    const found = (await getProductOptions(code, undefined, undefined, true)).some(
       (p) => p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q,
     );
     if (found) {
@@ -122,15 +116,12 @@ export function ProductsManager({
     const res = await deleteProduct(id);
     if (res.success) {
       toast.success("Produto excluído.");
-      router.refresh();
     } else {
       toast.error(res.error || "Erro ao excluir produto.");
     }
   };
 
-  const handleRefreshData = () => {
-    router.refresh();
-  };
+  const handleRefreshData = () => {};
 
   return (
     <div className="space-y-6">
@@ -267,8 +258,7 @@ export function ProductsManager({
                         {p.containedProductId && (
                           <p className="text-muted-foreground mt-1 text-xs font-normal">
                             1 caixa gera {p.unitsPerBox} unidades de{" "}
-                            {initialProducts.find((unit) => unit.id === p.containedProductId)
-                              ?.name ?? "produto avulso"}
+                            {p.containedProductName ?? "produto avulso"}
                           </p>
                         )}
                       </TableCell>
@@ -352,6 +342,7 @@ export function ProductsManager({
         </CardContent>
       </Card>
 
+      <ListPagination {...pagination} />
       {/* Modals */}
       <ProductDialog
         open={productDialogOpen}

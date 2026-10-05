@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { getPdvProducts, getCustomerOptions } from "@/actions/browse";
 import {
   ShoppingCart,
   Search,
@@ -32,7 +32,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { refreshUnpackProducts, type ProductItem } from "@/actions/products";
+import { type ProductItem } from "@/actions/products";
 import { openPdvBoxes } from "@/actions/unpack";
 import {
   StockUnpackDialog,
@@ -206,6 +206,7 @@ function recoverySuggestion(
 }
 
 interface PdvTerminalProps {
+  remoteSearch?: boolean;
   products: PdvProduct[];
   customers: PdvCustomer[];
   storeSettings: StoreSettingsData;
@@ -215,7 +216,7 @@ interface PdvTerminalProps {
   // Grava a venda por outro caminho (/pdv: fila do aparelho, issue #38). Sem ela, a venda vai
   // ao servidor pelo createSale, com as regras online
   submitSale?: (draft: PdvSaleDraft) => Promise<SubmitSaleResult>;
-  // Depois da venda: por padrão recarrega os dados da página (router.refresh)
+  // A fila offline recebe o aviso; no PDV online os saldos são atualizados localmente.
   onSaleCompleted?: () => void;
   // Carrinho em montagem guardado no aparelho (/pdv, issue #53): começa pelo rascunho já
   // conferido com a cópia local e grava cada mudança. Sem ela, o carrinho fica só na memória
@@ -234,7 +235,8 @@ interface PdvTerminalProps {
 
 export function PdvTerminal({
   products: suppliedProducts,
-  customers,
+  customers: suppliedCustomers,
+  remoteSearch = false,
   storeSettings,
   cashRegisterId,
   offline = false,
@@ -246,13 +248,16 @@ export function PdvTerminal({
   onUnpackBusyChange,
   className,
 }: PdvTerminalProps) {
-  const router = useRouter();
+  const [customerResults, setCustomerResults] = useState<PdvCustomer[] | null>(null);
+  const customers = remoteSearch ? (customerResults ?? suppliedCustomers) : suppliedCustomers;
   const [freshProducts, setFreshProducts] = useState<{
     source: PdvProduct[];
     products: PdvProduct[];
   } | null>(null);
   const products =
-    freshProducts?.source === suppliedProducts ? freshProducts.products : suppliedProducts;
+    freshProducts && (remoteSearch || freshProducts.source === suppliedProducts)
+      ? freshProducts.products
+      : suppliedProducts;
   const storedUnpack = usePendingStockUnpack(unpackScope);
   const persistedUnpack = storedUnpack ?? unpack?.pending ?? null;
   const [recoveryDismissed, setRecoveryDismissed] = useState(false);
@@ -270,7 +275,17 @@ export function PdvTerminal({
   const restored = cartDraft?.restored ?? null;
 
   // Cart state
-  const [cart, setCart] = useState<CartItem[]>(() => restored?.items ?? []);
+  const [cart, setCartState] = useState<CartItem[]>(() => restored?.items ?? []);
+  const cartRef = useRef(cart);
+  // Leitores rápidos podem concluir duas buscas antes do próximo render.
+  const setCart = useCallback((update: React.SetStateAction<CartItem[]>) => {
+    const next = typeof update === "function" ? update(cartRef.current) : update;
+    cartRef.current = next;
+    setCartState(next);
+  }, []);
+  const lookupPending = useRef(0);
+  const scanQueue = useRef<Promise<void>>(Promise.resolve());
+  const [searching, setSearching] = useState(false);
   const [discount, setDiscount] = useState(() => restored?.discount ?? 0);
   const [notice, setNotice] = useState<string | null>(() =>
     cartDraft?.notices.length ? cartDraft.notices.join(" ") : null,
@@ -418,31 +433,91 @@ export function PdvTerminal({
     if (restoredOnMount.current) toast.info("Carrinho da venda em andamento restaurado.");
   }, []);
 
-  // Product suggestions filtered
-  const filteredProducts = searchQuery.trim()
-    ? products
-        .filter((p) => {
-          const q = searchQuery.toLowerCase();
-          return (
-            p.name.toLowerCase().includes(q) ||
-            p.barcode?.toLowerCase().includes(q) ||
-            p.sku?.toLowerCase().includes(q)
-          );
+  // A busca online é limitada no servidor; a cópia offline usa as mesmas sugestões limitadas.
+  const catalogRef = useRef(products);
+  useEffect(() => {
+    catalogRef.current = products;
+  }, [products]);
+  const mergeSearch = useCallback(
+    (rows: PdvProduct[]) => {
+      const current = catalogRef.current;
+      const ids = new Set(cartRef.current.map((item) => item.productId));
+      const retained = current.filter(
+        (p) =>
+          ids.has(p.id) ||
+          (p.containedProductId && ids.has(p.containedProductId)) ||
+          current.some((box) => ids.has(box.id) && box.containedProductId === p.id),
+      );
+      const next = [...new Map([...retained, ...rows].map((p) => [p.id, p])).values()];
+      catalogRef.current = next;
+      setFreshProducts({ source: suppliedProducts, products: next });
+    },
+    [suppliedProducts],
+  );
+  const mergeSearchRef = useRef(mergeSearch);
+  useEffect(() => {
+    mergeSearchRef.current = mergeSearch;
+  }, [mergeSearch]);
+  useEffect(() => {
+    if (!remoteSearch || !searchQuery.trim()) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      void getPdvProducts(searchQuery)
+        .then((rows) => {
+          if (active) mergeSearchRef.current(rows);
         })
-        .slice(0, 8)
-    : [];
-
-  // Customer suggestions filtered
-  const filteredCustomers = customerSearch.trim()
-    ? customers.filter((c) => {
-        const q = customerSearch.toLowerCase();
-        return (
-          c.name.toLowerCase().includes(q) ||
-          matchesMaskedValue(c.document, q) ||
-          matchesMaskedValue(c.phone, q)
-        );
-      })
-    : customers;
+        .catch(() => {
+          if (active) setNotice("Não foi possível buscar produtos. Tente novamente.");
+        });
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      active = false;
+    };
+  }, [remoteSearch, searchQuery]);
+  useEffect(() => {
+    if (!remoteSearch || !customerDialogOpen) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      void getCustomerOptions(customerSearch)
+        .then((rows) => {
+          if (active) setCustomerResults(rows);
+        })
+        .catch(() => {
+          if (active) setNotice("Não foi possível buscar clientes.");
+        });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [remoteSearch, customerSearch, customerDialogOpen]);
+  const filteredProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return q
+      ? products
+          .filter(
+            (p) =>
+              p.name.toLowerCase().includes(q) ||
+              p.barcode?.toLowerCase().includes(q) ||
+              p.sku?.toLowerCase().includes(q),
+          )
+          .slice(0, 8)
+      : [];
+  }, [products, searchQuery]);
+  const filteredCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    return (
+      q
+        ? customers.filter(
+            (c) =>
+              c.name.toLowerCase().includes(q) ||
+              matchesMaskedValue(c.document, q) ||
+              matchesMaskedValue(c.phone, q),
+          )
+        : customers
+    ).slice(0, 50);
+  }, [customers, customerSearch]);
 
   const activeUnpackSuggestion =
     unpackSuggestion ??
@@ -457,6 +532,7 @@ export function PdvTerminal({
   }, [interactionBlocked, onUnpackBusyChange]);
 
   const updateProducts = (next: PdvProduct[]) => {
+    catalogRef.current = next;
     setFreshProducts({ source: suppliedProducts, products: next });
     setCart((current) =>
       current.map((item) => ({
@@ -502,9 +578,19 @@ export function PdvTerminal({
     const connection = await checkConnectivity();
     if (connection.status !== "online")
       throw new Error("Abrir uma caixa exige conexão com o servidor.");
-    const result = await refreshUnpackProducts();
-    if (!result.success) throw new Error(result.error);
-    return result.products;
+    const ids = [
+      ...new Set([
+        ...catalogRef.current.map((p) => p.id),
+        ...(persistedUnpack
+          ? [persistedUnpack.input.boxProductId, persistedUnpack.input.expectedUnitProductId]
+          : []),
+      ]),
+    ];
+    const refreshed: PdvProduct[] = [];
+    for (let offset = 0; offset < ids.length; offset += 200) {
+      refreshed.push(...(await getPdvProducts("", ids.slice(offset, offset + 200))));
+    }
+    return [...new Map(refreshed.map((p) => [p.id, p])).values()];
   };
 
   const recoverUnpack = () => {
@@ -531,7 +617,7 @@ export function PdvTerminal({
         setNotice(null);
         return;
       }
-      const suggestion = suggestUnpack(next, productId, quantity, cart);
+      const suggestion = suggestUnpack(next, productId, quantity, cartRef.current);
       if (!suggestion)
         throw new Error(
           "Não há caixas disponíveis para essa quantidade após conferir o estoque e as caixas no carrinho.",
@@ -580,7 +666,6 @@ export function PdvTerminal({
       }
       requestedAfterUnpack.current = null;
       setUnpackRefreshBlocked(false);
-      router.refresh();
     } finally {
       unpackWorking.current = false;
       setUnpackBusy(false);
@@ -590,14 +675,21 @@ export function PdvTerminal({
   // Busca, leitura por código e botões passam pela mesma regra de estoque e sugestão.
   const addToCart = (
     product: PdvProduct,
-    { focusSearch = true }: { focusSearch?: boolean } = {},
+    {
+      focusSearch = true,
+      clearSearch = true,
+    }: { focusSearch?: boolean; clearSearch?: boolean } = {},
   ) => {
     if (interactionBlockedRef.current || unpackWorking.current || loading)
       return "Aguarde a conferência da abertura da caixa.";
-    const nextQuantity = (cart.find((item) => item.productId === product.id)?.quantity ?? 0) + 1;
+    const nextQuantity =
+      (cartRef.current.find((item) => item.productId === product.id)?.quantity ?? 0) + 1;
     let error: string | null = null;
     if (nextQuantity > product.currentStock) {
-      if (!offline && suggestUnpack(products, product.id, nextQuantity, cart)) {
+      if (
+        !offline &&
+        suggestUnpack(catalogRef.current, product.id, nextQuantity, cartRef.current)
+      ) {
         void beginUnpack(product.id, nextQuantity);
         error = "Confirme a abertura da caixa para adicionar as unidades avulsas.";
       } else {
@@ -608,21 +700,28 @@ export function PdvTerminal({
       applyQuantity(product, nextQuantity);
       setNotice(null);
     }
-    setSearchQuery("");
-    setShowSuggestions(false);
+    if (clearSearch) {
+      setSearchQuery("");
+      setShowSuggestions(false);
+    }
     if (focusSearch) searchInputRef.current?.focus();
     return error;
   };
 
   // Regra do Enter (e da leitura pela câmera): código de barras ou SKU exato; senão, o único
   // produto cujo nome, código ou SKU contenha o termo
-  const resolveProduct = (query: string): PdvProduct | "none" | "many" => {
+  const resolveProduct = async (query: string): Promise<PdvProduct | "none" | "many"> => {
     const q = query.trim().toLowerCase();
-    const exact = products.find(
-      (p) => p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q,
-    );
+    const [candidates, exactRows] = remoteSearch
+      ? await Promise.all([getPdvProducts(query), getPdvProducts(query, undefined, true)])
+      : [catalogRef.current, []];
+    const rows = [...new Map([...candidates, ...exactRows].map((p) => [p.id, p])).values()];
+    if (remoteSearch) {
+      mergeSearch(rows);
+    }
+    const exact = rows.find((p) => p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q);
     if (exact) return exact;
-    const matches = products.filter(
+    const matches = rows.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.barcode?.toLowerCase().includes(q) ||
@@ -632,29 +731,56 @@ export function PdvTerminal({
     return matches.length === 0 ? "none" : "many";
   };
 
-  // Leitura pela câmera (modo contínuo): cada código lido adiciona um item
-  const handleScannedCode = (code: string) => {
-    const result = resolveProduct(code);
-    if (result === "none") {
-      toast.error(`Nenhum produto encontrado para o código ${code}.`);
-    } else if (result === "many") {
-      toast.warning(`Mais de um produto corresponde a ${code}. Use a busca para escolher.`);
-    } else {
-      const error = addToCart(result, { focusSearch: false });
-      if (error) toast.error(error);
-      else toast.success(`${result.name} adicionado (${code}).`);
-    }
+  // Preserva a ordem do leitor e impede finalizar enquanto há códigos aguardando resposta.
+  const queueScan = (task: () => Promise<void>) => {
+    lookupPending.current++;
+    setSearching(true);
+    const pending = scanQueue.current
+      .then(task)
+      .catch(() => {
+        setNotice("Não foi possível buscar o produto. Leia o código novamente.");
+      })
+      .finally(() => {
+        lookupPending.current--;
+        setSearching(lookupPending.current > 0);
+      });
+    scanQueue.current = pending;
+    return pending;
   };
 
-  // Handle barcode/enter from search
-  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && searchQuery.trim()) {
-      const result = resolveProduct(searchQuery);
+  // Leitura pela câmera (modo contínuo): cada código lido adiciona um item
+  const handleScannedCode = (code: string) =>
+    queueScan(async () => {
+      const result = await resolveProduct(code);
       if (result === "none") {
-        setNotice(`Nenhum produto encontrado para "${searchQuery.trim()}".`);
-      } else if (result !== "many") {
-        addToCart(result);
+        toast.error(`Nenhum produto encontrado para o código ${code}.`);
+      } else if (result === "many") {
+        toast.warning(`Mais de um produto corresponde a ${code}. Use a busca para escolher.`);
+      } else {
+        const error = addToCart(result, { focusSearch: false, clearSearch: false });
+        if (error) toast.error(error);
+        else toast.success(`${result.name} adicionado (${code}).`);
       }
+    });
+
+  // Handle barcode/enter from search
+  const handleSearchKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && searchQuery.trim()) {
+      e.preventDefault();
+      const query = searchQuery.trim();
+      // A resposta anterior não pode apagar o próximo código já digitado pelo leitor.
+      setSearchQuery("");
+      setShowSuggestions(false);
+      await queueScan(async () => {
+        const result = await resolveProduct(query);
+        if (result === "none") {
+          setNotice(`Nenhum produto encontrado para "${query}".`);
+        } else if (result === "many") {
+          setNotice(`Mais de um produto corresponde a "${query}". Use a busca para escolher.`);
+        } else {
+          addToCart(result, { clearSearch: false });
+        }
+      });
     }
   };
 
@@ -714,7 +840,13 @@ export function PdvTerminal({
 
   // Open checkout
   const openCheckout = () => {
-    if (cart.length === 0 || interactionBlockedRef.current || unpackWorking.current || loading)
+    if (
+      lookupPending.current > 0 ||
+      cart.length === 0 ||
+      interactionBlockedRef.current ||
+      unpackWorking.current ||
+      loading
+    )
       return;
     setAmountPaid(total);
     setSelectedPayment("MONEY");
@@ -724,7 +856,13 @@ export function PdvTerminal({
 
   // Finalize sale
   const finalizeSale = async () => {
-    if (cart.length === 0 || loading || interactionBlockedRef.current || unpackWorking.current)
+    if (
+      lookupPending.current > 0 ||
+      cart.length === 0 ||
+      loading ||
+      interactionBlockedRef.current ||
+      unpackWorking.current
+    )
       return;
     if (
       cart.some(
@@ -809,7 +947,14 @@ export function PdvTerminal({
     setReceiptOpen(true);
     clearCart();
     if (onSaleCompleted) onSaleCompleted();
-    else if (!submitSale) router.refresh();
+    else if (!submitSale)
+      updateProducts(
+        products.map((p) => ({
+          ...p,
+          currentStock:
+            p.currentStock - (cart.find((item) => item.productId === p.id)?.quantity ?? 0),
+        })),
+      );
   };
 
   // Venda pela fila do aparelho (/pdv): o recibo só aparece depois de a venda estar gravada;
@@ -1200,7 +1345,7 @@ export function PdvTerminal({
                 <Button
                   className="h-12 w-full gap-2 text-base"
                   onClick={openCheckout}
-                  disabled={cart.length === 0}
+                  disabled={cart.length === 0 || searching}
                 >
                   <DollarSign className="h-5 w-5" />
                   Finalizar Venda (F10)
@@ -1210,7 +1355,7 @@ export function PdvTerminal({
                   variant="destructive"
                   className="w-full gap-2"
                   onClick={clearCart}
-                  disabled={cart.length === 0}
+                  disabled={cart.length === 0 || searching}
                 >
                   <Trash2 className="h-4 w-4" />
                   Limpar Carrinho

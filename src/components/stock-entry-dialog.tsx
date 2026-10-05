@@ -50,7 +50,11 @@ export function StockEntryDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const product = products.find((p) => p.id === productId) ?? null;
+  const [chosenProduct, setChosenProduct] = useState<ProductItem | null>(null);
+  const product =
+    chosenProduct?.id === productId
+      ? chosenProduct
+      : (products.find((p) => p.id === productId) ?? null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +118,12 @@ export function StockEntryDialog({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <ProductPicker products={products} value={productId} onChange={setProductId} />
+          <ProductPicker
+            products={products}
+            value={productId}
+            onChange={setProductId}
+            onSelect={setChosenProduct}
+          />
 
           {product && (
             <p className="text-muted-foreground text-xs">

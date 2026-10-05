@@ -1,4 +1,4 @@
-import { Prisma, type Unit } from "@prisma/client";
+import { Prisma, type Unit, type Product, type Category, type Customer } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { SessionUser } from "@/lib/authz";
 import { maskDocument } from "@/lib/masks";
@@ -109,16 +109,21 @@ const CURSOR_KEYS: Record<Entity, string> = { products: "p", categories: "c", cu
 const EPOCH_KEY = "e";
 const MAX_CURSOR_LENGTH = 1024;
 
-export function encodeCursor(cursor: Cursor, epoch: string): string {
+export function encodeCursor(cursor: Cursor, epoch: string, baseline?: string): string {
   const json: Record<string, [string, string] | string> = {};
   for (const entity of ENTITIES) {
     json[CURSOR_KEYS[entity]] = [cursor[entity].version.toString(), cursor[entity].id];
   }
   json[EPOCH_KEY] = epoch;
+  if (baseline) json.b = baseline;
   return Buffer.from(JSON.stringify(json)).toString("base64url");
 }
 
-export function decodeCursor(value: string): { positions: Cursor; epoch: string } {
+export function decodeCursor(value: string): {
+  positions: Cursor;
+  epoch: string;
+  baseline?: string;
+} {
   const invalid = new SnapshotRequestError("Cursor de sincronização inválido.");
   if (value.length > MAX_CURSOR_LENGTH || !/^[A-Za-z0-9_-]+$/.test(value)) throw invalid;
   let json: unknown;
@@ -140,7 +145,10 @@ export function decodeCursor(value: string): { positions: Cursor; epoch: string 
   }
   const epoch = EPOCH_KEY in json ? (json as Record<string, unknown>)[EPOCH_KEY] : "";
   if (typeof epoch !== "string" || !/^\d{0,19}$/.test(epoch)) throw invalid;
-  return { positions: cursor, epoch };
+  const baseline = (json as Record<string, unknown>).b;
+  if (baseline !== undefined && (typeof baseline !== "string" || !/^\d{1,19}$/.test(baseline)))
+    throw invalid;
+  return { positions: cursor, epoch, ...(typeof baseline === "string" ? { baseline } : {}) };
 }
 
 export function parseLimit(value: string | null): number {
@@ -153,17 +161,31 @@ export function parseLimit(value: string | null): number {
 }
 
 /** Linhas depois da posição e abaixo do limite seguro, na ordem do cursor. */
-function pageWhere(after: Position, watermark: bigint) {
-  return {
-    syncVersion: { lt: watermark },
-    OR: [
-      { syncVersion: { gt: after.version } },
-      { syncVersion: after.version, id: { gt: after.id } },
-    ],
-  };
+function pageWhere(after: Position, watermark: bigint, baseline?: string) {
+  return Prisma.sql`"syncVersion" < ${watermark}
+    AND ("syncVersion", "id") > (${after.version}, ${after.id})
+    ${baseline ? Prisma.sql`AND ("deletedAt" IS NULL OR "syncVersion" >= ${BigInt(baseline)})` : Prisma.empty}`;
 }
 
-const PAGE_ORDER = [{ syncVersion: "asc" as const }, { id: "asc" as const }];
+type ProductRow = Pick<
+  Product,
+  | "id"
+  | "syncVersion"
+  | "deletedAt"
+  | "name"
+  | "sku"
+  | "barcode"
+  | "salePrice"
+  | "unit"
+  | "currentStock"
+  | "containedProductId"
+  | "unitsPerBox"
+  | "minStock"
+  | "categoryId"
+  | "updatedAt"
+>;
+type CategoryRow = Pick<Category, "id" | "syncVersion" | "deletedAt" | "name">;
+type CustomerRow = Pick<Customer, "id" | "syncVersion" | "deletedAt" | "name" | "document">;
 
 /**
  * Próxima posição do cursor: a última linha entregue, se há mais páginas; senão o limite seguro
@@ -202,44 +224,25 @@ export async function readOfflineSnapshot(
       `;
       const epoch = await getDataEpoch(tx);
       const reset = !decoded || decoded.epoch !== epoch;
+      const baseline = reset ? watermark.toString() : decoded?.baseline;
       const after: Cursor = reset
         ? { products: START, categories: START, customers: START }
         : decoded.positions;
 
       const [products, categories, customers, settings, cashRegister] = await Promise.all([
-        tx.product.findMany({
-          where: pageWhere(after.products, watermark),
-          orderBy: PAGE_ORDER,
-          take: limit + 1,
-          select: {
-            id: true,
-            syncVersion: true,
-            deletedAt: true,
-            name: true,
-            sku: true,
-            barcode: true,
-            salePrice: true,
-            unit: true,
-            currentStock: true,
-            containedProductId: true,
-            unitsPerBox: true,
-            minStock: true,
-            categoryId: true,
-            updatedAt: true,
-          },
-        }),
-        tx.category.findMany({
-          where: pageWhere(after.categories, watermark),
-          orderBy: PAGE_ORDER,
-          take: limit + 1,
-          select: { id: true, syncVersion: true, deletedAt: true, name: true },
-        }),
-        tx.customer.findMany({
-          where: pageWhere(after.customers, watermark),
-          orderBy: PAGE_ORDER,
-          take: limit + 1,
-          select: { id: true, syncVersion: true, deletedAt: true, name: true, document: true },
-        }),
+        tx.$queryRaw<ProductRow[]>(Prisma.sql`
+          SELECT id,"syncVersion","deletedAt",name,sku,barcode,"salePrice",unit,"currentStock",
+            "containedProductId","unitsPerBox","minStock","categoryId","updatedAt"
+          FROM "Product" WHERE ${pageWhere(after.products, watermark, baseline)}
+          ORDER BY "syncVersion",id LIMIT ${limit + 1}`),
+        tx.$queryRaw<CategoryRow[]>(Prisma.sql`
+          SELECT id,"syncVersion","deletedAt",name FROM "Category"
+          WHERE ${pageWhere(after.categories, watermark, baseline)}
+          ORDER BY "syncVersion",id LIMIT ${limit + 1}`),
+        tx.$queryRaw<CustomerRow[]>(Prisma.sql`
+          SELECT id,"syncVersion","deletedAt",name,document FROM "Customer"
+          WHERE ${pageWhere(after.customers, watermark, baseline)}
+          ORDER BY "syncVersion",id LIMIT ${limit + 1}`),
         tx.storeSettings.findUnique({
           where: { id: "default" },
           select: {
@@ -280,7 +283,11 @@ export async function readOfflineSnapshot(
         generatedAt: new Date().toISOString(),
         reset,
         watermark: watermark.toString(),
-        cursor: encodeCursor(next, epoch),
+        cursor: encodeCursor(
+          next,
+          epoch,
+          p.hasMore || c.hasMore || k.hasMore ? baseline : undefined,
+        ),
         hasMore: p.hasMore || c.hasMore || k.hasMore,
         products: p.rows.map((row): OfflineProduct =>
           row.deletedAt

@@ -1,3 +1,4 @@
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import { authorize } from "@/lib/authz";
 import { NO_STORE, offlineAuthError, offlineError } from "@/lib/offline-http";
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
   // Também num reenvio: a resposta original pode ter se perdido antes de atualizar as telas
   if (results.some((r) => r.status === "applied" || r.status === "approved")) {
     for (const path of OFFLINE_SALE_PATHS) revalidatePath(path);
+    invalidateCatalog();
   }
 
   return Response.json(

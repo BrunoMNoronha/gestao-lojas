@@ -1,6 +1,6 @@
-import { getCustomers } from "@/actions/customers";
+import { getCustomerOptions } from "@/actions/browse";
 import { getReceivables, getReceivablesSummary } from "@/actions/receivables";
-import { getCurrentCashRegister } from "@/actions/cash-register";
+import { getOpenCashRegister } from "@/actions/cash-register";
 import { connection } from "next/server";
 import Link from "next/link";
 import { HandCoins, Settings } from "lucide-react";
@@ -71,10 +71,10 @@ export default async function ContasAReceberPage() {
 
 async function loadReceivablesData() {
   const [customers, summary, receivables, current, onAccount] = await Promise.all([
-    getCustomers(),
+    getCustomerOptions(),
     getReceivablesSummary(),
     getReceivables(),
-    getCurrentCashRegister(),
+    getOpenCashRegister(),
     getOnAccountSettings(),
   ]);
   return {

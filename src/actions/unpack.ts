@@ -2,6 +2,7 @@
 
 import { authorize } from "@/lib/authz";
 import { registerUnpack, type UnpackInput, type UnpackResult } from "@/lib/unpack";
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 
 function revalidateUnpackPaths() {
@@ -10,6 +11,7 @@ function revalidateUnpackPaths() {
     revalidatePath("/admin/produtos");
     revalidatePath("/admin/pdv");
     revalidatePath("/catalogo", "layout");
+    invalidateCatalog();
   } catch (error) {
     // O commit já ocorreu. Falha de cache não transforma abertura confirmada em recusa.
     console.error("Falha ao atualizar telas após abertura confirmada:", error);
