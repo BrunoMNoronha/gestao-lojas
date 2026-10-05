@@ -9,6 +9,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { lockUnpackConfiguration } from "@/lib/unpack";
 import type { SessionUser } from "@/lib/authz";
 import { parseOperationId } from "@/lib/sync-operation";
 import {
@@ -716,7 +717,16 @@ export async function removeTestData(
         return { ok: true, counts: previous.counts as unknown as CleanupCounts, replayed: true };
       }
 
+      // A limpeza também é exclusão de produto: libere os vínculos sob a mesma trava
+      // do cadastro e da abertura, preservando o histórico das conversões.
+      await lockUnpackConfiguration(tx, true);
       const marked = { testDataRunId: { not: null } };
+      await tx.product.updateMany({
+        where: {
+          OR: [{ ...marked }, { containedProduct: { is: { ...marked } } }],
+        },
+        data: { containedProductId: null, unitsPerBox: null },
+      });
       const products = await tx.product.updateMany({
         where: { ...marked, deletedAt: null },
         data: { deletedAt: now },

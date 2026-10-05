@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CashRegisterStatus, Prisma, Unit } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { registerUnpack, type UnpackInput } from "@/lib/unpack";
+import { removeTestData } from "@/lib/test-data";
 import { registerSale } from "@/lib/create-sale";
 import { createUser, resetDatabase, saleInput, seedStore, stockOf, type Store } from "./fixtures";
 
@@ -482,4 +483,19 @@ describe("cadastro, permissões e histórico", () => {
     expect(replay.success && replay.data.replayed).toBe(true);
     expect(await prisma.unpackConversion.count()).toBe(1);
   });
+});
+
+it("limpeza seletiva desfaz vínculo com avulso gerado e preserva a abertura", async () => {
+  expect((await openStockBoxes(unpackInput())).success).toBe(true);
+  await prisma.product.update({ where: { id: unitId }, data: { testDataRunId: randomUUID() } });
+  const result = await removeTestData(
+    { id: store.user.id, name: store.user.name, role: "ADMIN" },
+    randomUUID(),
+  );
+  expect(result.ok).toBe(true);
+  const box = await prisma.product.findUniqueOrThrow({ where: { id: boxId } });
+  expect(box.containedProductId).toBeNull();
+  expect(box.unitsPerBox).toBeNull();
+  expect(await prisma.unpackConversion.count()).toBe(1);
+  expect(await prisma.stockMovement.count({ where: { conversionId: { not: null } } })).toBe(2);
 });
