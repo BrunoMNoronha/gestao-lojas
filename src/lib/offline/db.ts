@@ -1,3 +1,4 @@
+import type { UnpackInput, UnpackResult } from "@/lib/unpack";
 import Dexie, { type EntityTable } from "dexie";
 import type { SessionUser } from "@/lib/authz";
 import type { OfflinePreparation } from "@/lib/offline-device";
@@ -49,6 +50,17 @@ export interface LocalMeta {
   cashRegister: OfflineSnapshot["cashRegister"];
   // navigator.storage.persist() concedido (sem isso o navegador pode apagar os dados)
   persisted: boolean;
+  // A abertura é online e nunca entra na fila. Uma resposta perdida bloqueia vendas até
+  // verificar a mesma operação e atualizar a cópia, inclusive depois de recarregar/outra aba.
+  unpackPending: {
+    operationId: string;
+    boxProductId: string;
+    unitProductId: string;
+    input: UnpackInput;
+    boxName: string;
+    unitName: string;
+    data?: Extract<UnpackResult, { success: true }>["data"];
+  } | null;
 }
 
 type MetaRow = { [K in keyof LocalMeta]: { key: K; value: LocalMeta[K] } }[keyof LocalMeta];

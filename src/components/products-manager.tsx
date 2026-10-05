@@ -264,6 +264,13 @@ export function ProductsManager({
                             </Badge>
                           )}
                         </div>
+                        {p.containedProductId && (
+                          <p className="text-muted-foreground mt-1 text-xs font-normal">
+                            1 caixa gera {p.unitsPerBox} unidades de{" "}
+                            {initialProducts.find((unit) => unit.id === p.containedProductId)
+                              ?.name ?? "produto avulso"}
+                          </p>
+                        )}
                       </TableCell>
 
                       <TableCell className="text-muted-foreground hidden font-mono text-xs lg:table-cell">
@@ -352,6 +359,7 @@ export function ProductsManager({
         productToEdit={productToEdit}
         initialBarcode={newProductBarcode}
         categories={initialCategories}
+        products={initialProducts}
         onSuccess={handleRefreshData}
       />
 

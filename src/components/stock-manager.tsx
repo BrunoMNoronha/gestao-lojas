@@ -10,6 +10,7 @@ import {
   History,
   PackageX,
   Package,
+  PackageOpen,
   Loader2,
   X,
 } from "lucide-react";
@@ -25,7 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProductItem } from "@/actions/products";
+import { ProductItem, refreshUnpackProducts } from "@/actions/products";
 import { SupplierItem } from "@/actions/suppliers";
 import {
   LowStockItem,
@@ -38,6 +39,7 @@ import { cn, formatCurrency } from "@/lib/utils";
 import { MOVEMENT_TYPE_LABELS, formatQuantity } from "@/lib/stock";
 import { StockEntryDialog } from "@/components/stock-entry-dialog";
 import { StockAdjustDialog } from "@/components/stock-adjust-dialog";
+import { StockUnpackDialog, usePendingStockUnpack } from "@/components/stock-unpack-dialog";
 import { OptionSelect } from "@/components/option-select";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
@@ -51,6 +53,7 @@ interface StockManagerProps {
   canManage: boolean;
   // Coluna de custo unitário só para quem vê preço de custo (catalog.manage)
   canSeeCost: boolean;
+  operationScope: string;
 }
 
 interface Filters {
@@ -100,22 +103,31 @@ function MovementTypeBadge({ type }: { type: MovementTypeValue }) {
 }
 
 export function StockManager({
-  products,
+  products: initialProducts,
   suppliers,
   lowStock,
   initialMovements,
   canManage,
   canSeeCost,
+  operationScope,
 }: StockManagerProps) {
   const router = useRouter();
+  const [products, setProducts] = useState(initialProducts);
+  const [syncedProducts, setSyncedProducts] = useState(initialProducts);
+  if (syncedProducts !== initialProducts) {
+    setSyncedProducts(initialProducts);
+    setProducts(initialProducts);
+  }
+  const pendingUnpack = usePendingStockUnpack(operationScope);
 
-  const [view, setView] = useState<"history" | "low">("history");
+  const [view, setView] = useState<"history" | "low" | "boxes">("history");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [movements, setMovements] = useState<StockMovementPage>(initialMovements);
   const [loadingMovements, setLoadingMovements] = useState(false);
 
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [unpackProductId, setUnpackProductId] = useState<string | null>(null);
   const [dialogProductId, setDialogProductId] = useState<string | null>(null);
   // Trocar a key remonta o diálogo e reinicia o formulário a cada abertura
   const [dialogKey, setDialogKey] = useState(0);
@@ -124,6 +136,35 @@ export function StockManager({
   // Saldo negativo só acontece pela sincronização de vendas offline (docs/OFFLINE.md seção 3.2)
   const negativeStock = products.filter((p) => p.currentStock < 0);
   const hasFilters = Object.values(filters).some(Boolean);
+  const linkedBoxes = products.filter(
+    (product) =>
+      product.unit === "CX" &&
+      product.containedProductId &&
+      (product.unitsPerBox ?? 0) >= 2 &&
+      products.some((unit) => unit.id === product.containedProductId && unit.unit === "UN"),
+  );
+  const unpackBox = products.find((product) => product.id === unpackProductId);
+  const selectedRecovery =
+    pendingUnpack?.input.boxProductId === unpackProductId ? pendingUnpack : null;
+  const dialogBox = selectedRecovery
+    ? {
+        id: selectedRecovery.input.boxProductId,
+        name: selectedRecovery.boxName,
+        unit: "CX" as const,
+        currentStock: unpackBox?.currentStock ?? 0,
+        containedProductId: selectedRecovery.input.expectedUnitProductId,
+        unitsPerBox: selectedRecovery.input.expectedUnitsPerBox,
+      }
+    : unpackBox;
+  const unpackUnit = products.find((product) => product.id === dialogBox?.containedProductId);
+  const dialogUnit = selectedRecovery
+    ? {
+        id: selectedRecovery.input.expectedUnitProductId,
+        name: selectedRecovery.unitName,
+        unit: "UN" as const,
+        currentStock: unpackUnit?.currentStock ?? 0,
+      }
+    : unpackUnit;
 
   const loadMovements = async (nextFilters: Filters, append = false) => {
     setLoadingMovements(true);
@@ -169,6 +210,21 @@ export function StockManager({
     loadMovements(filters);
   };
 
+  const openUnpackDialog = (productId: string) => {
+    setUnpackProductId(pendingUnpack?.input.boxProductId ?? productId);
+    setDialogKey((key) => key + 1);
+  };
+
+  const handleUnpackSuccess = async () => {
+    const result = await refreshUnpackProducts();
+    if (!result.success) {
+      throw new Error(result.error);
+    }
+    setProducts(result.products);
+    await loadMovements(filters);
+    router.refresh();
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -178,6 +234,10 @@ export function StockManager({
         actions={
           canManage && (
             <>
+              <Button variant="outline" onClick={() => setView("boxes")}>
+                <PackageOpen />
+                Abrir caixas
+              </Button>
               <Button variant="outline" onClick={() => openAdjustDialog()}>
                 <ClipboardCheck />
                 Ajustar Estoque
@@ -190,6 +250,28 @@ export function StockManager({
           )
         }
       />
+
+      {canManage && pendingUnpack && (
+        <Card className="border-info/40 bg-info/5">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div className="text-sm">
+              <p className="font-semibold">
+                {pendingUnpack.data ? "Abertura registrada" : "Abertura aguardando confirmação"}
+              </p>
+              <p className="text-muted-foreground text-xs">
+                {pendingUnpack.boxName}: {pendingUnpack.input.boxQuantity} caixa(s). Verifique a
+                operação antes de abrir outras caixas.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => openUnpackDialog(pendingUnpack.input.boxProductId)}
+            >
+              {pendingUnpack.data ? "Atualizar saldos" : "Verificar abertura"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -279,7 +361,7 @@ export function StockManager({
       )}
 
       {/* View switch */}
-      <div className="bg-muted/40 inline-flex gap-1 rounded-lg border p-1">
+      <div className="bg-muted/40 flex w-fit max-w-full flex-wrap gap-1 rounded-lg border p-1">
         <Button
           size="sm"
           variant={view === "history" ? "default" : "ghost"}
@@ -298,9 +380,78 @@ export function StockManager({
           <AlertTriangle className="h-4 w-4" />
           Abaixo do Mínimo ({lowStock.length})
         </Button>
+        {canManage && (
+          <Button
+            size="sm"
+            variant={view === "boxes" ? "default" : "ghost"}
+            onClick={() => setView("boxes")}
+            className="gap-1.5"
+          >
+            <PackageOpen className="h-4 w-4" />
+            Caixas vinculadas
+          </Button>
+        )}
       </div>
 
-      {view === "low" ? (
+      {view === "boxes" ? (
+        <Card>
+          <CardContent className="p-0">
+            {linkedBoxes.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="font-semibold">Nenhuma caixa vinculada</p>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  No cadastro de produtos, vincule uma caixa (CX) ao produto avulso (UN) e informe
+                  quantas unidades ela contém.
+                </p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Caixa fechada</TableHead>
+                    <TableHead>Produto avulso</TableHead>
+                    <TableHead className="text-right">Caixas</TableHead>
+                    <TableHead className="text-right">Avulsas</TableHead>
+                    <TableHead className="text-center">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {linkedBoxes.map((box) => {
+                    const unit = products.find((product) => product.id === box.containedProductId)!;
+                    return (
+                      <TableRow key={box.id}>
+                        <TableCell className="min-w-40 font-medium whitespace-normal">
+                          {box.name}
+                          <p className="text-muted-foreground mt-1 text-xs font-normal">
+                            1 caixa = {box.unitsPerBox} unidades
+                          </p>
+                        </TableCell>
+                        <TableCell className="min-w-40 whitespace-normal">{unit.name}</TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatQuantity(box.currentStock, "CX")} CX
+                        </TableCell>
+                        <TableCell className="text-right font-mono">
+                          {formatQuantity(unit.currentStock, "UN")} UN
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openUnpackDialog(box.id)}
+                          >
+                            <PackageOpen className="h-3.5 w-3.5" />
+                            Abrir caixas
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      ) : view === "low" ? (
         <Card>
           <CardContent className="p-0">
             {lowStock.length === 0 ? (
@@ -516,11 +667,24 @@ export function StockManager({
                           {canSeeCost && (
                             <TableCell className="text-muted-foreground text-right">
                               {m.unitCost != null ? formatCurrency(m.unitCost) : "-"}
+                              {m.totalCost != null && (
+                                <p className="mt-1 text-xs">Total: {formatCurrency(m.totalCost)}</p>
+                              )}
+                              {!!m.extraCostUnits && m.unitCost != null && (
+                                <p className="mt-1 text-xs">
+                                  {m.extraCostUnits} un. a {formatCurrency(m.unitCost + 0.01)}
+                                </p>
+                              )}
                             </TableCell>
                           )}
                           <TableCell className="text-sm">{m.supplierName ?? "-"}</TableCell>
                           <TableCell className="text-muted-foreground max-w-56 truncate text-sm">
-                            {m.reason ?? "-"}
+                            <span title={m.reason ?? undefined}>{m.reason ?? "-"}</span>
+                            {m.conversionId && (
+                              <p className="mt-1 text-xs" title={m.conversionId}>
+                                Abertura {m.conversionId.slice(0, 8)}
+                              </p>
+                            )}
                           </TableCell>
                           <TableCell className="text-sm">{m.userName ?? "-"}</TableCell>
                         </TableRow>
@@ -572,6 +736,19 @@ export function StockManager({
         initialProductId={dialogProductId}
         onSuccess={handleMutationSuccess}
       />
+      {canManage && dialogBox && dialogUnit && (
+        <StockUnpackDialog
+          key={`unpack-${dialogKey}`}
+          open={unpackProductId !== null}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setUnpackProductId(null);
+          }}
+          boxProduct={dialogBox}
+          unitProduct={dialogUnit}
+          operationScope={operationScope}
+          onSuccess={handleUnpackSuccess}
+        />
+      )}
     </div>
   );
 }

@@ -40,6 +40,7 @@ export default async function EstoquePage() {
       initialMovements={data.movements}
       canManage={can(user.role, "stock.manage")}
       canSeeCost={can(user.role, "catalog.manage")}
+      operationScope={`stock:${user.id}`}
     />
   );
 }

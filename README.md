@@ -96,6 +96,13 @@ registrado no build de produção
 Tela de Início). Instalar não prepara o PDV para uso sem internet: a preparação continua no `/pdv`,
 com conexão. Detalhes em [`docs/OFFLINE.md`](docs/OFFLINE.md), seção 6.1.1.
 
+## Caixas e unidades avulsas
+
+Produtos CX podem ser vinculados a um produto UN com um fator de conversão. A abertura física
+da caixa registra saída e entrada juntas, com preços independentes e histórico próprio. A abertura
+exige conexão; o PDV sugere o mínimo necessário e pede confirmação. Veja
+[`docs/CAIXAS-AVULSAS.md`](docs/CAIXAS-AVULSAS.md).
+
 ## Documentação
 
 - [`AGENTS.md`](AGENTS.md) — convenções para agentes de IA e desenvolvedores

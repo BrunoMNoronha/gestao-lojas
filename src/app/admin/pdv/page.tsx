@@ -17,7 +17,7 @@ export const metadata = {
 export default async function PdvPage() {
   // O caixa precisa de produtos, preços e estoque atuais: renderiza a cada requisição
   await connection();
-  await requirePageAccess("pdv.use");
+  const user = await requirePageAccess("pdv.use");
 
   let data: Awaited<ReturnType<typeof loadPdvData>> | null = null;
   try {
@@ -60,6 +60,7 @@ export default async function PdvPage() {
       customers={data.customers}
       storeSettings={data.storeSettings}
       cashRegisterId={data.cashRegisterId}
+      unpackScope={`pdv:${user.id}`}
     />
   );
 }

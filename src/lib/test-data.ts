@@ -49,6 +49,7 @@ export const RESET_TABLES = [
   "CashMovement",
   "CashRegister",
   "StockMovement",
+  "UnpackConversion",
   "ProductPrice",
   "Product",
   "Category",

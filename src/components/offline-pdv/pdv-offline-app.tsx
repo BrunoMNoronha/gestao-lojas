@@ -11,6 +11,7 @@ import {
   type CartDraftInput,
   type RestoreResult,
 } from "@/lib/offline/cart-draft";
+import { prepareLocalUnpack, confirmLocalUnpack, refreshLocalUnpack } from "@/lib/offline/unpack";
 import { recordSale } from "@/lib/offline/queue";
 import {
   availableStock,
@@ -61,21 +62,25 @@ function LocalTerminal({
   userId,
   online,
   sendAfterSale,
+  onUnpackBusyChange,
 }: {
   userId: string;
   online: boolean;
   sendAfterSale: (userId: string) => Promise<unknown>;
+  onUnpackBusyChange: (busy: boolean) => void;
 }) {
   const db = userDb(userId);
   const data = useLiveQuery(async () => {
-    const [products, customers, store, cashRegister, sync, operations] = await Promise.all([
-      db.products.toArray(),
-      db.customers.toArray(),
-      readMeta(db, "store"),
-      readMeta(db, "cashRegister"),
-      readMeta(db, "sync"),
-      db.operations.toArray(),
-    ]);
+    const [products, customers, store, cashRegister, sync, operations, unpackPending] =
+      await Promise.all([
+        db.products.toArray(),
+        db.customers.toArray(),
+        readMeta(db, "store"),
+        readMeta(db, "cashRegister"),
+        readMeta(db, "sync"),
+        db.operations.toArray(),
+        readMeta(db, "unpackPending"),
+      ]);
     return {
       products,
       customers,
@@ -83,6 +88,7 @@ function LocalTerminal({
       cashRegister: cashRegister ?? null,
       watermark: sync?.watermark ?? null,
       operations,
+      unpackPending: unpackPending ?? null,
     };
   }, [db]);
 
@@ -103,6 +109,8 @@ function LocalTerminal({
           salePrice: Number(p.salePrice),
           unit: p.unit,
           currentStock: availableStock(p.currentStock, reserved.get(p.id)),
+          containedProductId: p.containedProductId ?? null,
+          unitsPerBox: p.unitsPerBox ?? null,
         }))
         .sort(byName),
     [data?.products, reserved],
@@ -172,6 +180,18 @@ function LocalTerminal({
     [db, sendAfterSale, userId],
   );
 
+  const unpack = useMemo(
+    () => ({
+      prepare: () => prepareLocalUnpack(userId),
+      confirm: (input: Parameters<typeof confirmLocalUnpack>[1]) =>
+        confirmLocalUnpack(userId, input),
+      refresh: (result: Parameters<typeof refreshLocalUnpack>[1]) =>
+        refreshLocalUnpack(userId, result),
+      pending: data?.unpackPending,
+    }),
+    [userId, data?.unpackPending],
+  );
+
   if (!data || !data.cashRegister || !cartDraft) return <LoadingState />;
   return (
     <PdvTerminal
@@ -182,6 +202,9 @@ function LocalTerminal({
       offline={!online}
       submitSale={submitSale}
       cartDraft={cartDraft}
+      unpackScope={`pdv:${userId}`}
+      unpack={unpack}
+      onUnpackBusyChange={onUnpackBusyChange}
       className="lg:h-[calc(100svh-8.5rem)]"
     />
   );
@@ -198,22 +221,25 @@ function LoadingState() {
 
 function OfflinePdv() {
   const pdv = useOfflinePdv();
+  const [unpackBusy, setUnpackBusy] = useState(false);
   const { view } = pdv;
   const userId = view.kind === "ready" ? view.userId : null;
 
   return (
     <div className="bg-background flex min-h-screen flex-col">
-      <OfflinePdvHeader
-        userId={userId}
-        queueUserId={pdv.queueUserId}
-        sessionUser={pdv.sessionUser}
-        online={pdv.online}
-        syncing={pdv.syncing}
-        syncError={pdv.syncError}
-        onSync={pdv.syncNow}
-        onSignOut={pdv.signOut}
-        onEndLocalSession={pdv.endLocalSession}
-      />
+      <div inert={unpackBusy}>
+        <OfflinePdvHeader
+          userId={userId}
+          queueUserId={pdv.queueUserId}
+          sessionUser={pdv.sessionUser}
+          online={pdv.online}
+          syncing={pdv.syncing}
+          syncError={pdv.syncError}
+          onSync={pdv.syncNow}
+          onSignOut={pdv.signOut}
+          onEndLocalSession={pdv.endLocalSession}
+        />
+      </div>
       <main id="conteudo" className="min-w-0 flex-1 p-4 sm:p-6">
         {view.kind === "loading" && <LoadingState />}
         {view.kind === "forbidden" && <ForbiddenState />}
@@ -231,6 +257,7 @@ function OfflinePdv() {
             userId={view.userId}
             online={pdv.online}
             sendAfterSale={pdv.sendAfterSale}
+            onUnpackBusyChange={setUnpackBusy}
           />
         )}
       </main>

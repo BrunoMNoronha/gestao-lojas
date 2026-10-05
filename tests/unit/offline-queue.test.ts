@@ -92,6 +92,18 @@ beforeEach(async () => {
   userId = `user-${randomUUID()}`;
   cashRegisterId = `cash-${randomUUID()}`;
   await prepare();
+  await userDb(userId).products.put({
+    id: "p1",
+    deleted: false,
+    name: "Arroz",
+    unit: "UN",
+    currentStock: "1000.000",
+    salePrice: "10.00",
+    sku: null,
+    barcode: null,
+    categoryId: null,
+    updatedAt: new Date().toISOString(),
+  });
 });
 
 afterEach(() => {
@@ -128,6 +140,78 @@ describe("recordSale", () => {
     await prepare({ expiresInMs: -1 });
     expect(await recordSale(userId, { ...first })).toEqual(op);
     expect(await userDb(userId).operations.count()).toBe(1);
+  });
+  it("rejeita o carrinho de outra aba esperando a trava quando a abertura deixa só 2 caixas", async () => {
+    const db = userDb(userId);
+    await db.products.put({
+      id: "box",
+      deleted: false,
+      name: "Caixa",
+      unit: "CX",
+      currentStock: "3.000",
+      salePrice: "56.00",
+      sku: null,
+      barcode: null,
+      categoryId: null,
+      updatedAt: new Date().toISOString(),
+    });
+    let release!: () => void;
+    let notifyAcquired!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const acquired = new Promise<void>((resolve) => (notifyAcquired = resolve));
+    const convertingTab = navigator.locks.request(`gestao-lojas-stock:${userId}`, () => {
+      notifyAcquired();
+      return held;
+    });
+    await acquired;
+    // A aba da venda capturou 3 caixas antes da abertura; espera a mesma trava.
+    const staleSale = recordSale(
+      userId,
+      draft({
+        items: [{ productId: "box", name: "Caixa", unit: "CX", quantity: 3, unitPrice: 56 }],
+      }),
+    );
+    const rejected = expect(staleSale).rejects.toThrow(/Estoque insuficiente/);
+    await db.products.update("box", { currentStock: "2.000" });
+    await db.meta.put({ key: "unpackPending", value: null });
+    release();
+    await convertingTab;
+    await rejected;
+    expect(await db.operations.count()).toBe(0);
+  });
+
+  it("desconta reservas da fila e agrupa itens repetidos antes de gravar uma venda nova", async () => {
+    const db = userDb(userId);
+    await db.products.update("p1", { currentStock: "2.000" });
+    const first = draft();
+    const already = await recordSale(userId, first);
+    await expect(
+      recordSale(
+        userId,
+        draft({
+          items: [
+            { productId: "p1", name: "Arroz", unit: "UN", quantity: 1, unitPrice: 10 },
+            { productId: "p1", name: "Arroz", unit: "UN", quantity: 1, unitPrice: 10 },
+          ],
+        }),
+      ),
+    ).rejects.toThrow(/Estoque insuficiente/);
+    expect(await db.operations.count()).toBe(1);
+    // Replay não consome estoque novo nem falha se a cópia atual tiver saldo zero.
+    await db.products.update("p1", { currentStock: "0.000" });
+    expect(await recordSale(userId, first)).toEqual(already);
+  });
+
+  it("confere a unidade atual do cadastro para impedir fracionar caixas ou avulsos", async () => {
+    await expect(
+      recordSale(
+        userId,
+        draft({
+          items: [{ productId: "p1", name: "Arroz", unit: "KG", quantity: 0.5, unitPrice: 10 }],
+        }),
+      ),
+    ).rejects.toThrow(/quantidades inteiras/);
+    expect(await userDb(userId).operations.count()).toBe(0);
   });
 });
 

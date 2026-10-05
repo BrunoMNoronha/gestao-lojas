@@ -102,6 +102,8 @@ describe("readOfflineSnapshot", () => {
       salePrice: "10.00",
       unit: "UN",
       currentStock: "10.000",
+      containedProductId: null,
+      unitsPerBox: null,
       minStock: "3.000",
       categoryId: category.id,
       updatedAt: expect.any(String),
@@ -137,6 +139,30 @@ describe("readOfflineSnapshot", () => {
       openingAmount: "100.00",
     });
     expect(snapshot.user).toEqual(user);
+  });
+
+  it("envia vínculo caixa-avulso na carga completa e ao alterar o fator, sem custo", async () => {
+    const box = await prisma.product.create({
+      data: {
+        name: "Caixa arroz 12un",
+        unit: "CX",
+        costPrice: 48,
+        salePrice: 56,
+        currentStock: 3,
+        containedProductId: store.rice.id,
+        unitsPerBox: 12,
+      },
+    });
+    const full = await readAll(null);
+    const fullBox = full.products.find((p) => p.id === box.id);
+    expect(fullBox).toMatchObject({ containedProductId: store.rice.id, unitsPerBox: 12 });
+    expect(fullBox).not.toHaveProperty("costPrice");
+    await prisma.product.update({ where: { id: box.id }, data: { unitsPerBox: 24 } });
+    const delta = await readAll(full.cursor);
+    expect(delta.products.find((p) => p.id === box.id)).toMatchObject({
+      containedProductId: store.rice.id,
+      unitsPerBox: 24,
+    });
   });
 
   it("estoque mínimo vai a todos os perfis, e o preço de custo a nenhum (#54)", async () => {
