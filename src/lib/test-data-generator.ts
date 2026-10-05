@@ -95,41 +95,6 @@ function randomDigits(random: Random, length: number) {
 
 // Documentos e códigos
 
-function cpfDigit(base: string) {
-  let sum = 0;
-  for (let i = 0; i < base.length; i++) sum += Number(base[i]) * (base.length + 1 - i);
-  const rest = (sum * 10) % 11;
-  return rest === 10 ? 0 : rest;
-}
-
-/** CPF válido, só dígitos. */
-export function randomCpf(random: Random): string {
-  let base = randomDigits(random, 9);
-  while (/^(\d)\1+$/.test(base)) base = randomDigits(random, 9);
-  const first = cpfDigit(base);
-  return `${base}${first}${cpfDigit(`${base}${first}`)}`;
-}
-
-function cnpjDigit(base: string) {
-  let sum = 0;
-  let weight = base.length - 7;
-  for (let i = 0; i < base.length; i++) {
-    sum += Number(base[i]) * weight;
-    weight = weight === 2 ? 9 : weight - 1;
-  }
-  const rest = sum % 11;
-  return rest < 2 ? 0 : 11 - rest;
-}
-
-/** CNPJ numérico válido de matriz (filial 0001), só dígitos. */
-export function randomCnpj(random: Random): string {
-  let root = randomDigits(random, 8);
-  while (/^(\d)\1+$/.test(root)) root = randomDigits(random, 8);
-  const base = `${root}0001`;
-  const first = cnpjDigit(base);
-  return `${base}${first}${cnpjDigit(`${base}${first}`)}`;
-}
-
 /** Dígito verificador do EAN-13 a partir dos 12 primeiros dígitos. */
 export function ean13CheckDigit(first12: string): number {
   let sum = 0;
@@ -406,9 +371,10 @@ export interface GeneratedCategory {
   name: string;
 }
 
+// Clientes e fornecedores gerados não têm CPF/CNPJ (issue #67): um documento aleatório, mesmo com
+// dígitos válidos, pode pertencer a uma pessoa real.
 export interface GeneratedPerson {
   name: string;
-  document: string;
   phone: string;
   email: string;
   address: string;
@@ -475,8 +441,8 @@ function buildProduct(
 
 /**
  * Monta o conjunto de dados sintéticos. As quantidades já devem ter passado por
- * `validateTestDataCounts`. Nomes, SKU, códigos de barras e documentos são únicos dentro do
- * conjunto; a unicidade contra o banco é resolvida pelo servidor.
+ * `validateTestDataCounts`. Nomes, SKU e códigos de barras são únicos dentro do conjunto; a
+ * unicidade contra o banco é resolvida pelo servidor.
  */
 export function buildTestData(counts: TestDataCounts, random: Random = Math.random): TestDataSet {
   const categories = CATEGORY_TEMPLATES.slice(0, counts.categories).map((template) => ({
@@ -484,7 +450,6 @@ export function buildTestData(counts: TestDataCounts, random: Random = Math.rand
   }));
 
   const supplierNames = new Set<string>();
-  const cnpjs = new Set<string>();
   const suppliers: GeneratedPerson[] = Array.from({ length: counts.suppliers }, () => {
     const name = uniqueName(
       `${pick(random, SUPPLIER_PREFIXES)} ${pick(random, SUPPLIER_NAMES)} Ltda`,
@@ -493,7 +458,6 @@ export function buildTestData(counts: TestDataCounts, random: Random = Math.rand
     supplierNames.add(name);
     return {
       name,
-      document: uniqueValue(() => randomCnpj(random), cnpjs),
       phone: randomPhone(random, false),
       email: `contato@${slug(name.replace(/ Ltda$/, ""))}.exemplo.test`,
       address: randomAddress(random),
@@ -501,7 +465,6 @@ export function buildTestData(counts: TestDataCounts, random: Random = Math.rand
   });
 
   const customerNames = new Set<string>();
-  const cpfs = new Set<string>();
   const customers: GeneratedPerson[] = Array.from({ length: counts.customers }, () => {
     const name = uniqueName(
       `${pick(random, FIRST_NAMES)} ${pick(random, SURNAMES)} ${pick(random, SURNAMES)}`,
@@ -510,7 +473,6 @@ export function buildTestData(counts: TestDataCounts, random: Random = Math.rand
     customerNames.add(name);
     return {
       name,
-      document: uniqueValue(() => randomCpf(random), cpfs),
       phone: randomPhone(random, true),
       email: `${slug(name)}@exemplo.test`,
       address: randomAddress(random),

@@ -94,6 +94,7 @@ enum ReconciliationIssueType {
 enum TestDataRunKind {
   GENERATE // Gerar dados de teste
   RESET // Restaurar o banco (mantém usuários e configurações da loja)
+  CLEANUP // Remover só os registros gerados (#67)
 }
 
 enum TestDataRunStatus {
@@ -140,13 +141,14 @@ model User {
 // (o Prisma 6 não os declara e também não tenta removê-los). syncVersion é preenchida por gatilho
 // no banco com o id da transação que gravou a linha; nunca é definida pela aplicação.
 model Category {
-  id          String    @id @default(cuid())
-  name        String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  syncVersion BigInt    @default(0)
-  products    Product[]
+  id            String    @id @default(cuid())
+  name          String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncVersion   BigInt    @default(0)
+  products      Product[]
+  testDataRunId String?   @db.Uuid // Geração de dados de teste que criou o registro (#67)
 
   @@index([syncVersion, id])
 }
@@ -181,6 +183,7 @@ model Product {
   saleItems            SaleItem[]
   stockMovements       StockMovement[]
   priceHistory         ProductPrice[]
+  testDataRunId        String?               @db.Uuid // Geração de dados de teste (#67)
   reconciliationIssues ReconciliationIssue[]
 
   @@index([syncVersion, id])
@@ -200,18 +203,19 @@ model ProductPrice {
 }
 
 model Customer {
-  id          String       @id @default(cuid())
-  name        String
-  document    String?
-  phone       String?
-  email       String?
-  address     String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  deletedAt   DateTime?
-  syncVersion BigInt       @default(0)
-  sales       Sale[]
-  receivables Receivable[]
+  id            String       @id @default(cuid())
+  name          String
+  document      String?
+  phone         String?
+  email         String?
+  address       String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+  syncVersion   BigInt       @default(0)
+  sales         Sale[]
+  receivables   Receivable[]
+  testDataRunId String?      @db.Uuid // Geração de dados de teste que criou o registro (#67)
 
   @@index([syncVersion, id])
 }
@@ -256,22 +260,23 @@ model SaleItem {
 // IN/OUT guardam quantidade positiva; ADJUSTMENT guarda o delta com sinal
 // (saldo contado - saldo anterior). Todo saldo de Product muda via movimentação.
 model StockMovement {
-  id           String            @id @default(cuid())
-  productId    String
-  product      Product           @relation(fields: [productId], references: [id])
-  type         MovementType
-  quantity     Decimal           @db.Decimal(10, 3)
-  reason       String?
-  unitCost     Decimal?          @db.Decimal(10, 2)
+  id            String            @id @default(cuid())
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id])
+  type          MovementType
+  quantity      Decimal           @db.Decimal(10, 3)
+  reason        String?
+  unitCost      Decimal?          @db.Decimal(10, 2)
   // Conversões usam rateio exato: unitCost é o piso por unidade, totalCost inclui o restante.
-  totalCost    Decimal?          @db.Decimal(18, 2)
-  conversionId String?           @db.Uuid
-  conversion   UnpackConversion? @relation(fields: [conversionId], references: [id], onDelete: Restrict)
-  userId       String?
-  user         User?             @relation(fields: [userId], references: [id])
-  supplierId   String?
-  supplier     Supplier?         @relation(fields: [supplierId], references: [id])
-  createdAt    DateTime          @default(now())
+  totalCost     Decimal?          @db.Decimal(18, 2)
+  conversionId  String?           @db.Uuid
+  conversion    UnpackConversion? @relation(fields: [conversionId], references: [id], onDelete: Restrict)
+  userId        String?
+  user          User?             @relation(fields: [userId], references: [id])
+  supplierId    String?
+  supplier      Supplier?         @relation(fields: [supplierId], references: [id])
+  createdAt     DateTime          @default(now())
+  testDataRunId String?           @db.Uuid // Geração de dados de teste (#67)
 
   @@index([productId, createdAt])
   @@index([conversionId])
@@ -347,6 +352,7 @@ model Supplier {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   stockMovements StockMovement[]
+  testDataRunId  String?         @db.Uuid // Geração de dados de teste que criou o registro (#67)
 }
 
 // Turno de caixa por operador. openUserId fica preenchido apenas enquanto o caixa está

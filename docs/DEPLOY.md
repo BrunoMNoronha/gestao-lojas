@@ -117,8 +117,8 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
       e reabrir o navegador → o PDV abre, busca produtos e clientes e mostra "Sem conexão".
 - [ ] Depois do deploy, o `/pdv` já preparado mostra "Atualizar o app"; ao atualizar, os dados
       continuam (idade e validade no topo).
-- [ ] Configurações da Loja (ADMIN): a seção "Dados de teste" aparece com o histórico. **Não**
-      gerar nem restaurar em produção só para testar (seção 11).
+- [ ] Configurações da Loja (ADMIN): a seção "Dados de teste" **não aparece** em produção
+      (`ENABLE_STORE_TEST_TOOLS` ausente; seção 11).
 
 ## 7. Usabilidade e performance do PDV
 
@@ -440,23 +440,38 @@ trocando `_next/static`")
       operação real no meio). Sem restauração, apagar o branch de backup quando não for mais útil.
 - [ ] Com todos os critérios OK (ou cada falha com issue e decisão registrada), fechar a #33.
 
-## 11. Dados de teste e restauração do banco (#57)
+## 11. Dados de teste e restauração do banco (#57, #67)
 
-Em **Configurações da Loja**, a seção "Dados de teste" (só ADMIN) tem duas ações. As regras estão no
+Em **Configurações da Loja**, a seção "Dados de teste" (só ADMIN) tem três ações. As regras estão no
 `docs/OFFLINE.md` (seções 3.7 e 5) e no código em `src/lib/test-data.ts`.
+
+**A seção só existe com `ENABLE_STORE_TEST_TOOLS=true` (#67).** Sem a variável, que é o padrão e o
+caso da produção, a seção não aparece e as três ações são recusadas no servidor, inclusive em
+chamadas diretas. Para demonstração ou treinamento, ligue a variável só no ambiente de teste
+(`.env` local ou um deploy separado com banco descartável). Nunca na Vercel de produção.
 
 - **Gerar dados de teste:** cria até 15 categorias, 50 produtos (com estoque inicial como entrada de
   um fornecedor gerado), 10 clientes e 5 fornecedores, sem alterar cadastros existentes. Os
-  produtos ficam fora do catálogo público. Em produção, os dados fictícios se misturam aos reais e
-  só saem com a restauração abaixo (ou excluindo um a um).
+  produtos ficam fora do catálogo público. Clientes e fornecedores gerados não têm CPF/CNPJ (um
+  documento aleatório pode pertencer a uma pessoa real). Cada registro guarda o id da geração
+  (`testDataRunId`).
+- **Remover dados gerados:** tira só os registros marcados, com as regras da exclusão manual.
+  Produtos, categorias e clientes saem por exclusão lógica (os aparelhos do PDV recebem a exclusão
+  na sincronização). As entradas de estoque geradas são apagadas. Ficam os gerados ainda em uso por
+  dados reais: categoria com produto real ativo, cliente com Fiado em aberto e fornecedor com
+  entrada real. Vendas, títulos e cadastros reais não mudam. Registros gerados antes da migration
+  `0012_test_data_marker` não têm marcação e não são removidos por aqui.
 - **Restaurar banco:** apaga vendas, caixas, fiado, estoque, produtos, categorias, clientes,
   fornecedores, aparelhos e operações offline. Mantém usuários, configurações da loja e o histórico
-  da seção. A numeração das vendas volta a 1. **É irreversível e vale para produção.**
+  da seção. A numeração das vendas volta a 1. **É irreversível.**
 
 ### 11.1 Migration
 
-O recurso precisa da migration `0011_test_data_runs` (só acrescenta a tabela `TestDataRun`; nenhum
-dado é alterado). Aplicar em produção pelo roteiro da seção 4 **antes** do merge que publica o
+O recurso precisa das migrations `0011_test_data_runs` (tabela `TestDataRun`) e
+`0012_test_data_marker` (valor `CLEANUP` no enum e a coluna opcional `testDataRunId` em
+`Category`, `Product`, `Customer`, `Supplier` e `StockMovement`). Nenhuma altera dados existentes.
+A `0012` precisa estar aplicada **antes** do merge da #67: o código novo lê a coluna em toda
+consulta desses cadastros, com a seção ligada ou não. Aplicar em produção pelo roteiro da seção 4 **antes** do merge que publica o
 código, com um branch de backup da Neon criado antes. Conferência (console SQL da Neon, só
 leitura):
 
@@ -474,6 +489,6 @@ select migration_name, finished_at from "_prisma_migrations" order by migration_
       impedimentos. Venda guardada num aparelho que nunca avisou o servidor volta como conflito na
       conciliação.
 - [ ] Na confirmação, digitar o nome fantasia da loja e a senha do ADMIN. Cinco tentativas erradas
-      bloqueiam a ação por 15 minutos.
+      bloqueiam a ação por 15 minutos (contadas uma a uma, também em pedidos simultâneos).
 - [ ] Depois: preparar de novo cada aparelho do PDV sem internet (eles recebem a carga completa e
       os registros dos aparelhos foram apagados) e conferir o histórico da seção.
