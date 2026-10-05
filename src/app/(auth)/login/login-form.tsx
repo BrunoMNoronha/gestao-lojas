@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
+import type { QuickLoginOptions } from "@/lib/quick-login";
 import Script from "next/script";
 import { getSession, signIn } from "next-auth/react";
 import { Store, Lock, Mail, Loader2, AlertCircle } from "lucide-react";
@@ -40,7 +41,49 @@ const INVALID_SESSION_MESSAGE =
   "Sua sessão não vale mais (usuário desativado ou alterado). Entre novamente.";
 const noSubscription = () => () => {};
 
-export function LoginForm({ siteKey }: { siteKey?: string }) {
+export function LoginForm({
+  siteKey,
+  quickLogin = { enabled: false },
+}: {
+  siteKey?: string;
+  quickLogin?: QuickLoginOptions;
+}) {
+  const submitting = useRef(false);
+  const [quickUserId, setQuickUserId] = useState<string | null>(null);
+  const navigateAfterLogin = async () => {
+    const session = await getSession();
+    if (!session?.user) throw new Error("Sessão não confirmada");
+    const role = isAppRole(session.user.role) ? session.user.role : null;
+    const requested = safeInternalPath(
+      new URLSearchParams(window.location.search).get("callbackUrl"),
+      window.location.origin,
+    );
+    window.location.assign(landingPathFor(role, requested));
+  };
+  const handleQuickLogin = async (userId: string) => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setLoading(true);
+    setQuickUserId(userId);
+    setError(null);
+    let navigating = false;
+    try {
+      const result = await signIn("dev-quick-login", { userId, redirect: false });
+      if (!result || result.error) throw new Error("Acesso recusado");
+      await navigateAfterLogin();
+      navigating = true;
+    } catch {
+      setError(
+        "Não foi possível entrar com este usuário. Recarregue a página ou use o login com senha.",
+      );
+    } finally {
+      if (!navigating) {
+        submitting.current = false;
+        setLoading(false);
+        setQuickUserId(null);
+      }
+    }
+  };
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -72,6 +115,8 @@ export function LoginForm({ siteKey }: { siteKey?: string }) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true;
     setLoading(true);
     setError(null);
     let navigating = false;
@@ -107,23 +152,17 @@ export function LoginForm({ siteKey }: { siteKey?: string }) {
           setError(MESSAGES.credentials);
         }
       } else {
-        // Vai para a página pedida (callbackUrl interno e permitido ao perfil) ou para a inicial
-        const session = await getSession();
-        const role = isAppRole(session?.user?.role) ? session.user.role : null;
-        const requested = safeInternalPath(
-          new URLSearchParams(window.location.search).get("callbackUrl"),
-          window.location.origin,
-        );
-        // Navegação completa (e não router.push): descarrega o script do reCAPTCHA, que assim não
-        // continua ativo nas páginas do painel.
+        await navigateAfterLogin();
         navigating = true;
-        window.location.assign(landingPathFor(role, requested));
       }
     } catch (err) {
       console.error(err);
       setError("Ocorreu um erro ao tentar realizar o login.");
     } finally {
-      if (!navigating) setLoading(false);
+      if (!navigating) {
+        submitting.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -167,6 +206,56 @@ export function LoginForm({ siteKey }: { siteKey?: string }) {
               </div>
             )}
 
+            {quickLogin.enabled && (
+              <section aria-labelledby="quick-login-title" className="mb-6 space-y-3 border-b pb-6">
+                <h2 id="quick-login-title" className="text-sm font-semibold">
+                  Acesso rápido — ambiente de testes
+                </h2>
+                <p className="text-muted-foreground text-xs">
+                  Escolha um usuário para entrar sem digitar a senha.
+                </p>
+                {quickLogin.error ? (
+                  <p role="alert" className="text-destructive text-sm">
+                    {quickLogin.error}
+                  </p>
+                ) : quickLogin.users.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    Nenhum usuário ativo cadastrado. Use o login com senha para o primeiro acesso.
+                  </p>
+                ) : (
+                  <div className="max-h-72 space-y-2 overflow-y-auto">
+                    {quickLogin.users.map((user) => (
+                      <Button
+                        key={user.id}
+                        type="button"
+                        variant="outline"
+                        disabled={loading}
+                        onClick={() => void handleQuickLogin(user.id)}
+                        className="h-auto w-full justify-start gap-3 py-3 text-left whitespace-normal"
+                        aria-label={`Entrar como ${user.name} (${user.email})`}
+                      >
+                        {quickUserId === user.id && (
+                          <Loader2 aria-hidden className="h-4 w-4 shrink-0 animate-spin" />
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium">{user.name}</span>
+                          <span className="text-muted-foreground block text-xs break-all">
+                            {user.email}
+                          </span>
+                        </span>
+                        <span className="text-muted-foreground text-xs">
+                          {
+                            { ADMIN: "Administrador", MANAGER: "Gerente", SELLER: "Vendedor" }[
+                              user.role
+                            ]
+                          }
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label

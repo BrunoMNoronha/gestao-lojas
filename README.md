@@ -109,3 +109,8 @@ exige conexão; o PDV sugere o mínimo necessário e pede confirmação. Veja
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — arquitetura e modelo de dados
 - [`docs/DEPLOY.md`](docs/DEPLOY.md) — deploy em produção (Vercel + Neon)
 - [`docs/OFFLINE.md`](docs/OFFLINE.md) — decisões e arquitetura da operação offline (#33)
+
+## Acesso rápido para testes
+
+A tela de login permite escolher um usuário em ambientes não produtivos explicitamente habilitados.
+Veja [ativação e bloqueio de produção](docs/ACESSO-RAPIDO.md). O recurso vem desligado por padrão.

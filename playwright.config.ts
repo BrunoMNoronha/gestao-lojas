@@ -61,6 +61,11 @@ export default defineConfig({
       DIRECT_URL: databaseUrl,
       AUTH_SECRET: "e2e-segredo-local-de-teste-nao-usar-em-producao",
       AUTH_TRUST_HOST: "true",
+      // Matriz da issue #76: build otimizado, ambiente de teste ou veto de produção.
+      APP_ENV: "test",
+      ENABLE_DEV_QUICK_LOGIN: process.env.E2E_QUICK_LOGIN_MODE ? "true" : "false",
+      DEV_QUICK_LOGIN_DATABASE: `${new URL(databaseUrl).host}${new URL(databaseUrl).pathname}`,
+      ...(process.env.E2E_QUICK_LOGIN_MODE === "production" ? { VERCEL_ENV: "production" } : {}),
       // Chave fictícia: o login exige o reCAPTCHA no build de produção, e o `siteverify` do
       // Google é simulado no processo do servidor pelo preload abaixo
       RECAPTCHA_SECRET_KEY: "e2e-chave-ficticia",
