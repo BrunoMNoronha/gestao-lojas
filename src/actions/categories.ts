@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 
@@ -67,6 +68,7 @@ export async function createCategory(name: string) {
     });
 
     revalidatePath("/admin/produtos");
+    invalidateCatalog();
     return { success: true, data: category };
   } catch (error) {
     console.error("Erro ao criar categoria:", error);
@@ -103,6 +105,7 @@ export async function updateCategory(id: string, name: string) {
     });
 
     revalidatePath("/admin/produtos");
+    invalidateCatalog();
     return { success: true, data: category };
   } catch (error) {
     if (isNotFound(error)) return { success: false, error: CATEGORY_NOT_FOUND };
@@ -135,6 +138,7 @@ export async function deleteCategory(id: string) {
     });
 
     revalidatePath("/admin/produtos");
+    invalidateCatalog();
     return { success: true };
   } catch (error) {
     if (isNotFound(error)) return { success: false, error: CATEGORY_NOT_FOUND };

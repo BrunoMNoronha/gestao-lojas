@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { ListPagination, useListQuery } from "@/components/list-pagination";
+import type { PageInfo } from "@/lib/pagination";
 import { Users, Plus, Search, Edit2, Trash2, Phone, Mail, MapPin, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CustomerItem, deleteCustomer } from "@/actions/customers";
 import { CustomerDialog } from "@/components/customer-dialog";
 import { useConfirm } from "@/components/confirm-dialog";
-import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
+import { displayDocument, displayPhone } from "@/lib/masks";
 import { EmptyState } from "@/components/empty-state";
 import { IconButton } from "@/components/icon-button";
 import { PageHeader } from "@/components/page-header";
@@ -26,27 +27,22 @@ import { toast } from "sonner";
 
 interface CustomersManagerProps {
   initialCustomers: CustomerItem[];
+  pagination: PageInfo;
   // Exclusão restrita por perfil (customers.delete)
   canDelete: boolean;
 }
 
-export function CustomersManager({ initialCustomers, canDelete }: CustomersManagerProps) {
-  const router = useRouter();
+export function CustomersManager({
+  initialCustomers,
+  canDelete,
+  pagination,
+}: CustomersManagerProps) {
   const [askConfirm, confirmDialog] = useConfirm();
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useListQuery();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [customerToEdit, setCustomerToEdit] = useState<CustomerItem | null>(null);
 
-  const filteredCustomers = initialCustomers.filter((c) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      c.name.toLowerCase().includes(q) ||
-      matchesMaskedValue(c.document, q) ||
-      matchesMaskedValue(c.phone, q) ||
-      c.email?.toLowerCase().includes(q)
-    );
-  });
+  const filteredCustomers = initialCustomers;
 
   const handleOpenNew = () => {
     setCustomerToEdit(null);
@@ -70,7 +66,6 @@ export function CustomersManager({ initialCustomers, canDelete }: CustomersManag
     const res = await deleteCustomer(id);
     if (res.success) {
       toast.success("Cliente excluído.");
-      router.refresh();
     } else {
       toast.error(res.error || "Erro ao excluir cliente.");
     }
@@ -206,11 +201,12 @@ export function CustomersManager({ initialCustomers, canDelete }: CustomersManag
         </CardContent>
       </Card>
 
+      <ListPagination {...pagination} />
       <CustomerDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         customerToEdit={customerToEdit}
-        onSuccess={() => router.refresh()}
+        onSuccess={() => {}}
       />
       {confirmDialog}
     </div>

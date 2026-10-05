@@ -123,7 +123,7 @@ export interface LocalOperation {
   status: LocalOperationStatus;
   createdAt: number; // relógio do aparelho
   // Ordem de gravação no banco do operador (1, 2, 3...): desempata vendas do mesmo milissegundo.
-  // Ausente nas gravadas antes deste campo; não indexado, então não exige versão nova do banco
+  // Ausente nas gravadas antes deste campo; a versão 4 indexa a ordem.
   seq?: number;
   request: OfflineSaleRequest;
   receipt: LocalReceipt;
@@ -204,6 +204,7 @@ export class OfflineUserDb extends Dexie {
     // #53: rascunho do carrinho em montagem (uma linha). Tabela nova, sem upgrade: a fila fica
     // como está
     this.version(3).stores({ drafts: "id" });
+    this.version(4).stores({ operations: "id, status, createdAt, settledAt, seq" });
   }
 }
 
@@ -329,12 +330,17 @@ export async function applySnapshotPage(db: OfflineUserDb, page: OfflineSnapshot
       // O limite só vale ao fim da sequência: aí tudo abaixo dele já chegou à cópia
       watermark: done ? page.watermark : (previous.watermark ?? null),
     };
-    await db.meta.bulkPut([
+    const values: MetaRow[] = [
       { key: "sync", value: sync },
       { key: "store", value: page.store },
       { key: "cashRegister", value: page.cashRegister },
       { key: "user", value: page.user },
-    ]);
+    ];
+    const current = await db.meta.bulkGet(values.map((row) => row.key));
+    const changed = values.filter(
+      (row, index) => JSON.stringify(current[index]?.value) !== JSON.stringify(row.value),
+    );
+    if (changed.length) await db.meta.bulkPut(changed);
   });
 }
 

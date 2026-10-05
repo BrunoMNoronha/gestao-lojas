@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef } from "react";
+import { ListPagination, useListFilters } from "@/components/list-pagination";
+import { ProductLookup } from "@/components/async-lookup";
+import type { PageInfo } from "@/lib/pagination";
 import {
   Boxes,
   PackagePlus,
@@ -46,6 +48,8 @@ import { PageHeader } from "@/components/page-header";
 
 interface StockManagerProps {
   products: ProductItem[];
+  pagination: PageInfo;
+  counts: { total: number; low: number; zero: number; negative: number };
   suppliers: SupplierItem[];
   lowStock: LowStockItem[];
   initialMovements: StockMovementPage;
@@ -104,6 +108,8 @@ function MovementTypeBadge({ type }: { type: MovementTypeValue }) {
 
 export function StockManager({
   products: initialProducts,
+  pagination,
+  counts,
   suppliers,
   lowStock,
   initialMovements,
@@ -111,7 +117,10 @@ export function StockManager({
   canSeeCost,
   operationScope,
 }: StockManagerProps) {
-  const router = useRouter();
+  const [listFilters, setListFilters] = useListFilters({ q: "", stock: "history" });
+  const search = listFilters.q;
+  const setSearch = (q: string) => setListFilters({ q });
+  const [chosenFilter, setChosenFilter] = useState<ProductItem | null>(null);
   const [products, setProducts] = useState(initialProducts);
   const [syncedProducts, setSyncedProducts] = useState(initialProducts);
   if (syncedProducts !== initialProducts) {
@@ -120,7 +129,8 @@ export function StockManager({
   }
   const pendingUnpack = usePendingStockUnpack(operationScope);
 
-  const [view, setView] = useState<"history" | "low" | "boxes">("history");
+  const view = listFilters.stock;
+  const setView = (stock: string) => setListFilters({ stock });
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [movements, setMovements] = useState<StockMovementPage>(initialMovements);
   const [loadingMovements, setLoadingMovements] = useState(false);
@@ -132,7 +142,14 @@ export function StockManager({
   // Trocar a key remonta o diálogo e reinicia o formulário a cada abertura
   const [dialogKey, setDialogKey] = useState(0);
 
-  const outOfStockCount = products.filter((p) => p.currentStock <= 0).length;
+  const [offset, setOffset] = useState(0);
+  const requestVersion = useRef(0);
+  const [syncedPage, setSyncedPage] = useState(initialMovements);
+  if (syncedPage !== initialMovements) {
+    setSyncedPage(initialMovements);
+    if (!Object.values(filters).some(Boolean) && offset === 0) setMovements(initialMovements);
+  }
+  const outOfStockCount = counts.zero + counts.negative;
   // Saldo negativo só acontece pela sincronização de vendas offline (docs/OFFLINE.md seção 3.2)
   const negativeStock = products.filter((p) => p.currentStock < 0);
   const hasFilters = Object.values(filters).some(Boolean);
@@ -141,7 +158,7 @@ export function StockManager({
       product.unit === "CX" &&
       product.containedProductId &&
       (product.unitsPerBox ?? 0) >= 2 &&
-      products.some((unit) => unit.id === product.containedProductId && unit.unit === "UN"),
+      !!product.containedProduct,
   );
   const unpackBox = products.find((product) => product.id === unpackProductId);
   const selectedRecovery =
@@ -156,7 +173,9 @@ export function StockManager({
         unitsPerBox: selectedRecovery.input.expectedUnitsPerBox,
       }
     : unpackBox;
-  const unpackUnit = products.find((product) => product.id === dialogBox?.containedProductId);
+  const unpackUnit =
+    unpackBox?.containedProduct ??
+    products.find((product) => product.id === dialogBox?.containedProductId);
   const dialogUnit = selectedRecovery
     ? {
         id: selectedRecovery.input.expectedUnitProductId,
@@ -166,7 +185,8 @@ export function StockManager({
       }
     : unpackUnit;
 
-  const loadMovements = async (nextFilters: Filters, append = false) => {
+  const loadMovements = async (nextFilters: Filters, nextOffset = 0) => {
+    const version = ++requestVersion.current;
     setLoadingMovements(true);
     const page = await getStockMovements({
       productId: nextFilters.productId || null,
@@ -174,11 +194,11 @@ export function StockManager({
       from: dayBoundary(nextFilters.from, false),
       to: dayBoundary(nextFilters.to, true),
       take: PAGE_SIZE,
-      skip: append ? movements.items.length : 0,
+      skip: nextOffset,
     });
-    setMovements((current) =>
-      append ? { items: [...current.items, ...page.items], total: page.total } : page,
-    );
+    if (version !== requestVersion.current) return;
+    setMovements(page);
+    setOffset(nextOffset);
     setLoadingMovements(false);
   };
 
@@ -189,6 +209,7 @@ export function StockManager({
   };
 
   const clearFilters = () => {
+    setChosenFilter(null);
     setFilters(EMPTY_FILTERS);
     loadMovements(EMPTY_FILTERS);
   };
@@ -206,7 +227,6 @@ export function StockManager({
   };
 
   const handleMutationSuccess = () => {
-    router.refresh();
     loadMovements(filters);
   };
 
@@ -216,13 +236,20 @@ export function StockManager({
   };
 
   const handleUnpackSuccess = async () => {
-    const result = await refreshUnpackProducts();
-    if (!result.success) {
-      throw new Error(result.error);
-    }
-    setProducts(result.products);
+    const ids = [
+      ...new Set(
+        [unpackProductId, pendingUnpack?.input.boxProductId].filter((id): id is string => !!id),
+      ),
+    ];
+    const result = await refreshUnpackProducts(ids);
+    if (!result.success) throw new Error(result.error);
+    const updated = result.products;
+    setProducts((current) =>
+      current
+        .filter((p) => !ids.includes(p.id) || updated.some((row) => row.id === p.id))
+        .map((p) => updated.find((row) => row.id === p.id) ?? p),
+    );
     await loadMovements(filters);
-    router.refresh();
   };
 
   return (
@@ -281,7 +308,7 @@ export function StockManager({
             <Package className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{products.length}</div>
+            <div className="text-2xl font-bold">{counts.total}</div>
           </CardContent>
         </Card>
 
@@ -294,13 +321,13 @@ export function StockManager({
             <AlertTriangle
               className={cn(
                 "h-4 w-4",
-                lowStock.length > 0 ? "text-destructive" : "text-muted-foreground",
+                counts.low > 0 ? "text-destructive" : "text-muted-foreground",
               )}
             />
           </CardHeader>
           <CardContent>
-            <div className={cn("text-2xl font-bold", lowStock.length > 0 && "text-destructive")}>
-              {lowStock.length}
+            <div className={cn("text-2xl font-bold", counts.low > 0 && "text-destructive")}>
+              {counts.low}
             </div>
           </CardContent>
         </Card>
@@ -316,16 +343,16 @@ export function StockManager({
         </Card>
       </div>
 
-      {negativeStock.length > 0 && (
+      {counts.negative > 0 && (
         <Card className="border-destructive/40 bg-destructive/5">
           <CardContent className="space-y-3 p-4">
             <div className="flex items-start gap-2">
               <AlertTriangle className="text-destructive mt-0.5 h-4 w-4 shrink-0" aria-hidden />
               <div className="text-sm">
                 <p className="text-destructive font-semibold">
-                  {negativeStock.length === 1
+                  {counts.negative === 1
                     ? "1 produto com saldo negativo"
-                    : `${negativeStock.length} produtos com saldo negativo`}
+                    : `${counts.negative} produtos com saldo negativo`}
                 </p>
                 <p className="text-muted-foreground text-xs">
                   Vendas feitas sem internet baixaram mais do que o saldo do sistema. Confira a
@@ -333,6 +360,9 @@ export function StockManager({
                 </p>
               </div>
             </div>
+            <Button variant="outline" onClick={() => setView("negative")}>
+              Consultar saldos negativos
+            </Button>
             <ul className="divide-y rounded-lg border text-sm">
               {negativeStock.map((p) => (
                 <li key={p.id} className="flex items-center justify-between gap-3 px-3 py-2">
@@ -360,6 +390,15 @@ export function StockManager({
         </Card>
       )}
 
+      {view !== "history" && (
+        <Input
+          aria-label="Buscar no estoque"
+          placeholder="Buscar por nome, código ou SKU"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      )}
+      {view !== "history" && <ListPagination {...pagination} />}
       {/* View switch */}
       <div className="bg-muted/40 flex w-fit max-w-full flex-wrap gap-1 rounded-lg border p-1">
         <Button
@@ -378,7 +417,7 @@ export function StockManager({
           className="gap-1.5"
         >
           <AlertTriangle className="h-4 w-4" />
-          Abaixo do Mínimo ({lowStock.length})
+          Abaixo do Mínimo ({counts.low})
         </Button>
         {canManage && (
           <Button
@@ -417,7 +456,7 @@ export function StockManager({
                 </TableHeader>
                 <TableBody>
                   {linkedBoxes.map((box) => {
-                    const unit = products.find((product) => product.id === box.containedProductId)!;
+                    const unit = box.containedProduct!;
                     return (
                       <TableRow key={box.id}>
                         <TableCell className="min-w-40 font-medium whitespace-normal">
@@ -451,7 +490,7 @@ export function StockManager({
             )}
           </CardContent>
         </Card>
-      ) : view === "low" ? (
+      ) : view === "low" || view === "negative" || view === "zero" ? (
         <Card>
           <CardContent className="p-0">
             {lowStock.length === 0 ? (
@@ -535,14 +574,15 @@ export function StockManager({
                 >
                   Produto
                 </Label>
-                <OptionSelect
-                  id="stock-manager-produto"
+                <ProductLookup
+                  label="Produto"
                   value={filters.productId}
-                  onValueChange={(v) => updateFilters({ productId: v })}
-                  options={[
-                    { value: "", label: "Todos os produtos" },
-                    ...products.map((p) => ({ value: p.id, label: p.name })),
-                  ]}
+                  selected={chosenFilter}
+                  onSelect={(item) => {
+                    setChosenFilter(item);
+                    updateFilters({ productId: item?.id ?? "" });
+                  }}
+                  emptyLabel="Todos os produtos"
                 />
               </div>
               <div className="space-y-1">
@@ -696,17 +736,26 @@ export function StockManager({
                     <span>
                       Exibindo {movements.items.length} de {movements.total} movimentações
                     </span>
-                    {movements.items.length < movements.total && (
+                    {offset > 0 && (
+                      <Button
+                        variant="outline"
+                        disabled={loadingMovements}
+                        onClick={() => loadMovements(filters, Math.max(0, offset - PAGE_SIZE))}
+                      >
+                        Página anterior
+                      </Button>
+                    )}
+                    {offset + movements.items.length < movements.total && (
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => loadMovements(filters, true)}
+                        onClick={() => loadMovements(filters, offset + PAGE_SIZE)}
                         disabled={loadingMovements}
                       >
                         {loadingMovements && (
                           <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                         )}
-                        Carregar mais
+                        Próxima página
                       </Button>
                     )}
                   </div>

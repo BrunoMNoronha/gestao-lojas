@@ -29,7 +29,11 @@ const { authorize, revalidatePath } = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 vi.mock("@/lib/authz", () => ({ authorize }));
-vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("next/cache", () => ({
+  revalidatePath,
+  revalidateTag: vi.fn(),
+  unstable_cache: (fn: unknown) => fn,
+}));
 
 const actions = await import("@/actions/offline-reconciliation");
 

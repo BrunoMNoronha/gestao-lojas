@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Fragment, useState, useRef } from "react";
+import { CustomerLookup } from "@/components/async-lookup";
 import {
   HandCoins,
   Users,
@@ -41,7 +41,7 @@ import { PageHeader } from "@/components/page-header";
 import { IconButton } from "@/components/icon-button";
 
 interface ReceivablesManagerProps {
-  customers: CustomerItem[];
+  customers: Pick<CustomerItem, "id" | "name">[];
   summary: ReceivablesSummary;
   initialReceivables: { items: ReceivableItem[]; total: number };
   hasOpenCashRegister: boolean;
@@ -77,7 +77,9 @@ export function ReceivablesManager({
   hasOpenCashRegister,
   onAccountEnabled = true,
 }: ReceivablesManagerProps) {
-  const router = useRouter();
+  const [chosenCustomer, setChosenCustomer] = useState<Pick<CustomerItem, "id" | "name"> | null>(
+    null,
+  );
 
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [receivables, setReceivables] = useState(initialReceivables);
@@ -89,19 +91,27 @@ export function ReceivablesManager({
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selected, setSelected] = useState<ReceivableItem | null>(null);
 
+  const [offset, setOffset] = useState(0);
+  const requestVersion = useRef(0);
+  const [syncedPage, setSyncedPage] = useState(initialReceivables);
+  if (syncedPage !== initialReceivables) {
+    setSyncedPage(initialReceivables);
+    if (!Object.values(filters).some(Boolean) && offset === 0) setReceivables(initialReceivables);
+  }
   const hasFilters = Object.values(filters).some(Boolean);
 
-  const loadReceivables = async (next: Filters, append = false) => {
+  const loadReceivables = async (next: Filters, nextOffset = 0) => {
+    const version = ++requestVersion.current;
     setLoading(true);
     const page = await getReceivables({
       customerId: next.customerId || null,
       status: next.status || null,
       take: PAGE_SIZE,
-      skip: append ? receivables.items.length : 0,
+      skip: nextOffset,
     });
-    setReceivables((prev) =>
-      append ? { items: [...prev.items, ...page.items], total: page.total } : page,
-    );
+    if (version !== requestVersion.current) return;
+    setReceivables(page);
+    setOffset(nextOffset);
     setLoading(false);
   };
 
@@ -118,7 +128,6 @@ export function ReceivablesManager({
   };
 
   const handlePaymentSuccess = () => {
-    router.refresh();
     loadReceivables(filters);
   };
 
@@ -183,14 +192,15 @@ export function ReceivablesManager({
             >
               Cliente
             </Label>
-            <OptionSelect
-              id="receivables-manager-cliente"
+            <CustomerLookup
+              label="Cliente"
               value={filters.customerId}
-              onValueChange={(v) => updateFilters({ customerId: v })}
-              options={[
-                { value: "", label: "Todos os clientes" },
-                ...customers.map((c) => ({ value: c.id, label: c.name })),
-              ]}
+              selected={chosenCustomer ?? customers.find((c) => c.id === filters.customerId)}
+              onSelect={(item) => {
+                setChosenCustomer(item);
+                updateFilters({ customerId: item?.id ?? "" });
+              }}
+              emptyLabel="Todos os clientes"
             />
           </div>
           <div className="space-y-1">
@@ -216,6 +226,7 @@ export function ReceivablesManager({
             variant="ghost"
             onClick={() => {
               setFilters(EMPTY_FILTERS);
+              setChosenCustomer(null);
               loadReceivables(EMPTY_FILTERS);
             }}
             disabled={!hasFilters}
@@ -363,14 +374,23 @@ export function ReceivablesManager({
                 <span>
                   Exibindo {receivables.items.length} de {receivables.total} títulos
                 </span>
-                {receivables.items.length < receivables.total && (
+                {offset > 0 && (
+                  <Button
+                    variant="outline"
+                    disabled={loading}
+                    onClick={() => loadReceivables(filters, Math.max(0, offset - PAGE_SIZE))}
+                  >
+                    Página anterior
+                  </Button>
+                )}
+                {offset + receivables.items.length < receivables.total && (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => loadReceivables(filters, true)}
+                    onClick={() => loadReceivables(filters, offset + PAGE_SIZE)}
                     disabled={loading}
                   >
-                    Carregar mais
+                    Próxima página
                   </Button>
                 )}
               </div>

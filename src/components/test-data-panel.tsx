@@ -168,7 +168,6 @@ export function TestDataPanel({ overview }: TestDataPanelProps) {
 }
 
 function GenerateCard({ limits, defaults }: { limits: TestDataCounts; defaults: TestDataCounts }) {
-  const router = useRouter();
   const [values, setValues] = useState<Record<TestDataEntity, string>>(
     () =>
       Object.fromEntries(TEST_DATA_ENTITIES.map((e) => [e, String(defaults[e])])) as Record<
@@ -218,7 +217,6 @@ function GenerateCard({ limits, defaults }: { limits: TestDataCounts; defaults: 
       return;
     }
     toast.success(`Dados de teste gerados: ${describeCounts({ ...response.data.counts })}.`);
-    router.refresh();
   };
 
   return (
@@ -330,10 +328,10 @@ function CleanupCard({ generated }: { generated: GeneratedActiveCounts }) {
 
     if (!response.success) {
       toast.error(response.error);
+      router.refresh();
     } else {
       toast.success(describeCleanup(response.data.counts));
     }
-    router.refresh();
   };
 
   return (
@@ -396,8 +394,8 @@ function ResetCard({ blockers, tradeName }: { blockers: ResetBlockers; tradeName
       );
     } else {
       toast.error(response.error);
+      router.refresh();
     }
-    router.refresh();
   };
 
   return (

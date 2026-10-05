@@ -439,7 +439,7 @@ describe("endOfflineSession", () => {
   });
 });
 
-describe("atualização da estrutura (versão 1 → 3)", () => {
+describe("atualização da estrutura (versão 1 → 4)", () => {
   it("preserva a fila existente", async () => {
     const name = `gestao-lojas-offline-${userId}`;
     userDb(userId).close();
@@ -478,7 +478,7 @@ describe("atualização da estrutura (versão 1 → 3)", () => {
     // O app novo abre o mesmo banco na versão 2
     const reopened = new OfflineUserDb(userId);
     const rows = await reopened.operations.toArray();
-    expect(reopened.verno).toBe(3);
+    expect(reopened.verno).toBe(4);
     expect(rows).toHaveLength(2);
     expect(rows.find((r) => r.id === "antiga")).toMatchObject({
       status: "rejected",
@@ -545,4 +545,18 @@ describe("pendingByGrant (informe ao servidor)", () => {
     await sendQueue(userId);
     expect(calls).toEqual(["/api/offline/operations"]);
   });
+});
+
+it("gravar uma venda lê somente seus produtos e usa a sequência indexada", async () => {
+  await prepare();
+  const db = userDb(userId);
+  const fullCatalog = vi.spyOn(db.products, "toArray");
+  const scanQueue = vi.spyOn(db.operations, "each");
+  const selected = vi.spyOn(db.products, "bulkGet");
+  const first = await recordSale(userId, draft());
+  const second = await recordSale(userId, draft());
+  expect(selected).toHaveBeenCalledWith(["p1"]);
+  expect(fullCatalog).not.toHaveBeenCalled();
+  expect(scanQueue).not.toHaveBeenCalled();
+  expect(second.seq).toBe(first.seq! + 1);
 });

@@ -244,6 +244,8 @@ model Sale {
 
   @@index([occurredAt])
   @@index([createdAt])
+  @@index([cashRegisterId])
+  @@index([customerId])
 }
 
 model SaleItem {
@@ -255,6 +257,8 @@ model SaleItem {
   quantity  Decimal @db.Decimal(10, 3)
   unitPrice Decimal @db.Decimal(10, 2)
   subtotal  Decimal @db.Decimal(10, 2)
+  @@index([saleId])
+  @@index([productId])
 }
 
 // IN/OUT guardam quantidade positiva; ADJUSTMENT guarda o delta com sinal
@@ -280,6 +284,7 @@ model StockMovement {
 
   @@index([productId, createdAt])
   @@index([conversionId])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
 }
 
 // Abertura física, independente da venda. Snapshot imutável preserva vínculo/fator/custos
@@ -390,6 +395,7 @@ model CashMovement {
   userId         String
   user           User             @relation(fields: [userId], references: [id])
   createdAt      DateTime         @default(now())
+  @@index([cashRegisterId])
 }
 
 // Título a receber gerado por venda no Fiado (ON_ACCOUNT)
@@ -408,6 +414,7 @@ model Receivable {
   payments   ReceivablePayment[]
 
   @@index([customerId, status])
+  @@index([status, createdAt])
 }
 
 model ReceivablePayment {
@@ -422,6 +429,8 @@ model ReceivablePayment {
   cashRegisterId String?
   cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
   createdAt      DateTime      @default(now())
+  @@index([receivableId])
+  @@index([cashRegisterId])
 }
 
 // Chave de idempotência das operações (issue #35, docs/OFFLINE.md seção 5). A linha é gravada na

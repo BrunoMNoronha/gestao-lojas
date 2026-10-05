@@ -1,3 +1,4 @@
+import { readStoreSettings } from "@/lib/store-settings-read";
 import { Prisma, ReceivableStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -17,15 +18,18 @@ export interface OnAccountSettings {
 export const MAX_ON_ACCOUNT_DUE_DAYS = 3650;
 
 export async function getOnAccountSettings(db: Db = prisma): Promise<OnAccountSettings> {
-  const settings = await db.storeSettings.findUnique({
-    where: { id: "default" },
-    select: {
-      onAccountEnabled: true,
-      onAccountDueDays: true,
-      onAccountCreditLimit: true,
-      onAccountBlockOverdue: true,
-    },
-  });
+  const settings =
+    db === prisma
+      ? await readStoreSettings()
+      : await db.storeSettings.findUnique({
+          where: { id: "default" },
+          select: {
+            onAccountEnabled: true,
+            onAccountDueDays: true,
+            onAccountCreditLimit: true,
+            onAccountBlockOverdue: true,
+          },
+        });
   return {
     enabled: settings?.onAccountEnabled ?? true,
     dueDays: settings?.onAccountDueDays ?? null,
