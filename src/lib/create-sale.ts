@@ -282,7 +282,7 @@ async function persistSale(userId: string, sale: ParsedSale): Promise<string> {
       }
     }
 
-    const productIds = [...sale.quantities.keys()];
+    const productIds = [...sale.quantities.keys()].sort();
     const products = await tx.product.findMany({
       where: { id: { in: productIds }, deletedAt: null },
       select: { id: true, name: true, unit: true, salePrice: true },

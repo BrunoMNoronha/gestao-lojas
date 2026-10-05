@@ -1,5 +1,6 @@
 import type { SessionUser } from "@/lib/authz";
 import type { OfflinePreparation } from "@/lib/offline-device";
+import { withPdvStockLock } from "@/lib/offline/stock-lock";
 import type { OfflineSnapshot } from "@/lib/offline-snapshot";
 import {
   applySnapshotPage,
@@ -95,7 +96,13 @@ function describeDevice(): string {
  * Baixa a cópia local: carga completa sem cursor, ou só as alterações a partir do último cursor.
  * Pede as páginas seguintes enquanto houver `hasMore`. Cada página é aplicada numa transação.
  */
-export async function syncSnapshot(userId: string, { full = false } = {}) {
+export function syncSnapshot(userId: string, { full = false, stockLockHeld = false } = {}) {
+  return stockLockHeld
+    ? syncSnapshotUnlocked(userId, full)
+    : withPdvStockLock(userId, () => syncSnapshotUnlocked(userId, full));
+}
+
+async function syncSnapshotUnlocked(userId: string, full: boolean) {
   const db = userDb(userId);
   let cursor = full ? null : ((await readMeta(db, "sync"))?.cursor ?? null);
   for (;;) {

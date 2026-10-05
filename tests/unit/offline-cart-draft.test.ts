@@ -228,6 +228,18 @@ beforeEach(async () => {
   userId = `user-${randomUUID()}`;
   cashRegisterId = `cash-${randomUUID()}`;
   await prepare();
+  await userDb(userId).products.put({
+    id: "p1",
+    deleted: false,
+    name: "Arroz",
+    unit: "UN",
+    currentStock: "1000.000",
+    salePrice: "10.00",
+    sku: null,
+    barcode: null,
+    categoryId: null,
+    updatedAt: new Date().toISOString(),
+  });
 });
 
 describe("rascunho no banco do operador", () => {

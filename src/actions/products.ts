@@ -1,11 +1,12 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { authorize } from "@/lib/authz";
+import { authorize, type SessionUser } from "@/lib/authz";
 import { can } from "@/lib/permissions";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
 import { isHttpUrl } from "@/lib/catalog-shared";
+import { lockUnpackConfiguration, lockUnpackProducts, UnpackValidationError } from "@/lib/unpack";
 
 export type UnitType = "UN" | "KG" | "LT" | "CX" | "M";
 
@@ -19,6 +20,8 @@ export interface ProductItem {
   costPrice?: number;
   salePrice: number;
   unit: UnitType;
+  containedProductId?: string | null;
+  unitsPerBox?: number | null;
   currentStock: number;
   minStock: number;
   categoryId: string | null;
@@ -39,6 +42,8 @@ export interface ProductInput {
   costPrice: number;
   salePrice: number;
   unit?: UnitType;
+  containedProductId?: string | null;
+  unitsPerBox?: number | null;
   // Usado apenas no cadastro (estoque inicial). Depois, o saldo muda só pelo módulo Estoque.
   currentStock?: number;
   minStock?: number;
@@ -80,7 +85,164 @@ const isNotFound = (error: unknown) =>
 function revalidateProductPaths() {
   revalidatePath("/admin/produtos");
   revalidatePath("/admin/estoque");
+  revalidatePath("/admin/pdv");
   revalidatePath("/catalogo", "layout");
+}
+
+// Chamado sob a trava exclusiva de configuração: nenhuma abertura ou edição concorrente
+// poderá observar um vínculo parcial ou usar fator/custo anterior durante a confirmação.
+async function parseBoxContents(
+  tx: Prisma.TransactionClient,
+  unit: Unit,
+  data: ProductInput,
+  existing?: {
+    id: string;
+    containedProductId: string | null;
+    unitsPerBox: number | null;
+    currentStock: Prisma.Decimal;
+  },
+) {
+  if (!Object.values(Unit).includes(unit))
+    throw new UnpackValidationError("Unidade de medida inválida.");
+  for (const [label, value] of [
+    ["custo", data.costPrice],
+    ["venda", data.salePrice],
+  ] as const) {
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      value > 99_999_999.99
+    ) {
+      throw new UnpackValidationError(
+        `O preço de ${label} deve ser um valor válido e não negativo.`,
+      );
+    }
+  }
+  const containedProductId =
+    data.containedProductId === undefined
+      ? (existing?.containedProductId ?? null)
+      : typeof data.containedProductId === "string"
+        ? data.containedProductId.trim() || null
+        : null;
+  const unitsPerBox = containedProductId
+    ? data.unitsPerBox === undefined
+      ? (existing?.unitsPerBox ?? null)
+      : data.unitsPerBox
+    : null;
+  const sources = existing
+    ? await tx.product.findMany({
+        where: { containedProductId: existing.id, deletedAt: null },
+        select: { id: true },
+      })
+    : [];
+  await lockUnpackProducts(tx, [
+    ...(existing ? [existing.id] : []),
+    ...(containedProductId ? [containedProductId] : []),
+    ...sources.map((p) => p.id),
+  ]);
+  if (sources.length && unit !== Unit.UN) {
+    throw new UnpackValidationError(
+      "Este avulso está vinculado a uma caixa e precisa continuar com unidade UN. Desvincule a caixa primeiro.",
+    );
+  }
+  const lockedExisting = existing
+    ? await tx.product.findUnique({ where: { id: existing.id } })
+    : null;
+  if (
+    lockedExisting &&
+    (unit === Unit.UN || unit === Unit.CX) &&
+    !lockedExisting.currentStock.isInteger()
+  ) {
+    throw new UnpackValidationError(
+      "Ajuste o estoque para um saldo inteiro antes de alterar a unidade para UN ou CX.",
+    );
+  }
+  if (!containedProductId) {
+    if (data.unitsPerBox !== undefined && data.unitsPerBox !== null) {
+      throw new UnpackValidationError(
+        "Selecione o produto avulso para informar unidades por caixa.",
+      );
+    }
+    return { containedProductId: null, unitsPerBox: null };
+  }
+  if (unit !== Unit.CX)
+    throw new UnpackValidationError(
+      "Somente produtos com unidade CX podem ter unidades avulsas vinculadas.",
+    );
+  if (containedProductId === existing?.id)
+    throw new UnpackValidationError("Uma caixa não pode conter o próprio produto.");
+  if (!Number.isInteger(unitsPerBox) || (unitsPerBox ?? 0) < 2 || (unitsPerBox ?? 0) > 1_000_000) {
+    throw new UnpackValidationError("Informe de 2 a 1.000.000 unidades inteiras por caixa.");
+  }
+  const destination = await tx.product.findFirst({
+    where: { id: containedProductId, deletedAt: null },
+  });
+  if (!destination || destination.unit !== Unit.UN) {
+    throw new UnpackValidationError("Selecione um produto avulso ativo com unidade UN.");
+  }
+  const owner = await tx.product.findFirst({
+    where: { containedProductId, ...(existing ? { NOT: { id: existing.id } } : {}) },
+    select: { id: true },
+  });
+  if (owner)
+    throw new UnpackValidationError("Este produto avulso já está vinculado a outra caixa.");
+  return { containedProductId, unitsPerBox: unitsPerBox as number };
+}
+
+async function readProducts(
+  user: SessionUser,
+  searchQuery?: string,
+  categoryId?: string,
+): Promise<ProductItem[]> {
+  const canSeeCost = can(user.role, "catalog.manage");
+
+  // Produtos excluídos (exclusão lógica) não aparecem nas listagens
+  const whereClause: Prisma.ProductWhereInput = { deletedAt: null };
+
+  if (searchQuery && searchQuery.trim() !== "") {
+    const q = searchQuery.trim();
+    whereClause.OR = [
+      { name: { contains: q, mode: "insensitive" } },
+      { barcode: { contains: q, mode: "insensitive" } },
+      { sku: { contains: q, mode: "insensitive" } },
+    ];
+  }
+
+  if (categoryId && categoryId !== "ALL") {
+    whereClause.categoryId = categoryId;
+  }
+
+  const products = await prisma.product.findMany({
+    where: whereClause,
+    include: {
+      category: {
+        select: { id: true, name: true },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+
+  return products.map((p) => ({
+    id: p.id,
+    name: p.name,
+    sku: p.sku,
+    barcode: p.barcode,
+    ...(canSeeCost ? { costPrice: Number(p.costPrice) } : {}),
+    salePrice: Number(p.salePrice),
+    unit: p.unit as UnitType,
+    containedProductId: p.containedProductId,
+    unitsPerBox: p.unitsPerBox,
+    currentStock: Number(p.currentStock),
+    minStock: Number(p.minStock),
+    categoryId: p.categoryId,
+    categoryName: p.category?.name ?? null,
+    showInCatalog: p.showInCatalog,
+    description: p.description,
+    imageUrl: p.imageUrl,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+  }));
 }
 
 export async function getProducts(
@@ -90,55 +252,29 @@ export async function getProducts(
   try {
     const authz = await authorize("catalog.view");
     if (!authz.ok) return [];
-    const canSeeCost = can(authz.user.role, "catalog.manage");
-
-    // Produtos excluídos (exclusão lógica) não aparecem nas listagens
-    const whereClause: Prisma.ProductWhereInput = { deletedAt: null };
-
-    if (searchQuery && searchQuery.trim() !== "") {
-      const q = searchQuery.trim();
-      whereClause.OR = [
-        { name: { contains: q, mode: "insensitive" } },
-        { barcode: { contains: q, mode: "insensitive" } },
-        { sku: { contains: q, mode: "insensitive" } },
-      ];
-    }
-
-    if (categoryId && categoryId !== "ALL") {
-      whereClause.categoryId = categoryId;
-    }
-
-    const products = await prisma.product.findMany({
-      where: whereClause,
-      include: {
-        category: {
-          select: { id: true, name: true },
-        },
-      },
-      orderBy: { name: "asc" },
-    });
-
-    return products.map((p) => ({
-      id: p.id,
-      name: p.name,
-      sku: p.sku,
-      barcode: p.barcode,
-      ...(canSeeCost ? { costPrice: Number(p.costPrice) } : {}),
-      salePrice: Number(p.salePrice),
-      unit: p.unit as UnitType,
-      currentStock: Number(p.currentStock),
-      minStock: Number(p.minStock),
-      categoryId: p.categoryId,
-      categoryName: p.category?.name ?? null,
-      showInCatalog: p.showInCatalog,
-      description: p.description,
-      imageUrl: p.imageUrl,
-      createdAt: p.createdAt.toISOString(),
-      updatedAt: p.updatedAt.toISOString(),
-    }));
+    return await readProducts(authz.user, searchQuery, categoryId);
   } catch (error) {
     console.error("Erro ao buscar produtos:", error);
     return [];
+  }
+}
+
+// A atualização depois de uma abertura distingue lista vazia legítima de falha do servidor.
+// Produtos excluídos não impedem verificar uma abertura que já tem histórico confirmado.
+export async function refreshUnpackProducts(): Promise<
+  { success: true; products: ProductItem[] } | { success: false; error: string }
+> {
+  try {
+    const authz = await authorize("catalog.view");
+    if (!authz.ok) return { success: false, error: authz.error };
+    return { success: true, products: await readProducts(authz.user) };
+  } catch (error) {
+    console.error("Erro ao atualizar produtos após abertura:", error);
+    return {
+      success: false,
+      error:
+        "Não foi possível atualizar os saldos. Verifique a abertura novamente antes de continuar.",
+    };
   }
 }
 
@@ -193,6 +329,8 @@ export async function createProduct(data: ProductInput) {
 
     // O estoque inicial gera a primeira movimentação, mantendo o histórico completo
     const newProduct = await prisma.$transaction(async (tx) => {
+      await lockUnpackConfiguration(tx, true);
+      const contents = await parseBoxContents(tx, unit, data);
       const product = await tx.product.create({
         data: {
           name,
@@ -201,6 +339,7 @@ export async function createProduct(data: ProductInput) {
           costPrice: data.costPrice ?? 0,
           salePrice: data.salePrice ?? 0,
           unit,
+          ...contents,
           currentStock: initialStock,
           minStock: data.minStock ?? 0,
           categoryId: data.categoryId || null,
@@ -229,6 +368,7 @@ export async function createProduct(data: ProductInput) {
     // Só o id: objetos Decimal do Prisma não podem ser enviados ao cliente
     return { success: true, data: { id: newProduct.id } };
   } catch (error) {
+    if (error instanceof UnpackValidationError) return { success: false, error: error.message };
     console.error("Erro ao criar produto:", error);
     return { success: false, error: "Falha ao criar o produto." };
   }
@@ -276,27 +416,36 @@ export async function updateProduct(id: string, data: ProductInput) {
       }
     }
 
-    const updatedProduct = await prisma.product.update({
-      where: { id, deletedAt: null },
-      data: {
-        name,
-        sku,
-        barcode,
-        costPrice: data.costPrice ?? 0,
-        salePrice: data.salePrice ?? 0,
-        unit: (data.unit as Unit) || Unit.UN,
-        // currentStock não é alterado aqui: use registerStockEntry/adjustStock (src/actions/stock.ts)
-        minStock: data.minStock ?? 0,
-        categoryId: data.categoryId || null,
-        showInCatalog: catalog.showInCatalog,
-        description: catalog.description,
-        imageUrl: catalog.imageUrl,
-      },
+    const updatedProduct = await prisma.$transaction(async (tx) => {
+      await lockUnpackConfiguration(tx, true);
+      const existing = await tx.product.findUnique({ where: { id, deletedAt: null } });
+      if (!existing) throw new UnpackValidationError(PRODUCT_NOT_FOUND);
+      const unit = (data.unit as Unit) || existing.unit;
+      const contents = await parseBoxContents(tx, unit, data, existing);
+      return tx.product.update({
+        where: { id, deletedAt: null },
+        data: {
+          name,
+          sku,
+          barcode,
+          costPrice: data.costPrice ?? 0,
+          salePrice: data.salePrice ?? 0,
+          unit,
+          ...contents,
+          // currentStock não é alterado aqui: use registerStockEntry/adjustStock (src/actions/stock.ts)
+          minStock: data.minStock ?? 0,
+          categoryId: data.categoryId || null,
+          showInCatalog: catalog.showInCatalog,
+          description: catalog.description,
+          imageUrl: catalog.imageUrl,
+        },
+      });
     });
 
     revalidateProductPaths();
     return { success: true, data: { id: updatedProduct.id } };
   } catch (error) {
+    if (error instanceof UnpackValidationError) return { success: false, error: error.message };
     if (isNotFound(error)) return { success: false, error: PRODUCT_NOT_FOUND };
     console.error("Erro ao atualizar produto:", error);
     return { success: false, error: "Falha ao atualizar o produto." };
@@ -310,9 +459,24 @@ export async function deleteProduct(id: string) {
 
     // Exclusão lógica: o produto some das listagens e do catálogo, e o PDV offline recebe a
     // exclusão na próxima sincronização. Vendas e movimentações continuam com o histórico.
-    await prisma.product.update({
-      where: { id, deletedAt: null },
-      data: { deletedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      await lockUnpackConfiguration(tx, true);
+      const linked = await tx.product.findMany({
+        where: { OR: [{ id }, { containedProductId: id }] },
+        select: { id: true },
+      });
+      await lockUnpackProducts(
+        tx,
+        linked.map((p) => p.id),
+      );
+      await tx.product.updateMany({
+        where: { containedProductId: id },
+        data: { containedProductId: null, unitsPerBox: null },
+      });
+      await tx.product.update({
+        where: { id, deletedAt: null },
+        data: { deletedAt: new Date(), containedProductId: null, unitsPerBox: null },
+      });
     });
 
     revalidateProductPaths();

@@ -20,6 +20,10 @@ export interface StockMovementItem {
   reason: string | null;
   // Custo da entrada: omitido para quem não tem `catalog.manage` (mesma regra do preço de custo)
   unitCost?: number | null;
+  totalCost?: number | null;
+  conversionId?: string | null;
+  // Rateio em centavos: unitCost é o piso; este número de unidades recebe mais R$ 0,01.
+  extraCostUnits?: number | null;
   userName: string | null;
   supplierName: string | null;
   createdAt: string;
@@ -124,6 +128,7 @@ export async function getStockMovements(
           product: { select: { name: true, unit: true } },
           user: { select: { name: true } },
           supplier: { select: { name: true } },
+          conversion: { select: { extraCostUnits: true } },
         },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take,
@@ -142,6 +147,14 @@ export async function getStockMovements(
         quantity: Number(m.quantity),
         reason: m.reason,
         ...(canSeeCost ? { unitCost: m.unitCost === null ? null : Number(m.unitCost) } : {}),
+        ...(canSeeCost
+          ? {
+              totalCost: m.totalCost === null ? null : Number(m.totalCost),
+              extraCostUnits:
+                m.type === MovementType.IN ? (m.conversion?.extraCostUnits ?? null) : null,
+            }
+          : {}),
+        conversionId: m.conversionId,
         userName: m.user?.name ?? null,
         supplierName: m.supplier?.name ?? null,
         createdAt: m.createdAt.toISOString(),

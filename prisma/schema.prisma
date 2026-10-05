@@ -110,28 +110,29 @@ enum ReceivableStatus {
 }
 
 model User {
-  id                 String              @id @default(cuid())
-  name               String
-  email              String              @unique
-  password           String
-  role               Role                @default(SELLER)
+  id                  String                @id @default(cuid())
+  name                String
+  email               String                @unique
+  password            String
+  role                Role                  @default(SELLER)
   // Usuário desativado não entra nem usa sessões já abertas (não há exclusão física)
-  active             Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  sales              Sale[]
-  stockMovements     StockMovement[]
-  cashRegisters      CashRegister[]
-  cashMovements      CashMovement[]
-  receivablePayments ReceivablePayment[]
-  syncOperations     SyncOperation[]     @relation("SyncOperationAuthor")
-  resolvedOperations SyncOperation[]     @relation("SyncOperationResolver")
-  submittedOperations SyncOperation[]    @relation("SyncOperationSubmitter")
-  registeredDevices  OfflineDevice[]     @relation("OfflineDeviceRegisteredBy")
-  revokedDevices     OfflineDevice[]     @relation("OfflineDeviceRevokedBy")
-  offlineGrants      OfflineGrant[]
-  acknowledgedIssues ReconciliationIssue[]
-  testDataRuns       TestDataRun[]
+  active              Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  sales               Sale[]
+  stockMovements      StockMovement[]
+  cashRegisters       CashRegister[]
+  cashMovements       CashMovement[]
+  receivablePayments  ReceivablePayment[]
+  syncOperations      SyncOperation[]       @relation("SyncOperationAuthor")
+  resolvedOperations  SyncOperation[]       @relation("SyncOperationResolver")
+  submittedOperations SyncOperation[]       @relation("SyncOperationSubmitter")
+  registeredDevices   OfflineDevice[]       @relation("OfflineDeviceRegisteredBy")
+  revokedDevices      OfflineDevice[]       @relation("OfflineDeviceRevokedBy")
+  offlineGrants       OfflineGrant[]
+  acknowledgedIssues  ReconciliationIssue[]
+  testDataRuns        TestDataRun[]
+  unpackConversions   UnpackConversion[]
 }
 
 // Exclusão lógica (deletedAt) e versão de sincronização (syncVersion) em Category, Product e
@@ -140,42 +141,49 @@ model User {
 // (o Prisma 6 não os declara e também não tenta removê-los). syncVersion é preenchida por gatilho
 // no banco com o id da transação que gravou a linha; nunca é definida pela aplicação.
 model Category {
-  id          String    @id @default(cuid())
-  name        String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  syncVersion BigInt    @default(0)
-  products    Product[]
-  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
+  id            String    @id @default(cuid())
+  name          String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncVersion   BigInt    @default(0)
+  products      Product[]
+  testDataRunId String?   @db.Uuid // Geração de dados de teste que criou o registro (#67)
 
   @@index([syncVersion, id])
 }
 
 model Product {
-  id             String          @id @default(cuid())
-  name           String
-  sku            String?
-  barcode        String?
-  costPrice      Decimal         @db.Decimal(10, 2)
-  salePrice      Decimal         @db.Decimal(10, 2)
-  unit           Unit            @default(UN)
-  currentStock   Decimal         @default(0) @db.Decimal(10, 3)
-  minStock       Decimal         @default(0) @db.Decimal(10, 3)
-  categoryId     String?
-  category       Category?       @relation(fields: [categoryId], references: [id])
+  id                   String                @id @default(cuid())
+  name                 String
+  sku                  String?
+  barcode              String?
+  costPrice            Decimal               @db.Decimal(10, 2)
+  salePrice            Decimal               @db.Decimal(10, 2)
+  unit                 Unit                  @default(UN)
+  currentStock         Decimal               @default(0) @db.Decimal(10, 3)
+  minStock             Decimal               @default(0) @db.Decimal(10, 3)
+  categoryId           String?
+  category             Category?             @relation(fields: [categoryId], references: [id])
+  // Uma caixa CX abre somente este produto UN; cada avulso tem uma única origem.
+  containedProductId   String?               @unique
+  unitsPerBox          Int?
+  containedProduct     Product?              @relation("BoxContents", fields: [containedProductId], references: [id], onDelete: Restrict)
+  sourceBox            Product?              @relation("BoxContents")
+  boxConversions       UnpackConversion[]    @relation("UnpackBox")
+  unitConversions      UnpackConversion[]    @relation("UnpackUnit")
   // Catálogo público (/catalogo): opt-in por produto; imagem por URL externa (sem upload)
-  showInCatalog  Boolean         @default(false)
-  description    String?
-  imageUrl       String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  deletedAt      DateTime?
-  syncVersion    BigInt          @default(0)
-  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
-  saleItems      SaleItem[]
-  stockMovements StockMovement[]
-  priceHistory   ProductPrice[]
+  showInCatalog        Boolean               @default(false)
+  description          String?
+  imageUrl             String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  deletedAt            DateTime?
+  syncVersion          BigInt                @default(0)
+  saleItems            SaleItem[]
+  stockMovements       StockMovement[]
+  priceHistory         ProductPrice[]
+  testDataRunId        String?               @db.Uuid // Geração de dados de teste (#67)
   reconciliationIssues ReconciliationIssue[]
 
   @@index([syncVersion, id])
@@ -195,43 +203,43 @@ model ProductPrice {
 }
 
 model Customer {
-  id          String       @id @default(cuid())
-  name        String
-  document    String?
-  phone       String?
-  email       String?
-  address     String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  deletedAt   DateTime?
-  syncVersion BigInt       @default(0)
-  sales       Sale[]
-  receivables Receivable[]
-  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
+  id            String       @id @default(cuid())
+  name          String
+  document      String?
+  phone         String?
+  email         String?
+  address       String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+  syncVersion   BigInt       @default(0)
+  sales         Sale[]
+  receivables   Receivable[]
+  testDataRunId String?      @db.Uuid // Geração de dados de teste que criou o registro (#67)
 
   @@index([syncVersion, id])
 }
 
 model Sale {
-  id             String        @id @default(cuid())
-  code           Int           @default(autoincrement())
-  total          Decimal       @db.Decimal(10, 2)
-  discount       Decimal       @default(0) @db.Decimal(10, 2)
-  paymentMethod  PaymentMethod
-  userId         String
-  user           User          @relation(fields: [userId], references: [id])
-  customerId     String?
-  customer       Customer?     @relation(fields: [customerId], references: [id])
+  id                   String                @id @default(cuid())
+  code                 Int                   @default(autoincrement())
+  total                Decimal               @db.Decimal(10, 2)
+  discount             Decimal               @default(0) @db.Decimal(10, 2)
+  paymentMethod        PaymentMethod
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id])
+  customerId           String?
+  customer             Customer?             @relation(fields: [customerId], references: [id])
   // Opcional: vendas anteriores ao controle de caixa não têm turno
-  cashRegisterId String?
-  cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
+  cashRegisterId       String?
+  cashRegister         CashRegister?         @relation(fields: [cashRegisterId], references: [id])
   // Quando a venda aconteceu (vale para relatórios, dashboard e vencimento do Fiado) e quando o
   // servidor a recebeu. Na venda online são iguais; na offline (#38) occurredAt vem do aparelho.
-  occurredAt     DateTime
-  createdAt      DateTime      @default(now())
-  items          SaleItem[]
-  receivable     Receivable?
-  syncOperation  SyncOperation?
+  occurredAt           DateTime
+  createdAt            DateTime              @default(now())
+  items                SaleItem[]
+  receivable           Receivable?
+  syncOperation        SyncOperation?
   reconciliationIssues ReconciliationIssue[]
 
   @@index([occurredAt])
@@ -252,51 +260,86 @@ model SaleItem {
 // IN/OUT guardam quantidade positiva; ADJUSTMENT guarda o delta com sinal
 // (saldo contado - saldo anterior). Todo saldo de Product muda via movimentação.
 model StockMovement {
-  id         String       @id @default(cuid())
-  productId  String
-  product    Product      @relation(fields: [productId], references: [id])
-  type       MovementType
-  quantity   Decimal      @db.Decimal(10, 3)
-  reason     String?
-  unitCost   Decimal?     @db.Decimal(10, 2)
-  userId     String?
-  user       User?        @relation(fields: [userId], references: [id])
-  supplierId String?
-  supplier   Supplier?    @relation(fields: [supplierId], references: [id])
-  createdAt  DateTime     @default(now())
-  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
+  id            String            @id @default(cuid())
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id])
+  type          MovementType
+  quantity      Decimal           @db.Decimal(10, 3)
+  reason        String?
+  unitCost      Decimal?          @db.Decimal(10, 2)
+  // Conversões usam rateio exato: unitCost é o piso por unidade, totalCost inclui o restante.
+  totalCost     Decimal?          @db.Decimal(18, 2)
+  conversionId  String?           @db.Uuid
+  conversion    UnpackConversion? @relation(fields: [conversionId], references: [id], onDelete: Restrict)
+  userId        String?
+  user          User?             @relation(fields: [userId], references: [id])
+  supplierId    String?
+  supplier      Supplier?         @relation(fields: [supplierId], references: [id])
+  createdAt     DateTime          @default(now())
+  testDataRunId String?           @db.Uuid // Geração de dados de teste (#67)
 
   @@index([productId, createdAt])
+  @@index([conversionId])
+}
+
+// Abertura física, independente da venda. Snapshot imutável preserva vínculo/fator/custos
+// mesmo depois de editar ou excluir logicamente os produtos. O rateio usa centavos inteiros:
+// unitCostBase para todas as unidades e +0,01 para extraCostUnits delas (sem perda por dízima).
+model UnpackConversion {
+  id              String          @id @db.Uuid // operationId da confirmação
+  payloadHash     String
+  boxProductId    String
+  boxProduct      Product         @relation("UnpackBox", fields: [boxProductId], references: [id])
+  unitProductId   String
+  unitProduct     Product         @relation("UnpackUnit", fields: [unitProductId], references: [id])
+  boxProductName  String
+  unitProductName String
+  unitsPerBox     Int
+  boxQuantity     Int
+  unitQuantity    Int
+  boxUnitCost     Decimal         @db.Decimal(10, 2)
+  totalCost       Decimal         @db.Decimal(18, 2)
+  unitCostBase    Decimal         @db.Decimal(10, 2)
+  extraCostUnits  Int
+  appliedTxid     BigInt
+  userId          String
+  user            User            @relation(fields: [userId], references: [id])
+  createdAt       DateTime        @default(now())
+  stockMovements  StockMovement[]
+
+  @@index([boxProductId, createdAt])
+  @@index([unitProductId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model StoreSettings {
-  id                 String     @id @default("default")
-  personType         PersonType @default(COMPANY)
-  companyName        String   // Razão Social (PJ) ou Nome completo (PF)
-  tradeName          String   // Nome Fantasia / Nome da loja
-  document           String?  // CNPJ (PJ) ou CPF (PF), sem pontuação (opcional)
-  stateRegistration  String?  // Inscrição Estadual (opcional)
-  phone              String?  // Telefone / WhatsApp, só dígitos com DDD
-  email              String?  // E-mail de Contato
-  zipCode            String?  // CEP, só dígitos
-  address            String?  // Logradouro (Rua, Av...)
-  number             String?  // Número
-  neighborhood       String?  // Bairro
-  city               String?  // Cidade
-  state              String?  // Estado / UF
-  instagram          String?  // @usuario ou URL
-  facebook           String?  // URL do Facebook
-  website            String?  // URL do site
-  receiptFooterNote  String?  // Mensagem no rodapé do recibo
-  whatsappNumber     String?  // WhatsApp do catálogo, só dígitos com DDI (ex.: 5511999998888)
-  catalogEnabled     Boolean  @default(false) // Catálogo público (/catalogo) ativo
+  id                    String     @id @default("default")
+  personType            PersonType @default(COMPANY)
+  companyName           String // Razão Social (PJ) ou Nome completo (PF)
+  tradeName             String // Nome Fantasia / Nome da loja
+  document              String? // CNPJ (PJ) ou CPF (PF), sem pontuação (opcional)
+  stateRegistration     String? // Inscrição Estadual (opcional)
+  phone                 String? // Telefone / WhatsApp, só dígitos com DDD
+  email                 String? // E-mail de Contato
+  zipCode               String? // CEP, só dígitos
+  address               String? // Logradouro (Rua, Av...)
+  number                String? // Número
+  neighborhood          String? // Bairro
+  city                  String? // Cidade
+  state                 String? // Estado / UF
+  instagram             String? // @usuario ou URL
+  facebook              String? // URL do Facebook
+  website               String? // URL do site
+  receiptFooterNote     String? // Mensagem no rodapé do recibo
+  whatsappNumber        String? // WhatsApp do catálogo, só dígitos com DDI (ex.: 5511999998888)
+  catalogEnabled        Boolean    @default(false) // Catálogo público (/catalogo) ativo
   // Venda no Fiado (issue #29): os padrões mantêm o comportamento anterior (permitido, sem regras)
-  onAccountEnabled      Boolean  @default(true)  // Desligado: o PDV e o servidor recusam o Fiado
-  onAccountDueDays      Int?     // Prazo do título em dias corridos; nulo = sem vencimento
-  onAccountCreditLimit  Decimal? @db.Decimal(10, 2) // Saldo em aberto + venda, por cliente; nulo = sem limite
-  onAccountBlockOverdue Boolean  @default(false) // Bloqueia o Fiado de cliente com título vencido
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  onAccountEnabled      Boolean    @default(true) // Desligado: o PDV e o servidor recusam o Fiado
+  onAccountDueDays      Int? // Prazo do título em dias corridos; nulo = sem vencimento
+  onAccountCreditLimit  Decimal?   @db.Decimal(10, 2) // Saldo em aberto + venda, por cliente; nulo = sem limite
+  onAccountBlockOverdue Boolean    @default(false) // Bloqueia o Fiado de cliente com título vencido
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 }
 
 model Supplier {
@@ -309,7 +352,7 @@ model Supplier {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   stockMovements StockMovement[]
-  testDataRunId String? @db.Uuid // Geração de dados de teste que criou o registro (#67)
+  testDataRunId  String?         @db.Uuid // Geração de dados de teste que criou o registro (#67)
 }
 
 // Turno de caixa por operador. openUserId fica preenchido apenas enquanto o caixa está
@@ -387,35 +430,35 @@ model ReceivablePayment {
 // Operação offline (#38): o payload fica guardado para a conciliação, e um conflito é gravado com
 // a situação CONFLICT e nenhum efeito.
 model SyncOperation {
-  id              String               @id @db.Uuid // operationId gerado no PDV / aparelho
+  id              String              @id @db.Uuid // operationId gerado no PDV / aparelho
   kind            SyncOperationKind
-  status          SyncOperationStatus  @default(APPLIED)
+  status          SyncOperationStatus @default(APPLIED)
   payloadHash     String // SHA-256 (hex) do payload canônico
   // Operação offline normalizada (envelope e venda), usada para aprovar um conflito; nulo no online
   payload         Json?
   userId          String // Operador original
-  user            User                 @relation("SyncOperationAuthor", fields: [userId], references: [id])
-  deviceId        String?              @db.Uuid // Aparelho registrado (#37); nulo no PDV online
-  device          OfflineDevice?       @relation(fields: [deviceId], references: [id])
-  grantId         String?              @db.Uuid // Autorização offline usada; nulo no online
-  grant           OfflineGrant?        @relation(fields: [grantId], references: [id])
+  user            User                @relation("SyncOperationAuthor", fields: [userId], references: [id])
+  deviceId        String?             @db.Uuid // Aparelho registrado (#37); nulo no PDV online
+  device          OfflineDevice?      @relation(fields: [deviceId], references: [id])
+  grantId         String?             @db.Uuid // Autorização offline usada; nulo no online
+  grant           OfflineGrant?       @relation(fields: [grantId], references: [id])
   cashRegisterId  String? // Caixa original
-  cashRegister    CashRegister?        @relation(fields: [cashRegisterId], references: [id])
-  saleId          String?              @unique
-  sale            Sale?                @relation(fields: [saleId], references: [id])
+  cashRegister    CashRegister?       @relation(fields: [cashRegisterId], references: [id])
+  saleId          String?             @unique
+  sale            Sale?               @relation(fields: [saleId], references: [id])
   occurredAt      DateTime // Instante da operação no aparelho (como enviado)
-  receivedAt      DateTime             @default(now()) // Instante de recebimento no servidor
+  receivedAt      DateTime            @default(now()) // Instante de recebimento no servidor
   // Id da transação que gravou os efeitos (pg_current_xact_id): o aparelho compara com o limite da
   // cópia local para saber quando a baixa de estoque já chegou nela
   appliedTxid     BigInt?
   conflictReason  SyncConflictReason?
   conflictMessage String?
   resolvedById    String?
-  resolvedBy      User?                @relation("SyncOperationResolver", fields: [resolvedById], references: [id])
+  resolvedBy      User?               @relation("SyncOperationResolver", fields: [resolvedById], references: [id])
   // Gerente que enviou a operação em nome do operador original (envio assistido, #38); nulo no
   // envio pelo próprio operador
   submittedById   String?
-  submittedBy     User?                @relation("SyncOperationSubmitter", fields: [submittedById], references: [id])
+  submittedBy     User?               @relation("SyncOperationSubmitter", fields: [submittedById], references: [id])
   resolvedAt      DateTime?
   resolutionNote  String?
 
@@ -449,15 +492,15 @@ model ReconciliationIssue {
 // primeira preparação e reaproveitado pelos operadores que preparam o mesmo navegador. Aparelho
 // revogado não recebe nova autorização offline.
 model OfflineDevice {
-  id             String         @id @default(uuid()) @db.Uuid
+  id             String          @id @default(uuid()) @db.Uuid
   name           String
   registeredById String
-  registeredBy   User           @relation("OfflineDeviceRegisteredBy", fields: [registeredById], references: [id])
-  createdAt      DateTime       @default(now())
+  registeredBy   User            @relation("OfflineDeviceRegisteredBy", fields: [registeredById], references: [id])
+  createdAt      DateTime        @default(now())
   lastSyncAt     DateTime? // Última preparação ou renovação neste aparelho
   revokedAt      DateTime?
   revokedById    String?
-  revokedBy      User?          @relation("OfflineDeviceRevokedBy", fields: [revokedById], references: [id])
+  revokedBy      User?           @relation("OfflineDeviceRevokedBy", fields: [revokedById], references: [id])
   grants         OfflineGrant[]
   operations     SyncOperation[]
 }
@@ -466,20 +509,20 @@ model OfflineDevice {
 // operador, um aparelho e o caixa aberto dele, por no máximo 12 horas. Os instantes são do
 // servidor; o aparelho só os usa para avisar e bloquear localmente.
 model OfflineGrant {
-  id             String        @id @default(uuid()) @db.Uuid
-  deviceId       String        @db.Uuid
-  device         OfflineDevice @relation(fields: [deviceId], references: [id])
-  userId         String
-  user           User          @relation(fields: [userId], references: [id])
-  cashRegisterId String
-  cashRegister   CashRegister  @relation(fields: [cashRegisterId], references: [id])
-  issuedAt       DateTime      @default(now())
-  expiresAt      DateTime
+  id                String          @id @default(uuid()) @db.Uuid
+  deviceId          String          @db.Uuid
+  device            OfflineDevice   @relation(fields: [deviceId], references: [id])
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
+  cashRegisterId    String
+  cashRegister      CashRegister    @relation(fields: [cashRegisterId], references: [id])
+  issuedAt          DateTime        @default(now())
+  expiresAt         DateTime
   // Vendas desta autorização ainda não gravadas no servidor, informadas pelo aparelho (#38): o
   // fechamento do caixa avisa quando algum aparelho ainda tem vendas dele
   pendingCount      Int?
   pendingReportedAt DateTime?
-  operations     SyncOperation[]
+  operations        SyncOperation[]
 
   @@index([deviceId, userId, issuedAt])
   @@index([cashRegisterId])

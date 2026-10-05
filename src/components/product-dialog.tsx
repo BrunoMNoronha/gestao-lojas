@@ -36,6 +36,7 @@ interface ProductDialogProps {
   // Novo produto já com o código de barras lido pela câmera
   initialBarcode?: string;
   categories: CategoryData[];
+  products: ProductItem[];
   onSuccess: () => void;
 }
 
@@ -54,6 +55,8 @@ function toFormData(product?: ProductItem | null, initialBarcode?: string): Prod
       showInCatalog: false,
       description: "",
       imageUrl: "",
+      containedProductId: null,
+      unitsPerBox: null,
     };
   }
   return {
@@ -70,6 +73,8 @@ function toFormData(product?: ProductItem | null, initialBarcode?: string): Prod
     showInCatalog: product.showInCatalog,
     description: product.description || "",
     imageUrl: product.imageUrl || "",
+    containedProductId: product.containedProductId ?? null,
+    unitsPerBox: product.unitsPerBox ?? null,
   };
 }
 
@@ -79,6 +84,7 @@ export function ProductDialog({
   productToEdit,
   initialBarcode,
   categories,
+  products,
   onSuccess,
 }: ProductDialogProps) {
   const [formData, setFormData] = useState<ProductInput>(() =>
@@ -87,6 +93,17 @@ export function ProductDialog({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const eligibleUnits = products.filter(
+    (product) =>
+      product.unit === "UN" &&
+      product.id !== productToEdit?.id &&
+      !products.some(
+        (box) => box.id !== productToEdit?.id && box.containedProductId === product.id,
+      ),
+  );
+  const originBox = productToEdit
+    ? products.find((box) => box.containedProductId === productToEdit.id)
+    : undefined;
 
   // Reinicia o formulário ao abrir ou trocar o produto editado (ajuste durante o render, sem efeito)
   const [syncedWith, setSyncedWith] = useState({ productToEdit, initialBarcode, open });
@@ -104,6 +121,14 @@ export function ProductDialog({
     e.preventDefault();
     if (!formData.name?.trim()) {
       setError("O nome do produto é obrigatório.");
+      return;
+    }
+    if (
+      formData.unit === "CX" &&
+      formData.containedProductId &&
+      (!Number.isSafeInteger(formData.unitsPerBox) || (formData.unitsPerBox ?? 0) < 2)
+    ) {
+      setError("Informe uma quantidade inteira de pelo menos 2 unidades por caixa.");
       return;
     }
     const imageUrl = formData.imageUrl?.trim();
@@ -234,7 +259,14 @@ export function ProductDialog({
               <OptionSelect
                 id="product-unidade-de-medida"
                 value={formData.unit || "UN"}
-                onValueChange={(v) => setFormData({ ...formData, unit: v as UnitType })}
+                disabled={!!originBox}
+                onValueChange={(v) =>
+                  setFormData({
+                    ...formData,
+                    unit: v as UnitType,
+                    ...(v !== "CX" ? { containedProductId: null, unitsPerBox: null } : {}),
+                  })
+                }
                 options={[
                   { value: "UN", label: "Unidade (UN)" },
                   { value: "KG", label: "Quilograma (KG)" },
@@ -245,6 +277,67 @@ export function ProductDialog({
               />
             </div>
           </div>
+
+          {formData.unit === "CX" && (
+            <fieldset className="space-y-3 rounded-lg border p-3">
+              <legend className="text-foreground px-1 text-xs font-semibold">
+                Venda por caixa e avulso
+              </legend>
+              <div className="space-y-1">
+                <Label htmlFor="product-avulso" className="text-xs font-medium">
+                  Produto avulso gerado ao abrir a caixa
+                </Label>
+                <OptionSelect
+                  id="product-avulso"
+                  value={formData.containedProductId ?? ""}
+                  onValueChange={(value) =>
+                    setFormData({
+                      ...formData,
+                      containedProductId: value || null,
+                      unitsPerBox: value ? (formData.unitsPerBox ?? null) : null,
+                    })
+                  }
+                  options={[
+                    { value: "", label: "Sem desmembramento" },
+                    ...eligibleUnits.map((product) => ({ value: product.id, label: product.name })),
+                  ]}
+                />
+              </div>
+              {formData.containedProductId && (
+                <div className="space-y-1">
+                  <Label htmlFor="product-unidades-por-caixa" className="text-xs font-medium">
+                    Unidades por caixa
+                  </Label>
+                  <Input
+                    id="product-unidades-por-caixa"
+                    type="number"
+                    inputMode="numeric"
+                    min="2"
+                    step="1"
+                    required
+                    value={formData.unitsPerBox ?? ""}
+                    onChange={(event) =>
+                      setFormData({
+                        ...formData,
+                        unitsPerBox: event.target.value === "" ? null : Number(event.target.value),
+                      })
+                    }
+                  />
+                </div>
+              )}
+              <p className="text-muted-foreground text-xs">
+                Cadastre primeiro o produto avulso como UN. Caixa e avulso têm preços e saldos
+                próprios. Ao comprar 3 caixas, registre uma entrada de 3 neste produto.
+              </p>
+            </fieldset>
+          )}
+          {formData.unit === "UN" && (
+            <p className="text-muted-foreground rounded-lg border p-3 text-xs">
+              {originBox
+                ? `Recebe ${originBox.unitsPerBox} unidades ao abrir uma caixa de ${originBox.name}.`
+                : "Para vender também por caixa, cadastre a caixa como CX e vincule este produto avulso."}
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">

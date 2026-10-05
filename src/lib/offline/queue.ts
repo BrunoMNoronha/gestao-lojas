@@ -9,6 +9,8 @@ import {
   type LocalOperationStatus,
 } from "@/lib/offline/db";
 import {
+  availableStock,
+  reservedQuantities,
   buildSaleOperation,
   compareQueueOrder,
   newLocalOperation,
@@ -17,6 +19,7 @@ import {
   type PdvSaleDraft,
 } from "@/lib/offline/sale-operation";
 import { offlineBlock } from "@/lib/offline/sync";
+import { withPdvStockLock } from "@/lib/offline/stock-lock";
 
 // Fila de vendas do /pdv (issue #38, docs/OFFLINE.md seções 4 e 5). Só roda no navegador.
 // A venda é gravada no IndexedDB antes de o recibo aparecer e enviada pelo
@@ -41,9 +44,12 @@ const SENDABLE: LocalOperationStatus[] = ["pending", "syncing", "failed", "confl
  * 24 h, caixa da autorização) com o relógio do aparelho, só para bloquear localmente. Falha de
  * gravação ou de cota sobe como erro: a venda não é confirmada e o carrinho fica como está.
  */
-export async function recordSale(userId: string, draft: PdvSaleDraft): Promise<LocalOperation> {
-  const db = userDb(userId);
+export function recordSale(userId: string, draft: PdvSaleDraft): Promise<LocalOperation> {
+  return withPdvStockLock(userId, () => recordSaleUnlocked(userId, draft));
+}
 
+async function recordSaleUnlocked(userId: string, draft: PdvSaleDraft): Promise<LocalOperation> {
+  const db = userDb(userId);
   // Nova tentativa da mesma venda (o terminal reaproveita a chave enquanto o carrinho não muda),
   // ex.: a gravação deu certo e algo falhou depois. Devolve a venda já gravada; com outros dados,
   // a chave é recusada (nunca sobrescreve).
@@ -65,12 +71,20 @@ export async function recordSale(userId: string, draft: PdvSaleDraft): Promise<L
     throw new SaleDraftError("Já existe outra venda com esta chave neste aparelho.");
   }
 
-  const [grant, sync, cashRegister, user] = await Promise.all([
+  const [grant, sync, cashRegister, user, unpackPending, products, operations] = await Promise.all([
     readMeta(db, "grant"),
     readMeta(db, "sync"),
     readMeta(db, "cashRegister"),
     readMeta(db, "user"),
+    readMeta(db, "unpackPending"),
+    db.products.toArray(),
+    db.operations.toArray(),
   ]);
+  if (unpackPending) {
+    throw new SaleDraftError(
+      "Verifique a abertura de caixa pendente e atualize os saldos antes de vender.",
+    );
+  }
   const block = offlineBlock({ grant: grant ?? null, sync, cashRegister: cashRegister ?? null });
   if (block || !grant || !user) {
     throw new SaleDraftError(
@@ -90,6 +104,33 @@ export async function recordSale(userId: string, draft: PdvSaleDraft): Promise<L
     }),
     now.getTime(),
   );
+  // A tela de outra aba pode estar atrasada quando recebe a trava: confere o estoque
+  // que está no IndexedDB agora, incluindo todas as reservas ainda não refletidas.
+  // Reenvios de operações já gravadas retornaram acima, sem reaplicar esta guarda.
+  const reserved = reservedQuantities(operations, sync?.watermark);
+  const quantitiesMilli = new Map<string, number>();
+  for (const line of op.request.payload.items) {
+    const quantityMilli = Math.round(Number(line.quantity) * 1000);
+    quantitiesMilli.set(line.productId, (quantitiesMilli.get(line.productId) ?? 0) + quantityMilli);
+  }
+  for (const [productId, quantityMilli] of quantitiesMilli) {
+    const product = products.find((p) => p.id === productId);
+    if (!product)
+      throw new SaleDraftError(
+        "Um produto do carrinho não está mais disponível. Atualize os dados do PDV.",
+      );
+    if (["UN", "CX"].includes(product.unit) && quantityMilli % 1000 !== 0) {
+      throw new SaleDraftError(`"${product.name}" é vendido apenas em quantidades inteiras.`);
+    }
+    const availableMilli = Math.round(
+      availableStock(product.currentStock, reserved.get(productId)) * 1000,
+    );
+    if (quantityMilli > availableMilli) {
+      throw new SaleDraftError(
+        `Estoque insuficiente para "${product.name}". O estoque mudou: confira as quantidades do carrinho.`,
+      );
+    }
+  }
   // Número de ordem e gravação na mesma transação: duas abas gravando juntas nunca repetem o
   // número. A fila é pequena (finalizadas saem em 24 h), então ler todas não pesa. O rascunho do
   // carrinho sai na mesma transação (#53): se a página cair depois, o carrinho vendido não volta;
