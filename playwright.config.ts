@@ -64,6 +64,8 @@ export default defineConfig({
       // Chave fictícia: o login exige o reCAPTCHA no build de produção, e o `siteverify` do
       // Google é simulado no processo do servidor pelo preload abaixo
       RECAPTCHA_SECRET_KEY: "e2e-chave-ficticia",
+      // Seção "Dados de teste" ligada só aqui: fora dos testes ela fica desligada (issue #67)
+      ENABLE_STORE_TEST_TOOLS: "true",
       // Versão nova do app simulada no servidor (tests/e2e/support/mock-app-version.mjs)
       E2E_APP_VERSION_FILE: APP_VERSION_FILE,
       NODE_OPTIONS: [

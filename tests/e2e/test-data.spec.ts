@@ -7,6 +7,7 @@ import { login, preparePdv, searchBox } from "./support/pdv";
 // Seção "Dados de teste" em Configurações (issue #57): o ADMIN gera dados e restaura o banco pela
 // tela, com impedimento por caixa aberto e confirmação forte; os demais perfis não chegam à seção;
 // um PDV preparado antes da restauração recebe a carga completa e não mostra os dados apagados.
+// Issue #67: a remoção seletiva tira só os registros gerados.
 
 const TRADE_NAME = "Loja E2E";
 const ADMIN_EMAIL = "admin@teste.local";
@@ -191,4 +192,41 @@ test("PDV preparado antes da restauração recebe a carga completa sem os dados 
   expect(await localProducts(page, store.seller.id)).toEqual(["Feijão pós-restauração"]);
   await searchBox(page).fill("arroz");
   await expect(page.getByText("Arroz 5kg")).toHaveCount(0);
+});
+
+test("ADMIN remove pela tela só os dados gerados", async ({ context, page }) => {
+  await login(context, ADMIN_EMAIL);
+  await page.goto("/admin/configuracoes");
+  const section = testDataSection(page);
+
+  await section.getByLabel("Categorias").fill("2");
+  await section.getByLabel("Produtos").fill("4");
+  await section.getByLabel("Clientes").fill("2");
+  await section.getByLabel("Fornecedores").fill("1");
+  await section.getByRole("button", { name: "Gerar dados" }).click();
+  await expect(page.getByText(/^Dados de teste gerados:/)).toBeVisible();
+  const generatedName = (
+    await db.product.findFirstOrThrow({ where: { testDataRunId: { not: null } } })
+  ).name;
+  await expect(
+    section.getByText("Ativos agora: 2 categorias, 4 produtos, 2 clientes, 1 fornecedor."),
+  ).toBeVisible();
+
+  await section.getByRole("button", { name: "Remover dados gerados" }).click();
+  await page.getByRole("button", { name: "Remover", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Removidos: 2 categorias, 4 produtos, 2 clientes, 1 fornecedor, 4 movimentações de estoque.",
+    ),
+  ).toBeVisible();
+  await expect(history(page).first()).toContainText("Remoção dos dados gerados");
+  await expect(section.getByText("Nenhum registro gerado ativo.")).toBeVisible();
+  await expect(section.getByRole("button", { name: "Remover dados gerados" })).toBeDisabled();
+
+  // Os cadastros reais continuam; os gerados saem das listas
+  expect(await db.product.count({ where: { deletedAt: null } })).toBe(2);
+  expect(await db.customer.count({ where: { deletedAt: null } })).toBe(1);
+  await page.goto("/admin/produtos");
+  await expect(page.getByText("Arroz 5kg").first()).toBeVisible();
+  await expect(page.getByText(generatedName, { exact: true })).toHaveCount(0);
 });
