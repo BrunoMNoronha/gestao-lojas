@@ -47,6 +47,8 @@ interface ProductsManagerProps {
   initialCategories: CategoryData[];
   // Cadastro, edição e exclusão restritos por perfil (catalog.manage)
   canManage: boolean;
+  // Margem das configurações da loja que sugere o preço de venda de produto novo
+  defaultProfitMargin: number | null;
 }
 
 export function ProductsManager({
@@ -54,6 +56,7 @@ export function ProductsManager({
   pagination,
   initialCategories,
   canManage,
+  defaultProfitMargin,
 }: ProductsManagerProps) {
   const [askConfirm, confirmDialog] = useConfirm();
 
@@ -351,6 +354,7 @@ export function ProductsManager({
         initialBarcode={newProductBarcode}
         categories={initialCategories}
         products={initialProducts}
+        defaultProfitMargin={defaultProfitMargin}
         onSuccess={handleRefreshData}
       />
 

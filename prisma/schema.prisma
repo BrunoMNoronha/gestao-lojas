@@ -354,6 +354,8 @@ model StoreSettings {
   onAccountDueDays      Int? // Prazo do título em dias corridos; nulo = sem vencimento
   onAccountCreditLimit  Decimal?   @db.Decimal(10, 2) // Saldo em aberto + venda, por cliente; nulo = sem limite
   onAccountBlockOverdue Boolean    @default(false) // Bloqueia o Fiado de cliente com título vencido
+  // Margem sobre o custo (%) para sugerir o preço de venda de produto novo; nulo = sem sugestão
+  defaultProfitMargin   Decimal?   @db.Decimal(6, 2)
   createdAt             DateTime   @default(now())
   updatedAt             DateTime   @updatedAt
 }

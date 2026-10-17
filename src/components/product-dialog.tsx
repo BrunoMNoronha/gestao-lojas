@@ -28,6 +28,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { isHttpUrl } from "@/lib/catalog-shared";
 import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
 import { MoneyInput } from "@/components/money-input";
+import { suggestSalePrice } from "@/lib/pricing";
+import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface ProductDialogProps {
@@ -38,6 +40,8 @@ interface ProductDialogProps {
   initialBarcode?: string;
   categories: CategoryData[];
   products: ProductItem[];
+  // Margem sobre o custo (configurações da loja): sugere o preço de venda só de produto novo
+  defaultProfitMargin?: number | null;
   onSuccess: () => void;
 }
 
@@ -86,6 +90,7 @@ export function ProductDialog({
   initialBarcode,
   categories,
   products,
+  defaultProfitMargin = null,
   onSuccess,
 }: ProductDialogProps) {
   const [formData, setFormData] = useState<ProductInput>(() =>
@@ -95,6 +100,13 @@ export function ProductDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<ProductItem | null>(null);
+  // Preço de venda digitado à mão deixa de acompanhar o custo
+  const [salePriceTouched, setSalePriceTouched] = useState(false);
+  const suggestMargin = productToEdit ? null : defaultProfitMargin;
+  const suggestedSalePrice =
+    suggestMargin !== null && (formData.costPrice ?? 0) > 0
+      ? suggestSalePrice(formData.costPrice ?? 0, suggestMargin)
+      : null;
   const originBox =
     productToEdit?.sourceBox ??
     products.find((box) => box.containedProductId === productToEdit?.id);
@@ -108,6 +120,7 @@ export function ProductDialog({
   ) {
     setSyncedWith({ productToEdit, initialBarcode, open });
     setFormData(toFormData(productToEdit, initialBarcode));
+    setSalePriceTouched(false);
     setError(null);
   }
 
@@ -353,7 +366,18 @@ export function ProductDialog({
               <MoneyInput
                 id="product-preco-de-custo-r"
                 value={formData.costPrice || null}
-                onValueChange={(value) => setFormData({ ...formData, costPrice: value ?? 0 })}
+                onValueChange={(value) => {
+                  const costPrice = value ?? 0;
+                  setFormData({
+                    ...formData,
+                    costPrice,
+                    ...(suggestMargin !== null && !salePriceTouched
+                      ? {
+                          salePrice: costPrice > 0 ? suggestSalePrice(costPrice, suggestMargin) : 0,
+                        }
+                      : {}),
+                  });
+                }}
               />
             </div>
             <div className="space-y-1">
@@ -366,9 +390,31 @@ export function ProductDialog({
               <MoneyInput
                 id="product-preco-de-venda-r"
                 value={formData.salePrice || null}
-                onValueChange={(value) => setFormData({ ...formData, salePrice: value ?? 0 })}
+                onValueChange={(value) => {
+                  setSalePriceTouched(true);
+                  setFormData({ ...formData, salePrice: value ?? 0 });
+                }}
                 required
               />
+              {suggestedSalePrice !== null && (
+                <p className="text-muted-foreground flex flex-wrap items-center gap-x-1 text-[11px]">
+                  Sugerido: {formatCurrency(suggestedSalePrice)} (margem{" "}
+                  {String(suggestMargin).replace(".", ",")}% sobre o custo)
+                  {formData.salePrice !== suggestedSalePrice && (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="h-auto p-0 text-[11px]"
+                      onClick={() => {
+                        setSalePriceTouched(false);
+                        setFormData({ ...formData, salePrice: suggestedSalePrice });
+                      }}
+                    >
+                      Aplicar
+                    </Button>
+                  )}
+                </p>
+              )}
             </div>
           </div>
 

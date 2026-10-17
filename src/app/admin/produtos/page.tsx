@@ -1,6 +1,7 @@
 import { getProductPage } from "@/actions/browse";
 import { pageNumber } from "@/lib/pagination";
 import { getCategories } from "@/actions/categories";
+import { getStoreSettings } from "@/actions/settings";
 import { ProductsManager } from "@/components/products-manager";
 import { connection } from "next/server";
 import { requirePageAccess } from "@/lib/authz";
@@ -20,9 +21,10 @@ export default async function ProdutosPage({
   await connection();
   const user = await requirePageAccess("catalog.view");
 
-  const [products, categories] = await Promise.all([
+  const [products, categories, settings] = await Promise.all([
     getProductPage({ ...query, page: pageNumber(query.page) }),
     getCategories(),
+    getStoreSettings(),
   ]);
 
   return (
@@ -31,6 +33,7 @@ export default async function ProdutosPage({
       pagination={{ page: products.page, total: products.total }}
       initialCategories={categories}
       canManage={can(user.role, "catalog.manage")}
+      defaultProfitMargin={settings.defaultProfitMargin ?? null}
     />
   );
 }
