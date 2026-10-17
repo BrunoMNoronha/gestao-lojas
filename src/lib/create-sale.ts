@@ -1,5 +1,6 @@
 import { MovementType, PaymentMethod, Prisma, SyncOperationKind, Unit } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { CATALOG_ORDER_CLOSED_ERROR } from "@/lib/catalog-shared";
 import { lockOwnOpenCashRegisterById } from "@/lib/cash-register";
 import { getOnAccountSettings, unpaidReceivables, type OnAccountSettings } from "@/lib/on-account";
 import { formatStoreDate, startOfStoreDay, storeDueDate } from "@/lib/store-time";
@@ -33,6 +34,9 @@ export interface CreateSaleInput {
   discount: number;
   amountPaid?: number;
   items: SaleItemInput[];
+  // Pedido do catálogo concluído por esta venda (issue #81). O vínculo é gravado na mesma
+  // transação: se o pedido já foi concluído ou cancelado, a venda inteira é recusada.
+  catalogOrderId?: string | null;
 }
 
 // Venda serializável para o cliente (Decimals convertidos para number)
@@ -88,6 +92,7 @@ interface ParsedSale {
   // Só na venda em dinheiro (as demais formas recebem exatamente o total)
   amountPaid: Prisma.Decimal | null;
   quantities: Map<string, Prisma.Decimal>;
+  catalogOrderId: string | null;
   payloadHash: string;
 }
 
@@ -153,6 +158,14 @@ function parseSaleInput(data: CreateSaleInput): ParsedSale {
     throw new SaleValidationError("Venda no Fiado exige um cliente vinculado.");
   }
 
+  const catalogOrderId = data.catalogOrderId || null;
+  if (
+    catalogOrderId !== null &&
+    (typeof catalogOrderId !== "string" || catalogOrderId.length > 64)
+  ) {
+    throw new SaleValidationError("Pedido do catálogo inválido. Recarregue o PDV.");
+  }
+
   // Payload canônico: valores normalizados como texto e itens em ordem estável, para que o
   // mesmo carrinho gere sempre o mesmo hash
   const payloadHash = hashPayload({
@@ -165,6 +178,8 @@ function parseSaleInput(data: CreateSaleInput): ParsedSale {
     items: [...quantities.entries()]
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([productId, qty]) => [productId, qty.toFixed(3)]),
+    // Só entra no hash quando há pedido: vendas sem pedido mantêm o hash de antes
+    ...(catalogOrderId ? { catalogOrderId } : {}),
   });
 
   return {
@@ -175,6 +190,7 @@ function parseSaleInput(data: CreateSaleInput): ParsedSale {
     discount,
     amountPaid,
     quantities,
+    catalogOrderId,
     payloadHash,
   };
 }
@@ -261,6 +277,17 @@ async function persistSale(userId: string, sale: ParsedSale): Promise<string> {
         receivedAt: now,
       },
     });
+
+    // Pedido do catálogo (issue #81): a troca condicional de estado trava a linha do pedido.
+    // Uma conclusão ou cancelamento simultâneo espera esta transação e encontra o pedido já
+    // fechado; se esta venda falhar depois, o rollback devolve o pedido a "disponível".
+    if (sale.catalogOrderId) {
+      const claimed = await tx.catalogOrder.updateMany({
+        where: { id: sale.catalogOrderId, status: "OPEN", saleId: null },
+        data: { status: "CONVERTED", convertedAt: now, convertedById: userId },
+      });
+      if (claimed.count === 0) throw new SaleValidationError(CATALOG_ORDER_CLOSED_ERROR);
+    }
 
     // Fiado desligado nas Configurações da Loja: recusa mesmo com chamada direta à action
     const onAccount =
@@ -360,6 +387,13 @@ async function persistSale(userId: string, sale: ParsedSale): Promise<string> {
       where: { id: sale.operationId },
       data: { saleId: newSale.id },
     });
+
+    if (sale.catalogOrderId) {
+      await tx.catalogOrder.update({
+        where: { id: sale.catalogOrderId },
+        data: { saleId: newSale.id },
+      });
+    }
 
     await tx.stockMovement.createMany({
       data: items.map((item) => ({

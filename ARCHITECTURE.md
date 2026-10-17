@@ -34,6 +34,8 @@ erDiagram
     Product ||--o{ SaleItem : "pertence"
     Sale ||--|{ SaleItem : "contém"
     Sale ||--o| SyncOperation : "chave de idempotência"
+    CatalogOrder ||--|{ CatalogOrderItem : "contém"
+    CatalogOrder |o--o| Sale : "concluído por"
     Product ||--o{ StockMovement : "possui"
 
     User {
@@ -115,7 +117,9 @@ Toda a lógica de negócios e persistência deve ser encapsulada em Server Actio
 ### 4. Catálogo público (`/catalogo`, issue #17)
 Única área sem login além de `/login`. Liberada explicitamente em `src/auth.config.ts`.
 - **Leitura pública:** funções de servidor em `src/lib/catalog.ts` (não são Server Actions). Os `select` trazem só campos de vitrine; o saldo vira apenas "Disponível"/"Indisponível" e custo e estoque mínimo nunca são lidos.
-- **Pedido:** `POST /api/catalogo/pedido` (`src/lib/catalog-order.ts`) valida o carrinho, recalcula preços com `Prisma.Decimal`, exclui itens ocultos ou sem estoque e devolve a mensagem e a URL `wa.me`. Não grava nada no banco.
+- **Pedido:** `POST /api/catalogo/pedido` (`src/lib/catalog-order.ts`) valida o carrinho, recalcula preços com `Prisma.Decimal`, exclui itens ocultos ou sem estoque e devolve a mensagem e a URL `wa.me`. Não grava nada no banco. A mensagem leva o **link do pedido** (`/catalogo/pedido?p=`, issue #81): um token base64url com só os itens e uma chave UUID, sem dados pessoais (`encodeOrderLink`/`decodeOrderLink` em `catalog-shared.ts`).
+- **Link do pedido:** aberto por um usuário logado com `pdv.use`, gera o `CatalogOrder` pela Server Action `registerCatalogOrderFromLink` (POST, nunca na renderização). A chave do link é única no banco: abrir o mesmo link de novo, inclusive ao mesmo tempo, devolve o mesmo pedido; a mesma chave com outros itens é recusada. Aberto por um visitante, só refaz o carrinho. Gerar o pedido não reserva estoque nem mexe em caixa, fiado ou faturamento.
+- **Pedidos no painel:** `/admin/pedidos` (`pdv.use`, `src/actions/catalog-orders.ts`) lista, detalha, cancela e carrega no PDV (`/admin/pdv?pedido=`), revalidando preço, exclusão e estoque e mostrando as diferenças antes da venda. A venda (`createSale` com `catalogOrderId`) troca o pedido de `OPEN` para `CONVERTED` com `updateMany` condicional na mesma transação da baixa de estoque: duas conclusões ou uma conclusão e um cancelamento simultâneos deixam só uma valer, e uma falha da venda devolve o pedido a disponível. Abandonar o carrinho mantém o pedido disponível. O PDV sem internet não conclui pedidos.
 - **Carrinho:** `src/lib/catalog-cart.ts`, no `localStorage` do navegador; regras de unidade e quantidade compartilhadas em `src/lib/catalog-shared.ts`.
 - **Painel:** produtos entram no catálogo por opt-in (`catalog.manage`); WhatsApp e liga/desliga ficam nas Configurações (`settings.manage`).
 

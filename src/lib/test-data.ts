@@ -49,6 +49,8 @@ export const TEST_TOOLS_DISABLED =
 /** Tabelas apagadas pela restauração, na ordem do TRUNCATE. */
 export const RESET_TABLES = [
   "ReconciliationIssue",
+  "CatalogOrderItem",
+  "CatalogOrder",
   "SyncOperation",
   "OfflineGrant",
   "OfflineDevice",

@@ -199,3 +199,78 @@ export type OrderResponse =
       message: string;
     }
   | { ok: false; error: string; removed?: RemovedLine[] };
+
+// Venda recusada porque o pedido do catálogo vinculado já foi concluído ou cancelado (issue #81).
+// O PDV compara a mensagem para desvincular o pedido do carrinho.
+export const CATALOG_ORDER_CLOSED_ERROR = "Este pedido do catálogo já foi concluído ou cancelado.";
+
+// Link do pedido (issue #81): vai na mensagem do WhatsApp com só os itens e a chave da solicitação
+// (nenhum dado pessoal). Aberto por um usuário logado, gera o pedido no sistema (a chave impede
+// duplicar); aberto por um visitante, refaz o carrinho. O servidor revalida tudo ao usar.
+export const ORDER_LINK_PATH = "/catalogo/pedido";
+const ORDER_LINK_VERSION = 1;
+const MAX_ORDER_LINK_LENGTH = 8 * 1024;
+const LINK_KEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const LINK_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+export interface OrderLinkData {
+  key: string;
+  items: { productId: string; quantity: number }[];
+}
+
+const toBase64Url = (text: string) =>
+  btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+function fromBase64Url(token: string): string | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(token)) return null;
+  try {
+    return atob(token.replace(/-/g, "+").replace(/_/g, "/"));
+  } catch {
+    return null;
+  }
+}
+
+export function encodeOrderLink({ key, items }: OrderLinkData): string {
+  return toBase64Url(
+    JSON.stringify({
+      v: ORDER_LINK_VERSION,
+      k: key,
+      i: items.map((item) => [item.productId, item.quantity]),
+    }),
+  );
+}
+
+/** Token do link do pedido validado; null se adulterado, malformado ou fora dos limites. */
+export function decodeOrderLink(token: unknown): OrderLinkData | null {
+  if (typeof token !== "string" || token.length === 0 || token.length > MAX_ORDER_LINK_LENGTH) {
+    return null;
+  }
+  const json = fromBase64Url(token);
+  if (!json) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const { v, k, i } = raw as Record<string, unknown>;
+  if (v !== ORDER_LINK_VERSION || typeof k !== "string" || !LINK_KEY_RE.test(k)) return null;
+  if (!Array.isArray(i) || i.length === 0 || i.length > MAX_ORDER_ITEMS) return null;
+  const seen = new Set<string>();
+  const items: OrderLinkData["items"] = [];
+  for (const entry of i) {
+    if (!Array.isArray(entry) || entry.length !== 2) return null;
+    const [productId, quantity] = entry as unknown[];
+    if (typeof productId !== "string" || !LINK_ID_RE.test(productId) || seen.has(productId)) {
+      return null;
+    }
+    if (typeof quantity !== "number" || !Number.isFinite(quantity) || quantity <= 0) return null;
+    if (quantity > MAX_ITEM_QUANTITY || Math.round(quantity * 1000) / 1000 !== quantity) {
+      return null;
+    }
+    seen.add(productId);
+    items.push({ productId, quantity });
+  }
+  return { key: k, items };
+}

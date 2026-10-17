@@ -110,31 +110,41 @@ enum ReceivableStatus {
   CANCELED // Venda estornada; não conta como dívida
 }
 
+// Pedido recebido pelo catálogo público (issue #81). Não reserva estoque nem gera receita.
+enum CatalogOrderStatus {
+  OPEN // Disponível para carregar no PDV ou cancelar
+  CANCELED // Cancelado por um operador; não pode virar venda
+  CONVERTED // Concluído como venda no PDV (saleId)
+}
+
 model User {
-  id                  String                @id @default(cuid())
-  name                String
-  email               String                @unique
-  password            String
-  role                Role                  @default(SELLER)
+  id                     String                @id @default(cuid())
+  name                   String
+  email                  String                @unique
+  password               String
+  role                   Role                  @default(SELLER)
   // Usuário desativado não entra nem usa sessões já abertas (não há exclusão física)
-  active              Boolean               @default(true)
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  sales               Sale[]
-  reversedSales       Sale[]                @relation("SaleReversedBy")
-  stockMovements      StockMovement[]
-  cashRegisters       CashRegister[]
-  cashMovements       CashMovement[]
-  receivablePayments  ReceivablePayment[]
-  syncOperations      SyncOperation[]       @relation("SyncOperationAuthor")
-  resolvedOperations  SyncOperation[]       @relation("SyncOperationResolver")
-  submittedOperations SyncOperation[]       @relation("SyncOperationSubmitter")
-  registeredDevices   OfflineDevice[]       @relation("OfflineDeviceRegisteredBy")
-  revokedDevices      OfflineDevice[]       @relation("OfflineDeviceRevokedBy")
-  offlineGrants       OfflineGrant[]
-  acknowledgedIssues  ReconciliationIssue[]
-  testDataRuns        TestDataRun[]
-  unpackConversions   UnpackConversion[]
+  active                 Boolean               @default(true)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  sales                  Sale[]
+  reversedSales          Sale[]                @relation("SaleReversedBy")
+  stockMovements         StockMovement[]
+  cashRegisters          CashRegister[]
+  cashMovements          CashMovement[]
+  receivablePayments     ReceivablePayment[]
+  syncOperations         SyncOperation[]       @relation("SyncOperationAuthor")
+  resolvedOperations     SyncOperation[]       @relation("SyncOperationResolver")
+  submittedOperations    SyncOperation[]       @relation("SyncOperationSubmitter")
+  registeredDevices      OfflineDevice[]       @relation("OfflineDeviceRegisteredBy")
+  revokedDevices         OfflineDevice[]       @relation("OfflineDeviceRevokedBy")
+  offlineGrants          OfflineGrant[]
+  acknowledgedIssues     ReconciliationIssue[]
+  testDataRuns           TestDataRun[]
+  unpackConversions      UnpackConversion[]
+  createdCatalogOrders   CatalogOrder[]        @relation("CatalogOrderCreatedBy")
+  canceledCatalogOrders  CatalogOrder[]        @relation("CatalogOrderCanceledBy")
+  convertedCatalogOrders CatalogOrder[]        @relation("CatalogOrderConvertedBy")
 }
 
 // Exclusão lógica (deletedAt) e versão de sincronização (syncVersion) em Category, Product e
@@ -187,6 +197,7 @@ model Product {
   priceHistory         ProductPrice[]
   testDataRunId        String?               @db.Uuid // Geração de dados de teste (#67)
   reconciliationIssues ReconciliationIssue[]
+  catalogOrderItems    CatalogOrderItem[]
 
   @@index([syncVersion, id])
 }
@@ -252,6 +263,8 @@ model Sale {
   reversalReason       String?
   reversedInRegister   Boolean               @default(false)
   refundMovements      CashMovement[]
+  // Pedido do catálogo concluído por esta venda (issue #81)
+  catalogOrder         CatalogOrder?
 
   @@index([occurredAt])
   @@index([createdAt])
@@ -268,7 +281,60 @@ model SaleItem {
   quantity  Decimal @db.Decimal(10, 3)
   unitPrice Decimal @db.Decimal(10, 2)
   subtotal  Decimal @db.Decimal(10, 2)
+
   @@index([saleId])
+  @@index([productId])
+}
+
+// Pedido do catálogo público (issue #81, src/lib/catalog-order.ts). O catálogo não grava nada: a
+// mensagem do WhatsApp leva um link com os itens, e o pedido nasce quando um usuário logado abre
+// esse link. Não guarda dados pessoais (ficam na conversa do WhatsApp). Criar o pedido não mexe em estoque,
+// caixa, fiado nem faturamento: só a venda (src/lib/create-sale.ts) faz isso, e o vínculo com ela é
+// gravado na mesma transação da venda.
+model CatalogOrder {
+  id             String             @id @default(cuid())
+  // Número exibido no painel e no PDV
+  code           Int                @unique @default(autoincrement())
+  // Chave de idempotência que vai no link: abrir o mesmo link de novo devolve o mesmo pedido
+  requestKey     String             @unique @db.Uuid
+  payloadHash    String
+  status         CatalogOrderStatus @default(OPEN)
+  // Quem abriu o link do pedido (usuário logado): o pedido nasce nesse momento
+  createdById    String
+  createdBy      User               @relation("CatalogOrderCreatedBy", fields: [createdById], references: [id])
+  // Total calculado no pedido; a venda usa os preços vigentes na conclusão
+  estimatedTotal Decimal            @db.Decimal(10, 2)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  canceledAt     DateTime?
+  canceledById   String?
+  canceledBy     User?              @relation("CatalogOrderCanceledBy", fields: [canceledById], references: [id])
+  cancelReason   String?
+  saleId         String?            @unique
+  sale           Sale?              @relation(fields: [saleId], references: [id])
+  convertedAt    DateTime?
+  convertedById  String?
+  convertedBy    User?              @relation("CatalogOrderConvertedBy", fields: [convertedById], references: [id])
+  items          CatalogOrderItem[]
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+}
+
+// Itens do pedido como estavam ao confirmar (nome, unidade e preço da época)
+model CatalogOrderItem {
+  id          String       @id @default(cuid())
+  orderId     String
+  order       CatalogOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName String
+  unit        Unit
+  quantity    Decimal      @db.Decimal(10, 3)
+  unitPrice   Decimal      @db.Decimal(10, 2)
+  subtotal    Decimal      @db.Decimal(10, 2)
+
+  @@index([orderId])
   @@index([productId])
 }
 
@@ -411,6 +477,7 @@ model CashMovement {
   saleId         String?
   sale           Sale?            @relation(fields: [saleId], references: [id])
   createdAt      DateTime         @default(now())
+
   @@index([cashRegisterId])
   @@index([saleId])
 }
@@ -446,6 +513,7 @@ model ReceivablePayment {
   cashRegisterId String?
   cashRegister   CashRegister? @relation(fields: [cashRegisterId], references: [id])
   createdAt      DateTime      @default(now())
+
   @@index([receivableId])
   @@index([cashRegisterId])
 }
