@@ -1,8 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { CatalogStore } from "@/lib/catalog";
 import {
   MAX_ORDER_ITEMS,
+  ORDER_LINK_PATH,
+  decodeOrderLink,
+  encodeOrderLink,
   formatQuantity,
   mapsUrl,
   parseGeoPoint,
@@ -13,10 +17,14 @@ import {
   type OrderRequest,
   type RemovedLine,
 } from "@/lib/catalog-shared";
+import { hashPayload } from "@/lib/sync-operation";
 import { formatCurrency } from "@/lib/utils";
 
-// Pedido do catálogo público (issue #17): valida o carrinho enviado pelo navegador, recalcula
-// itens, preços e disponibilidade com o banco e monta a mensagem do WhatsApp. Não grava nada.
+// Pedido do catálogo público (issues #17 e #81): valida o carrinho enviado pelo navegador,
+// recalcula itens, preços e disponibilidade com o banco e monta a mensagem do WhatsApp, que leva o
+// link do pedido. buildCatalogOrder (público) não grava nada. createCatalogOrderFromLink registra o
+// pedido quando um usuário logado abre o link, de forma idempotente pela chave do link. Nenhum dos
+// dois mexe em estoque, caixa ou vendas.
 
 export type OrderBuildResult =
   | {
@@ -29,11 +37,15 @@ export type OrderBuildResult =
     }
   | { ok: false; status: number; error: string; removed?: RemovedLine[] };
 
+export type OrderFromLinkResult =
+  | { ok: true; id: string; code: number; replayed: boolean }
+  | { ok: false; status: number; error: string };
+
 const MAX_NAME = 80;
 const MAX_NOTE = 500;
 const MAX_ADDRESS = 300;
 
-function invalid(error: string): OrderBuildResult {
+function invalid(error: string): { ok: false; status: number; error: string } {
   return { ok: false, status: 400, error };
 }
 
@@ -113,11 +125,14 @@ function parseRequest(body: unknown): ParsedRequest {
   };
 }
 
-function buildMessage(
-  store: CatalogStore,
+// Texto da mensagem do WhatsApp. O link do pedido não afirma registro, envio nem leitura: o pedido
+// só existe no sistema quando a loja abre o link.
+export function buildMessage(
+  store: Pick<CatalogStore, "name">,
   items: OrderLine[],
   total: number,
   customer: OrderRequest["customer"],
+  orderLink?: string,
 ) {
   const lines = [`Olá! Gostaria de fazer um pedido pelo catálogo da *${store.name}*:`, ""];
   items.forEach((item, index) => {
@@ -138,22 +153,21 @@ function buildMessage(
     lines.push(`*Localização:* ${mapsUrl(customer.location)}${precision}`);
   }
   if (customer.note) lines.push(`*Observação:* ${customer.note}`);
+  if (orderLink) lines.push("", `*Link do pedido:* ${orderLink}`);
   lines.push("", "_Preços e disponibilidade sujeitos a confirmação._");
   return lines.join("\n");
 }
 
-export async function buildCatalogOrder(
-  body: unknown,
-  store: CatalogStore,
-): Promise<OrderBuildResult> {
-  if (!store.whatsappNumber) {
-    return { ok: false, status: 409, error: "O WhatsApp da loja ainda não foi configurado." };
-  }
+function whatsappUrlFor(store: CatalogStore, message: string) {
+  return `https://wa.me/${store.whatsappNumber}?text=${encodeURIComponent(message)}`;
+}
 
-  const parsed = parseRequest(body);
-  if (!parsed.ok) return invalid(parsed.error);
-  const { items: requested, customer } = parsed.value;
+type PricedOrder =
+  | { ok: true; items: OrderLine[]; removed: RemovedLine[]; total: number }
+  | { ok: false; status: number; error: string; removed?: RemovedLine[] };
 
+// Recalcula com o banco: fora do catálogo ou sem estoque sai do pedido; quantidade inválida recusa.
+async function priceOrder(requested: OrderRequest["items"]): Promise<PricedOrder> {
   const products = await prisma.product.findMany({
     where: { id: { in: requested.map((item) => item.productId) }, deletedAt: null },
     select: {
@@ -212,14 +226,115 @@ export async function buildCatalogOrder(
     };
   }
 
-  const totalNumber = total.toDecimalPlaces(2).toNumber();
-  const message = buildMessage(store, items, totalNumber, customer);
-  return {
-    ok: true,
-    items,
-    removed,
-    total: totalNumber,
-    message,
-    whatsappUrl: `https://wa.me/${store.whatsappNumber}?text=${encodeURIComponent(message)}`,
-  };
+  return { ok: true, items, removed, total: total.toDecimalPlaces(2).toNumber() };
+}
+
+/**
+ * Prévia pública do pedido. `origin` é a origem do site (da própria requisição), usada no link do
+ * pedido. Cada prévia ganha uma chave nova: a mesma mensagem aberta duas vezes vira um só pedido.
+ */
+export async function buildCatalogOrder(
+  body: unknown,
+  store: CatalogStore,
+  origin?: string,
+): Promise<OrderBuildResult> {
+  if (!store.whatsappNumber) {
+    return { ok: false, status: 409, error: "O WhatsApp da loja ainda não foi configurado." };
+  }
+
+  const parsed = parseRequest(body);
+  if (!parsed.ok) return invalid(parsed.error);
+  const { items: requested, customer } = parsed.value;
+
+  const priced = await priceOrder(requested);
+  if (!priced.ok) return priced;
+  const { items, removed, total } = priced;
+  const token = encodeOrderLink({
+    key: randomUUID(),
+    items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+  });
+  const orderLink = origin ? `${origin}${ORDER_LINK_PATH}?p=${token}` : undefined;
+  const message = buildMessage(store, items, total, customer, orderLink);
+  return { ok: true, items, removed, total, message, whatsappUrl: whatsappUrlFor(store, message) };
+}
+
+// Hash dos itens do link em ordem estável: a mesma chave só vale para os mesmos itens
+function linkHash(items: OrderRequest["items"]): string {
+  return hashPayload({
+    v: 1,
+    items: [...items]
+      .sort((a, b) => (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0))
+      .map((item) => [item.productId, String(item.quantity)]),
+  });
+}
+
+function isDuplicateRequest(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002" &&
+    error.meta?.modelName === "CatalogOrder"
+  );
+}
+
+// Pedido já gerado com a mesma chave: mesmos itens devolvem o mesmo pedido; outros, recusa
+async function replayOrder(key: string, payloadHash: string): Promise<OrderFromLinkResult | null> {
+  const order = await prisma.catalogOrder.findUnique({
+    where: { requestKey: key },
+    select: { id: true, code: true, payloadHash: true },
+  });
+  if (!order) return null;
+  if (order.payloadHash !== payloadHash) {
+    return { ok: false, status: 409, error: "Este link de pedido foi alterado e não é válido." };
+  }
+  return { ok: true, id: order.id, code: order.code, replayed: true };
+}
+
+/**
+ * Gera o pedido a partir do link da mensagem (issue #81), para o usuário já autorizado. Abrir o
+ * mesmo link de novo, inclusive ao mesmo tempo, devolve o mesmo pedido. Itens fora do catálogo ou
+ * sem estoque ficam de fora; preços são os de agora.
+ */
+export async function createCatalogOrderFromLink(
+  userId: string,
+  token: unknown,
+): Promise<OrderFromLinkResult> {
+  const link = decodeOrderLink(token);
+  if (!link) return { ok: false, status: 400, error: "Link de pedido inválido." };
+  const payloadHash = linkHash(link.items);
+
+  const previous = await replayOrder(link.key, payloadHash);
+  if (previous) return previous;
+
+  const priced = await priceOrder(link.items);
+  if (!priced.ok) return { ok: false, status: priced.status, error: priced.error };
+
+  try {
+    const order = await prisma.catalogOrder.create({
+      data: {
+        requestKey: link.key,
+        payloadHash,
+        createdById: userId,
+        estimatedTotal: priced.total,
+        items: {
+          create: priced.items.map((item) => ({
+            productId: item.productId,
+            productName: item.name,
+            unit: item.unit,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            subtotal: item.subtotal,
+          })),
+        },
+      },
+      select: { id: true, code: true },
+    });
+    return { ok: true, id: order.id, code: order.code, replayed: false };
+  } catch (error) {
+    // Duas aberturas simultâneas do mesmo link: a segunda devolve o pedido da primeira
+    if (isDuplicateRequest(error)) {
+      const replay = await replayOrder(link.key, payloadHash);
+      if (replay) return replay;
+    }
+    throw error;
+  }
 }

@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   Keyboard,
   WifiOff,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +48,8 @@ import type { UnpackInput, UnpackResult } from "@/lib/unpack";
 import { CustomerItem } from "@/actions/customers";
 import { StoreSettingsData } from "@/actions/settings";
 import { createSale } from "@/actions/sales";
+import type { CatalogOrderForPdv } from "@/actions/catalog-orders";
+import { CATALOG_ORDER_CLOSED_ERROR } from "@/lib/catalog-shared";
 import { ReceiptModal, CompletedSale } from "@/components/receipt-modal";
 import { formatCurrency, formatNumber, cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
@@ -231,7 +234,32 @@ interface PdvTerminalProps {
   // /pdv só abre caixas online após enviar a fila e atualizar os saldos, sem enfileirar abertura.
   unpack?: PdvUnpackControls;
   onUnpackBusyChange?: (busy: boolean) => void;
+  // Pedido do catálogo carregado pelo painel (/admin/pdv?pedido=, issue #81). Só no PDV online:
+  // a venda leva o id e o servidor grava o vínculo na mesma transação. Ignorado com submitSale.
+  catalogOrder?: { ok: true; order: CatalogOrderForPdv } | { ok: false; error: string } | null;
   className?: string;
+}
+
+// Itens do pedido do catálogo já revalidados pelo servidor (preço e estoque atuais)
+function catalogOrderCart(order: CatalogOrderForPdv): CartItem[] {
+  return order.lines.map(({ product, quantity }) => ({
+    productId: product.id,
+    name: product.name,
+    unit: product.unit,
+    barcode: product.barcode,
+    quantity,
+    unitPrice: product.salePrice,
+    subtotal: lineSubtotal(quantity, product.salePrice),
+    maxStock: product.currentStock,
+  }));
+}
+
+// Tira o ?pedido= da URL quando o vínculo acaba, para um recarregamento não trazer o pedido de volta
+function forgetCatalogOrderUrl() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("pedido")) return;
+  url.searchParams.delete("pedido");
+  window.history.replaceState(window.history.state, "", url);
 }
 
 export function PdvTerminal({
@@ -247,6 +275,7 @@ export function PdvTerminal({
   unpackScope = `pdv:${cashRegisterId}`,
   unpack,
   onUnpackBusyChange,
+  catalogOrder,
   className,
 }: PdvTerminalProps) {
   const [customerResults, setCustomerResults] = useState<PdvCustomer[] | null>(null);
@@ -275,8 +304,17 @@ export function PdvTerminal({
   // Carrinho guardado no aparelho (só o estado inicial; depois, o terminal manda)
   const restored = cartDraft?.restored ?? null;
 
+  // Pedido do catálogo em conclusão (só no PDV online). Desvincular, esvaziar ou sair da página
+  // mantém o pedido disponível no painel: nada é gravado até a venda.
+  const [linkedOrder, setLinkedOrder] = useState<CatalogOrderForPdv | null>(() =>
+    !submitSale && !offline && !restored && catalogOrder?.ok ? catalogOrder.order : null,
+  );
+  const [orderNotices, setOrderNotices] = useState<string[]>(() => linkedOrder?.notices ?? []);
+
   // Cart state
-  const [cart, setCartState] = useState<CartItem[]>(() => restored?.items ?? []);
+  const [cart, setCartState] = useState<CartItem[]>(
+    () => restored?.items ?? (linkedOrder ? catalogOrderCart(linkedOrder) : []),
+  );
   const cartRef = useRef(cart);
   // Leitores rápidos podem concluir duas buscas antes do próximo render.
   const setCart = useCallback((update: React.SetStateAction<CartItem[]>) => {
@@ -289,7 +327,11 @@ export function PdvTerminal({
   const [searching, setSearching] = useState(false);
   const [discount, setDiscount] = useState(() => restored?.discount ?? 0);
   const [notice, setNotice] = useState<string | null>(() =>
-    cartDraft?.notices.length ? cartDraft.notices.join(" ") : null,
+    cartDraft?.notices.length
+      ? cartDraft.notices.join(" ")
+      : catalogOrder && !catalogOrder.ok && !submitSale
+        ? `Pedido do catálogo não carregado: ${catalogOrder.error}`
+        : null,
   );
 
   // Search & product suggestions
@@ -829,7 +871,15 @@ export function PdvTerminal({
     setSelectedCustomer(null);
     setError(null);
     setNotice(null);
+    unlinkOrder();
     focusSearch();
+  };
+
+  // O pedido continua disponível no painel; só o carrinho deixa de concluí-lo
+  const unlinkOrder = () => {
+    setLinkedOrder(null);
+    setOrderNotices([]);
+    forgetCatalogOrderUrl();
   };
 
   const openCustomerDialog = () => {
@@ -898,6 +948,8 @@ export function PdvTerminal({
         productId: item.productId,
         quantity: item.quantity,
       })),
+      // A chave da tentativa muda junto com o vínculo (entra na assinatura)
+      catalogOrderId: linkedOrder?.id ?? null,
     };
     const signature = JSON.stringify(payload);
     if (pendingOperation.current?.signature !== signature) {
@@ -936,6 +988,12 @@ export function PdvTerminal({
 
     if (res.success && res.data) {
       completeSale(res.data as CompletedSale);
+    } else if (res.error === CATALOG_ORDER_CLOSED_ERROR) {
+      // Concluído em outro caixa ou cancelado no painel: nada foi gravado nesta tentativa
+      unlinkOrder();
+      setError(
+        `${CATALOG_ORDER_CLOSED_ERROR} Nada foi vendido; o carrinho continua aqui sem o pedido.`,
+      );
     } else {
       setError(res.error || "Erro ao processar a venda.");
     }
@@ -1145,6 +1203,36 @@ export function PdvTerminal({
               onDetected={handleScannedCode}
             />
           </div>
+
+          {linkedOrder && (
+            <div
+              role="status"
+              className="border-primary/30 bg-primary/5 space-y-2 rounded-md border px-3 py-2 text-sm"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <ClipboardList className="text-primary h-4 w-4 shrink-0" aria-hidden />
+                <span className="flex-1 font-medium">Pedido nº {linkedOrder.code} do catálogo</span>
+                <Button size="sm" variant="ghost" onClick={unlinkOrder} disabled={loading}>
+                  <X className="h-3.5 w-3.5" /> Desvincular
+                </Button>
+              </div>
+              {orderNotices.length > 0 ? (
+                <ul className="text-warning list-disc space-y-0.5 pl-6">
+                  {orderNotices.map((item, index) => (
+                    <li key={index}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted-foreground">
+                  Itens, preços e estoque conferem com o cadastro atual.
+                </p>
+              )}
+              <p className="text-muted-foreground text-xs">
+                Confira o carrinho antes de finalizar. A venda usa os preços atuais e conclui o
+                pedido; sem venda, o pedido continua disponível.
+              </p>
+            </div>
+          )}
 
           {notice && (
             <div

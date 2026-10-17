@@ -77,6 +77,7 @@ export async function createSale(data: CreateSaleInput) {
     revalidatePath("/admin/estoque");
     revalidatePath("/admin/caixa");
     revalidatePath("/admin/contas-a-receber");
+    if (data?.catalogOrderId) revalidatePath("/admin/pedidos");
 
     return { success: true, data: result.data };
   } catch (error) {

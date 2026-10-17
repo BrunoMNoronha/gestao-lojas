@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Boxes,
+  ClipboardList,
   HandCoins,
   LayoutDashboard,
   Package,
@@ -41,6 +42,13 @@ export const APP_ROUTES: AppRoute[] = [
   { href: "/admin/pdv", label: "Frente de Caixa (PDV)", icon: ShoppingCart, permission: "pdv.use" },
   // PDV que abre sem internet depois da preparação (issue #37); fica fora do layout do /admin
   { href: "/pdv", label: "PDV sem internet", icon: WifiOff, permission: "pdv.use" },
+  // Pedidos recebidos pelo catálogo público, carregados no PDV para virar venda (issue #81)
+  {
+    href: "/admin/pedidos",
+    label: "Pedidos do catálogo",
+    icon: ClipboardList,
+    permission: "pdv.use",
+  },
   { href: "/admin/caixa", label: "Caixa", icon: Wallet, permission: "cash.own" },
   // Conflitos, pendências e aparelhos das vendas feitas sem internet (issue #38)
   {
