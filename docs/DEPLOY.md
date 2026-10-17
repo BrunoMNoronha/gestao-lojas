@@ -20,7 +20,7 @@ Só existe o ambiente de **produção** (`main`). Não há previews nem banco de
 | `DIRECT_URL`     | Production | URL **sem pooler** da Neon (`DATABASE_URL_UNPOOLED` da integração)                        |
 | `AUTH_SECRET`    | Production | Segredo aleatório: `npx auth secret` ou `openssl rand -base64 32`. Também cifra o link do pedido do catálogo: trocá-lo encerra as sessões e invalida os links ainda não abertos |
 | `ADMIN_EMAIL`    | Production | E-mail do primeiro administrador                                                          |
-| `ADMIN_PASSWORD` | Production | Senha do primeiro administrador (mínimo 12 caracteres), definida pelo responsável da loja |
+| `ADMIN_PASSWORD` | Production | Senha do primeiro administrador (mínimo 12 caracteres), definida pelo responsável da loja. Remova depois do primeiro acesso (seção 5) |
 | `ADMIN_NAME`     | Production | Opcional (padrão "Administrador")                                                         |
 
 `AUTH_URL` não é necessário na Vercel (o host é detectado automaticamente).
@@ -32,7 +32,7 @@ Variáveis do reCAPTCHA do login (passo a passo na seção 9):
 | `RECAPTCHA_SITE_KEY`          | Production | Plain ou Sensitive | Chave do site (pública, enviada à tela de login). Mudou, redeploy                   |
 | `RECAPTCHA_SECRET_KEY`        | Production | Sensitive          | Chave secreta (só no servidor). Sem ela o login é recusado                          |
 | `RECAPTCHA_MIN_SCORE`         | Production | Plain              | Opcional. Score mínimo de 0 a 1 (padrão `0.5`)                                      |
-| `RECAPTCHA_ALLOWED_HOSTNAMES` | Production | Plain              | Opcional. Recomendado: `gestao-lojas-dpv.vercel.app` (padrão: o host da requisição) |
+| `RECAPTCHA_ALLOWED_HOSTNAMES` | Production | Plain              | Opcional. Se definida, liste os dois domínios: `gestao-loja.dev2bless.tech,gestao-lojas-dpv.vercel.app` (padrão: o host da requisição) |
 
 ## 2. Configuração do projeto na Vercel
 
@@ -41,7 +41,15 @@ Variáveis do reCAPTCHA do login (passo a passo na seção 9):
 | Região das funções    | `gru1` (São Paulo), perto do banco Neon `aws-sa-east-1`                                                                                     | `vercel.json` (`regions`)               |
 | Deploys automáticos   | Só a `main` (produção). Outros branches não geram preview                                                                                   | `vercel.json` (`git.deploymentEnabled`) |
 | Deployment Protection | Vercel Authentication só em previews (`deploymentType: preview`); a URL de produção é pública e o acesso é controlado pelo login do sistema | Settings → Deployment Protection        |
+| Domínios              | `gestao-loja.dev2bless.tech` (produção; é o `VERCEL_PROJECT_PRODUCTION_URL`, usado no sitemap e no og:image) e `gestao-lojas-dpv.vercel.app` | Settings → Domains                      |
+| Firewall              | Bots de IA bloqueados; Bot Protection em _challenge_; regras OWASP (gen, rce, sqli, xss) só registrando (_log_); regra "Login rate limit" (seção 9) | Firewall                                |
 | Integração Prisma     | Instalada pela importação do projeto, **não usada**                                                                                         | —                                       |
+
+Os dois domínios continuam servindo o sistema, **sem redirecionamento** entre eles. O PDV sem
+internet guarda vendas pendentes e a autorização do aparelho no armazenamento do navegador, que é
+separado por domínio: um aparelho preparado no `vercel.app` só enxerga a fila dele nesse endereço.
+Antes de redirecionar o `vercel.app` para o domínio próprio, sincronize todos os aparelhos e prepare
+cada um de novo em `gestao-loja.dev2bless.tech`.
 
 ## 3. Criar o banco
 
@@ -66,6 +74,12 @@ Variáveis do reCAPTCHA do login (passo a passo na seção 9):
    `vercel.json`. Nunca conecte o banco de produção a esses ambientes.
 
 ## 4. Aplicar as migrations no banco de produção
+
+> **Migration nova vai para produção antes do merge do código que a usa.** O merge na `main`
+> publica o deploy em poucos minutos; se a tabela ainda não existe, o código novo falha. Foi o que
+> aconteceu na #107 (2026-10-17): o deploy entrou antes da `0019_login_attempts` e todo login foi
+> recusado por ~3 minutos (`[login-limit] ... LoginAttempt does not exist`). Ordem: backup da Neon
+> → `pnpm db:deploy` → merge.
 
 ```bash
 # baixa as variáveis de produção para um arquivo local (ignorado pelo Git: .env*)
@@ -92,7 +106,8 @@ pnpm db:deploy
 1. Faça o deploy de produção (merge no `main` com a integração Git, ou _Redeploy_ no painel).
 2. Acesse `/login` e entre com `ADMIN_EMAIL` / `ADMIN_PASSWORD`. O administrador é criado nesse
    primeiro login (somente se o banco não tem usuários).
-3. Opcional: depois do primeiro acesso, remova `ADMIN_PASSWORD` das variáveis da Vercel.
+3. Depois do primeiro acesso, remova `ADMIN_PASSWORD` das variáveis da Vercel (_Settings →
+   Environment Variables_). Com usuários no banco o bootstrap não roda mais e a senha não tem uso.
 
 Se o login falhar com banco vazio, confira os logs da função: `[bootstrap-admin]` informa se as
 variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
@@ -156,8 +171,10 @@ Os nomes abaixo são os da documentação oficial em 2026-10; confira no console
 1. No [Google Cloud Console](https://console.cloud.google.com/), crie ou escolha um projeto da loja
    e abra a página **Fraud Defense** (reCAPTCHA) → aba **Keys** → **Create key**.
 2. _Display name_ à escolha; tipo **Web**; deixe **Disable domain verification** desligado.
-3. **Add a domain**: `gestao-lojas-dpv.vercel.app` e `localhost`. Mantenha a opção padrão (por
-   score, sem checkbox). Mudanças de domínio levam até 30 minutos para valer.
+3. **Add a domain**: `gestao-loja.dev2bless.tech`, `gestao-lojas-dpv.vercel.app` e `localhost`.
+   Mantenha a opção padrão (por score, sem checkbox). Mudanças de domínio levam até 30 minutos
+   para valer. Todo domínio novo do projeto na Vercel precisa entrar nesta lista, senão o login
+   nele é recusado.
 4. Copie o **ID da chave** (chave do site) → `RECAPTCHA_SITE_KEY`.
 5. Na chave criada: **Key Details** → aba **Integration** → **Use Legacy Key** → copie a chave
    secreta legada → `RECAPTCHA_SECRET_KEY` (é a usada pelo `siteverify`).
@@ -185,6 +202,8 @@ faturamento no projeto.
 
 - `não configurada`: a variável foi apagada ou não está em Production. Grave de novo a chave
   secreta e faça redeploy.
+- `token inválido (browser-error)` só num dos domínios: o domínio não está na chave do Google.
+  Inclua-o no passo 3 acima (sem redeploy; até 30 minutos para valer).
 - `Falha ao consultar o Google`: indisponibilidade do Google. Aguarde; não há contorno seguro.
 - `hostname inesperado`: o domínio mudou. Inclua o novo domínio na chave do Google e em
   `RECAPTCHA_ALLOWED_HOSTNAMES` (se definida).
@@ -223,8 +242,11 @@ DELETE FROM "LoginAttempt" WHERE ip = '200.1.2.3' AND NOT success;
 
 Uma loja com todos os caixas atrás do mesmo IP divide o limite de 20 falhas.
 
-Complemento recomendado: regras de firewall da Vercel (_Firewall_ → _Rate limiting_ em
-`/api/auth/callback/credentials`), que barram excesso de pedidos antes de chegar à função.
+Antes da função, o firewall da Vercel tem a regra **"Login rate limit"** (criada em 2026-10-17):
+`POST /api/auth/callback/credentials`, janela fixa de 60 s, 10 pedidos por IP; acima disso
+responde 429. Ela corta rajadas sem chegar ao banco; os limites acima continuam valendo. Uma loja
+com muitos caixas atrás do mesmo IP só esbarra nela com mais de 10 tentativas de login no mesmo
+minuto. Ajuste em _Firewall_ → regra "Login rate limit".
 
 ## 10. Homologação da operação offline (#33)
 

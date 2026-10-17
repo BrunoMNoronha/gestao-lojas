@@ -13,7 +13,8 @@ describe("pool de execução", () => {
       )!,
     );
     expect(pooled.searchParams.get("connection_limit")).toBe("2");
-    expect(pooled.searchParams.get("pool_timeout")).toBe("10");
+    expect(pooled.searchParams.get("pool_timeout")).toBe("20");
+    expect(pooled.searchParams.get("connect_timeout")).toBe("15");
     expect(pooled.searchParams.get("pgbouncer")).toBe("true");
     expect(pooled.searchParams.get("sslmode")).toBe("require");
   });

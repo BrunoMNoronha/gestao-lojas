@@ -26,7 +26,7 @@ O cursor SQL usa comparação de `(syncVersion, id)`, com parâmetros vinculados
 
 `0014_performance_indexes` é aditiva: índices de vendas por caixa/cliente, itens por venda/produto, movimentos de caixa, recebimentos, histórico de estoque e status de recebíveis. Essa parte atende à dependência de índices da #68; as mudanças de datas/fuso e a aplicação em produção da #68 continuam separadas.
 
-Somente a conexão de execução com hostname contendo `-pooler.` recebe os padrões `pgbouncer=true`, `connection_limit=5` e `pool_timeout=10`. Valores explícitos são preservados. URLs diretas/locais e `DIRECT_URL` de migrations não são alteradas. Parâmetros referenciados na [documentação do conector PostgreSQL do Prisma 6](https://docs.prisma.io/docs/orm/v6/overview/databases/postgresql).
+Somente a conexão de execução com hostname contendo `-pooler.` recebe os padrões `pgbouncer=true`, `connection_limit=5`, `pool_timeout=20` e `connect_timeout=15`. Os tempos folgados cobrem o despertar da Neon Free, que em produção gerava `P2024` (pool) e `P1001` (conexão) com os padrões anteriores (10 s e o padrão de 5 s do Prisma). Valores explícitos são preservados. URLs diretas/locais e `DIRECT_URL` de migrations não são alteradas. Parâmetros referenciados na [documentação do conector PostgreSQL do Prisma 6](https://docs.prisma.io/docs/orm/v6/overview/databases/postgresql).
 
 O projeto mantém seu Prisma 6 e o cliente atual. A troca pelo adapter Neon exige comparação no ambiente Neon alvo para justificar alteração de dependências e conexão; o teste local não demonstra ganho de cold start na nuvem. `pg_trgm` também não foi instalado: esta carga contém 10 mil produtos, abaixo do cenário de mais de 50 mil produtos previsto para sua avaliação na issue.
 
