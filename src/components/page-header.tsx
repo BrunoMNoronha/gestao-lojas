@@ -7,6 +7,8 @@ interface PageHeaderProps {
   icon?: LucideIcon;
   // Botões e ações da página, alinhados à direita no desktop e abaixo do título no celular
   actions?: React.ReactNode;
+  // Classes extras do contêiner das ações (ex.: "max-md:hidden" para ocultar no celular)
+  actionsClassName?: string;
   className?: string;
 }
 
@@ -16,6 +18,7 @@ export function PageHeader({
   description,
   icon: Icon,
   actions,
+  actionsClassName,
   className,
 }: PageHeaderProps) {
   return (
@@ -32,7 +35,9 @@ export function PageHeader({
         </h1>
         {description && <p className="text-muted-foreground text-sm">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className={cn("flex flex-wrap items-center gap-2", actionsClassName)}>{actions}</div>
+      )}
     </div>
   );
 }
