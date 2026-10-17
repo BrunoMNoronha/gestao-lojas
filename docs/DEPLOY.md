@@ -200,7 +200,11 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 
 ## 8. Rollback
 
-- **Código:** Vercel → _Deployments_ → deploy anterior → _Promote to Production_.
+- **Código:** Vercel → _Deployments_ → deploy anterior → _Promote to Production_. Cada deploy
+  guarda as variáveis do momento em que foi gerado: os anteriores a 2026-10-17 19:2x UTC usam a
+  `DATABASE_URL` antiga (`neondb_owner`, senha já trocada) e ficam **sem banco** se promovidos.
+  Para voltar a um código dessa época, faça _Redeploy_ do deploy (com as variáveis atuais) em vez
+  de _Promote_.
 - **Banco:** migrations não são revertidas automaticamente. Se uma migration causar problema,
   publique uma nova migration corretiva. Antes de mudanças de schema arriscadas, crie um branch
   de backup na Neon: no plano Free a restauração por ponto no tempo só alcança as últimas 6 h
