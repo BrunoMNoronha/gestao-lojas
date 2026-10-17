@@ -31,6 +31,7 @@ import {
   type CatalogOrderDetail,
 } from "@/actions/catalog-orders";
 import { CatalogOrderStatusBadge } from "@/components/catalog-order-status";
+import { displayPhone } from "@/lib/masks";
 import { formatStoreDateTime } from "@/lib/store-time";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
@@ -151,11 +152,40 @@ export function CatalogOrderDetailDialog({
                 </div>
               )}
 
-              <p className="text-muted-foreground flex gap-2 rounded-lg border p-3 text-sm">
-                <MessageCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-                Nome, entrega, endereço e observação do cliente estão na conversa do WhatsApp; o
-                sistema não guarda dados pessoais do pedido.
-              </p>
+              <div className="grid grid-cols-1 gap-3 rounded-lg border p-3 text-sm sm:grid-cols-2">
+                <div>
+                  <div className="text-muted-foreground text-xs">Cliente</div>
+                  <div className="font-medium break-words">
+                    {detail.customerName ?? "Não informado"}
+                  </div>
+                  <div className="text-muted-foreground text-xs">
+                    {detail.customer
+                      ? `Cadastro: ${detail.customer.name}${detail.customer.deleted ? " (excluído)" : ""}`
+                      : "Sem cadastro com este telefone"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-xs">Telefone</div>
+                  {detail.customerPhone ? (
+                    <>
+                      <div className="font-medium">{displayPhone(detail.customerPhone)}</div>
+                      <a
+                        href={`https://wa.me/55${detail.customerPhone}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary inline-flex min-h-11 items-center gap-1 font-medium underline-offset-4 hover:underline"
+                      >
+                        <MessageCircle className="size-4" aria-hidden /> Abrir conversa
+                      </a>
+                    </>
+                  ) : (
+                    <div className="text-muted-foreground">Não informado</div>
+                  )}
+                </div>
+                <p className="text-muted-foreground text-xs sm:col-span-2">
+                  Entrega, endereço e observação estão na mensagem do WhatsApp.
+                </p>
+              </div>
 
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold">Itens no momento do pedido</h3>

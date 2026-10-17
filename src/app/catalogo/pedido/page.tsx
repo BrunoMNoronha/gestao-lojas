@@ -5,7 +5,8 @@ import { CatalogUnavailable } from "@/components/catalog-unavailable";
 import { CatalogOrderLinkCart, CatalogOrderLinkRegister } from "@/components/catalog-order-link";
 import { getSessionUser } from "@/lib/authz";
 import { getCatalogProduct, getCatalogStore } from "@/lib/catalog";
-import { decodeOrderLink, validQuantity } from "@/lib/catalog-shared";
+import { validQuantity } from "@/lib/catalog-shared";
+import { decodeOrderLink } from "@/lib/order-link";
 import { can } from "@/lib/permissions";
 
 // Link do pedido enviado pelo WhatsApp (issue #81). Usuário logado com acesso ao PDV: gera o

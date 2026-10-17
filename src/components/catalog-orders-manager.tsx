@@ -134,6 +134,9 @@ export function CatalogOrdersManager({
                         <span className="font-semibold">Pedido nº {order.code}</span>
                         <CatalogOrderStatusBadge status={order.status} />
                       </span>
+                      {order.customerName && (
+                        <span className="text-sm break-words">{order.customerName}</span>
+                      )}
                       <span className="text-muted-foreground text-xs">
                         {order.itemCount} {order.itemCount === 1 ? "item" : "itens"} · registrado
                         por {order.createdByName}
@@ -155,6 +158,7 @@ export function CatalogOrdersManager({
                   <TableRow>
                     <TableHead>Pedido</TableHead>
                     <TableHead>Recebido em</TableHead>
+                    <TableHead>Cliente</TableHead>
                     <TableHead>Registrado por</TableHead>
                     <TableHead className="text-right">Itens</TableHead>
                     <TableHead className="text-right">Total estimado</TableHead>
@@ -169,7 +173,10 @@ export function CatalogOrdersManager({
                       <TableCell suppressHydrationWarning>
                         {formatStoreDateTime(order.createdAt)}
                       </TableCell>
-                      <TableCell className="max-w-48 truncate">{order.createdByName}</TableCell>
+                      <TableCell className="max-w-48 truncate">
+                        {order.customerName ?? "—"}
+                      </TableCell>
+                      <TableCell className="max-w-40 truncate">{order.createdByName}</TableCell>
                       <TableCell className="text-right font-mono">{order.itemCount}</TableCell>
                       <TableCell className="text-right font-mono">
                         {formatCurrency(order.estimatedTotal)}

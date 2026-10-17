@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { PAGE_SIZE, pageNumber } from "@/lib/pagination";
 import { getPdvProducts } from "@/actions/browse";
-import type { PdvProduct } from "@/components/pdv-terminal";
+import type { PdvCustomer, PdvProduct } from "@/components/pdv-terminal";
 import { createCatalogOrderFromLink } from "@/lib/catalog-order";
 import { CATALOG_ORDER_CLOSED_ERROR } from "@/lib/catalog-shared";
 import { formatCurrency, formatNumber } from "@/lib/utils";
@@ -21,6 +21,7 @@ export interface CatalogOrderListItem {
   code: number;
   createdAt: string;
   createdByName: string;
+  customerName: string | null;
   estimatedTotal: number;
   status: CatalogOrderStatus;
   itemCount: number;
@@ -28,6 +29,10 @@ export interface CatalogOrderListItem {
 }
 
 export interface CatalogOrderDetail extends CatalogOrderListItem {
+  // Telefone só com dígitos (DDD + número), como informado no carrinho
+  customerPhone: string | null;
+  // Cliente cadastrado com o mesmo telefone, vinculado ao gerar o pedido
+  customer: { id: string; name: string; deleted: boolean } | null;
   items: {
     id: string;
     productName: string;
@@ -44,6 +49,10 @@ export interface CatalogOrderDetail extends CatalogOrderListItem {
 export interface CatalogOrderForPdv {
   id: string;
   code: number;
+  customerName: string | null;
+  customerPhone: string | null;
+  // Cliente vinculado e ativo, já selecionado no PDV
+  customer: PdvCustomer | null;
   // Itens com o produto atual (preço e estoque de agora), prontos para o carrinho
   lines: { product: PdvProduct; quantity: number }[];
   // O que mudou desde o pedido; o operador vê antes de concluir a venda
@@ -65,6 +74,7 @@ const listSelect = {
   code: true,
   createdAt: true,
   createdBy: { select: { name: true } },
+  customerName: true,
   estimatedTotal: true,
   status: true,
   sale: { select: { code: true } },
@@ -79,6 +89,7 @@ function toListItem(
     code: order.code,
     createdAt: order.createdAt.toISOString(),
     createdByName: order.createdBy.name,
+    customerName: order.customerName,
     estimatedTotal: order.estimatedTotal.toNumber(),
     status: order.status,
     itemCount: order._count.items,
@@ -118,6 +129,8 @@ export async function getCatalogOrderDetail(id: string): Promise<CatalogOrderDet
       where: { id },
       select: {
         ...listSelect,
+        customerPhone: true,
+        customer: { select: { id: true, name: true, deletedAt: true } },
         canceledAt: true,
         cancelReason: true,
         canceledBy: { select: { name: true } },
@@ -140,6 +153,12 @@ export async function getCatalogOrderDetail(id: string): Promise<CatalogOrderDet
     if (!order) return null;
     return {
       ...toListItem(order),
+      customerPhone: order.customerPhone,
+      customer: order.customer && {
+        id: order.customer.id,
+        name: order.customer.name,
+        deleted: order.customer.deletedAt !== null,
+      },
       items: order.items.map((item) => ({
         id: item.id,
         productName: item.productName,
@@ -230,6 +249,11 @@ export async function getCatalogOrderForPdv(
         id: true,
         code: true,
         status: true,
+        customerName: true,
+        customerPhone: true,
+        customer: {
+          select: { id: true, name: true, document: true, phone: true, deletedAt: true },
+        },
         items: {
           select: {
             productId: true,
@@ -297,7 +321,28 @@ export async function getCatalogOrderForPdv(
       lines.push({ product, quantity });
     }
 
-    return { ok: true, order: { id: order.id, code: order.code, lines, notices } };
+    // Cliente excluído depois do pedido não é selecionado no PDV
+    const customer =
+      order.customer && !order.customer.deletedAt
+        ? {
+            id: order.customer.id,
+            name: order.customer.name,
+            document: order.customer.document,
+            phone: order.customer.phone,
+          }
+        : null;
+    return {
+      ok: true,
+      order: {
+        id: order.id,
+        code: order.code,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customer,
+        lines,
+        notices,
+      },
+    };
   } catch (error) {
     console.error("Erro ao carregar pedido do catálogo no PDV:", error);
     return { ok: false, error: "Não foi possível carregar o pedido agora." };

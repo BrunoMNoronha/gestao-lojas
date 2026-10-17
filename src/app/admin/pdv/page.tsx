@@ -72,6 +72,12 @@ export default async function PdvPage({
           .filter((product) => !data.products.some((p) => p.id === product.id)),
       ]
     : data.products;
+  // O cliente vinculado ao pedido entra na lista para já vir selecionado
+  const orderCustomer = catalogOrder?.ok ? catalogOrder.order.customer : null;
+  const customers =
+    orderCustomer && !data.customers.some((c) => c.id === orderCustomer.id)
+      ? [orderCustomer, ...data.customers]
+      : data.customers;
 
   return (
     <PdvTerminal
@@ -79,7 +85,7 @@ export default async function PdvPage({
       key={catalogOrder?.ok ? catalogOrder.order.id : "pdv"}
       remoteSearch
       products={products}
-      customers={data.customers}
+      customers={customers}
       storeSettings={data.storeSettings}
       cashRegisterId={data.cashRegisterId}
       unpackScope={`pdv:${user.id}`}

@@ -5,8 +5,6 @@ import type { CatalogStore } from "@/lib/catalog";
 import {
   MAX_ORDER_ITEMS,
   ORDER_LINK_PATH,
-  decodeOrderLink,
-  encodeOrderLink,
   formatQuantity,
   mapsUrl,
   parseGeoPoint,
@@ -17,6 +15,8 @@ import {
   type OrderRequest,
   type RemovedLine,
 } from "@/lib/catalog-shared";
+import { formatPhone, normalizePhone } from "@/lib/masks";
+import { decodeOrderLink, encodeOrderLink, type OrderLinkData } from "@/lib/order-link";
 import { hashPayload } from "@/lib/sync-operation";
 import { formatCurrency } from "@/lib/utils";
 
@@ -94,6 +94,10 @@ function parseRequest(body: unknown): ParsedRequest {
   if (name.length < 2 || name.length > MAX_NAME) {
     return { ok: false, error: "Informe seu nome (2 a 80 caracteres)." };
   }
+  const phone = normalizePhone(typeof raw.phone === "string" ? raw.phone : "");
+  if (!phone.ok || !phone.value) {
+    return { ok: false, error: "Informe um telefone com DDD, ex.: (11) 99999-8888." };
+  }
   const note = cleanText(raw.note, true);
   if (note.length > MAX_NOTE) {
     return { ok: false, error: `A observação pode ter no máximo ${MAX_NOTE} caracteres.` };
@@ -116,6 +120,7 @@ function parseRequest(body: unknown): ParsedRequest {
       items: parsedItems,
       customer: {
         name,
+        phone: phone.value,
         note: note || undefined,
         fulfillment,
         address: address || undefined,
@@ -143,6 +148,7 @@ export function buildMessage(
   });
   lines.push("", `*Total estimado: ${formatCurrency(total)}*`, "");
   lines.push(`*Cliente:* ${customer.name}`);
+  lines.push(`*Telefone:* ${formatPhone(customer.phone)}`);
   lines.push(
     `*Recebimento:* ${customer.fulfillment === "DELIVERY" ? "Entrega" : "Retirada na loja"}`,
   );
@@ -252,20 +258,32 @@ export async function buildCatalogOrder(
   const token = encodeOrderLink({
     key: randomUUID(),
     items: items.map((item) => ({ productId: item.productId, quantity: item.quantity })),
+    contact: { name: customer.name, phone: customer.phone },
   });
   const orderLink = origin ? `${origin}${ORDER_LINK_PATH}?p=${token}` : undefined;
   const message = buildMessage(store, items, total, customer, orderLink);
   return { ok: true, items, removed, total, message, whatsappUrl: whatsappUrlFor(store, message) };
 }
 
-// Hash dos itens do link em ordem estável: a mesma chave só vale para os mesmos itens
-function linkHash(items: OrderRequest["items"]): string {
+// Hash dos itens (em ordem estável) e do contato do link: a mesma chave só vale para os mesmos dados
+function linkHash({ items, contact }: OrderLinkData): string {
   return hashPayload({
-    v: 1,
+    v: 2,
     items: [...items]
       .sort((a, b) => (a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0))
       .map((item) => [item.productId, String(item.quantity)]),
+    contact: [contact.name, contact.phone],
   });
+}
+
+// Cliente cadastrado com o mesmo telefone; com nenhum ou mais de um, o pedido fica sem vínculo
+async function customerByPhone(phone: string): Promise<string | null> {
+  const matches = await prisma.customer.findMany({
+    where: { phone, deletedAt: null },
+    select: { id: true },
+    take: 2,
+  });
+  return matches.length === 1 ? matches[0].id : null;
 }
 
 function isDuplicateRequest(error: unknown): boolean {
@@ -300,13 +318,14 @@ export async function createCatalogOrderFromLink(
 ): Promise<OrderFromLinkResult> {
   const link = decodeOrderLink(token);
   if (!link) return { ok: false, status: 400, error: "Link de pedido inválido." };
-  const payloadHash = linkHash(link.items);
+  const payloadHash = linkHash(link);
 
   const previous = await replayOrder(link.key, payloadHash);
   if (previous) return previous;
 
   const priced = await priceOrder(link.items);
   if (!priced.ok) return { ok: false, status: priced.status, error: priced.error };
+  const customerId = await customerByPhone(link.contact.phone);
 
   try {
     const order = await prisma.catalogOrder.create({
@@ -314,6 +333,9 @@ export async function createCatalogOrderFromLink(
         requestKey: link.key,
         payloadHash,
         createdById: userId,
+        customerName: link.contact.name,
+        customerPhone: link.contact.phone,
+        customerId,
         estimatedTotal: priced.total,
         items: {
           create: priced.items.map((item) => ({

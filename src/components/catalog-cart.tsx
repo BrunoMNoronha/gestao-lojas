@@ -45,10 +45,13 @@ import {
   type OrderRequest,
   type OrderResponse,
 } from "@/lib/catalog-shared";
+import { formatPhone, onlyDigits } from "@/lib/masks";
 import { cn, formatCurrency } from "@/lib/utils";
 
 interface Customer {
   name: string;
+  // Formatado como o cliente digita; vai só com dígitos para o servidor
+  phone: string;
   fulfillment: Fulfillment;
   address: string;
   location: GeoPoint | null;
@@ -272,6 +275,7 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
 
   const [customer, setCustomer] = useState<Customer>({
     name: "",
+    phone: "",
     fulfillment: "PICKUP",
     address: "",
     location: null,
@@ -375,6 +379,11 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
       setError("Informe seu nome.");
       return;
     }
+    const phone = onlyDigits(customer.phone);
+    if (phone.length < 10 || phone.length > 11) {
+      setError("Informe um telefone com DDD, ex.: (11) 99999-8888.");
+      return;
+    }
     if (customer.fulfillment === "DELIVERY" && customer.address.trim().length < 5) {
       setError("Informe o endereço de entrega.");
       return;
@@ -384,6 +393,7 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
       items: cart.map((line) => ({ productId: line.productId, quantity: line.quantity })),
       customer: {
         name,
+        phone,
         fulfillment: customer.fulfillment,
         note: customer.note.trim() || undefined,
         address: customer.fulfillment === "DELIVERY" ? customer.address.trim() : undefined,
@@ -605,6 +615,26 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
               onChange={(e) => updateCustomer({ name: e.target.value })}
               required
             />
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="pedido-telefone" className="text-xs font-medium">
+              WhatsApp / telefone <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="pedido-telefone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel-national"
+              placeholder="(11) 99999-8888"
+              value={customer.phone}
+              onChange={(e) => updateCustomer({ phone: formatPhone(e.target.value) })}
+              aria-describedby="pedido-telefone-ajuda"
+              required
+            />
+            <p id="pedido-telefone-ajuda" className="text-muted-foreground text-xs">
+              Vai na mensagem e no pedido da loja; no link, fica protegido.
+            </p>
           </div>
 
           <fieldset className="space-y-2">

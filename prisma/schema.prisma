@@ -216,19 +216,20 @@ model ProductPrice {
 }
 
 model Customer {
-  id            String       @id @default(cuid())
+  id            String         @id @default(cuid())
   name          String
   document      String?
   phone         String?
   email         String?
   address       String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   deletedAt     DateTime?
-  syncVersion   BigInt       @default(0)
+  syncVersion   BigInt         @default(0)
   sales         Sale[]
   receivables   Receivable[]
-  testDataRunId String?      @db.Uuid // Geração de dados de teste que criou o registro (#67)
+  testDataRunId String?        @db.Uuid // Geração de dados de teste que criou o registro (#67)
+  catalogOrders CatalogOrder[]
 
   @@index([syncVersion, id])
 }
@@ -287,10 +288,10 @@ model SaleItem {
 }
 
 // Pedido do catálogo público (issue #81, src/lib/catalog-order.ts). O catálogo não grava nada: a
-// mensagem do WhatsApp leva um link com os itens, e o pedido nasce quando um usuário logado abre
-// esse link. Não guarda dados pessoais (ficam na conversa do WhatsApp). Criar o pedido não mexe em estoque,
-// caixa, fiado nem faturamento: só a venda (src/lib/create-sale.ts) faz isso, e o vínculo com ela é
-// gravado na mesma transação da venda.
+// mensagem do WhatsApp leva um link criptografado com os itens, o nome e o telefone do cliente
+// (src/lib/order-link.ts), e o pedido nasce quando um usuário logado abre esse link. Criar o pedido
+// não mexe em estoque, caixa, fiado nem faturamento: só a venda (src/lib/create-sale.ts) faz isso,
+// e o vínculo com ela é gravado na mesma transação da venda.
 model CatalogOrder {
   id             String             @id @default(cuid())
   // Número exibido no painel e no PDV
@@ -302,6 +303,13 @@ model CatalogOrder {
   // Quem abriu o link do pedido (usuário logado): o pedido nasce nesse momento
   createdById    String
   createdBy      User               @relation("CatalogOrderCreatedBy", fields: [createdById], references: [id])
+  // Contato informado pelo cliente no carrinho (telefone só com dígitos, como Customer.phone).
+  // Anuláveis só por compatibilidade com a 0017: todo pedido novo tem nome e telefone.
+  customerName   String?
+  customerPhone  String?
+  // Cliente cadastrado com o mesmo telefone, quando há exatamente um
+  customerId     String?
+  customer       Customer?          @relation(fields: [customerId], references: [id], onDelete: SetNull)
   // Total calculado no pedido; a venda usa os preços vigentes na conclusão
   estimatedTotal Decimal            @db.Decimal(10, 2)
   createdAt      DateTime           @default(now())
@@ -319,6 +327,7 @@ model CatalogOrder {
 
   @@index([status, createdAt])
   @@index([createdAt])
+  @@index([customerId])
 }
 
 // Itens do pedido como estavam ao confirmar (nome, unidade e preço da época)

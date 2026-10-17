@@ -18,7 +18,7 @@ Só existe o ambiente de **produção** (`main`). Não há previews nem banco de
 | ---------------- | ---------- | ----------------------------------------------------------------------------------------- |
 | `DATABASE_URL`   | Production | URL **com pooler** da Neon (criada pela integração)                                       |
 | `DIRECT_URL`     | Production | URL **sem pooler** da Neon (`DATABASE_URL_UNPOOLED` da integração)                        |
-| `AUTH_SECRET`    | Production | Segredo aleatório: `npx auth secret` ou `openssl rand -base64 32`                         |
+| `AUTH_SECRET`    | Production | Segredo aleatório: `npx auth secret` ou `openssl rand -base64 32`. Também cifra o link do pedido do catálogo: trocá-lo encerra as sessões e invalida os links ainda não abertos |
 | `ADMIN_EMAIL`    | Production | E-mail do primeiro administrador                                                          |
 | `ADMIN_PASSWORD` | Production | Senha do primeiro administrador (mínimo 12 caracteres), definida pelo responsável da loja |
 | `ADMIN_NAME`     | Production | Opcional (padrão "Administrador")                                                         |
