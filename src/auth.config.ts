@@ -9,8 +9,8 @@ export const authConfig = {
   },
   callbacks: {
     // Executado pelo proxy: apenas redireciona por estado de login. O perfil do token pode estar
-    // desatualizado, então a página inicial e as permissões são decididas no servidor com o perfil
-    // atual do banco (src/app/page.tsx, requirePageAccess / authorize em src/lib/authz.ts).
+    // desatualizado, então a página inicial (/inicio) e as permissões são decididas no servidor com o perfil
+    // atual do banco (src/app/inicio/page.tsx, requirePageAccess / authorize em src/lib/authz.ts).
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
       const { pathname } = nextUrl;
@@ -19,15 +19,17 @@ export const authConfig = {
       if (pathname === "/catalogo" || pathname.startsWith("/catalogo/")) {
         return true;
       }
+      // Landing de apresentação: pública para todos (logado ou não)
       if (pathname === "/") {
-        return isLoggedIn ? true : Response.redirect(new URL("/login", nextUrl));
+        return true;
       }
-      if (pathname.startsWith("/admin")) {
+      // /inicio decide a página inicial pelo perfil (src/app/inicio/page.tsx)
+      if (pathname === "/inicio" || pathname.startsWith("/admin")) {
         return isLoggedIn; // false → redireciona para /login?callbackUrl=...
       }
       // Sessão que o servidor já recusou (usuário desativado): fica no login para entrar de novo
       if (isLoggedIn && pathname === "/login" && !nextUrl.searchParams.has(INVALID_SESSION_PARAM)) {
-        return Response.redirect(new URL("/", nextUrl));
+        return Response.redirect(new URL("/inicio", nextUrl));
       }
       return true;
     },
