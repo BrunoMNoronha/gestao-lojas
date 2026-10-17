@@ -26,7 +26,10 @@ const {
   cancelCatalogOrder,
   getCatalogOrderDetail,
   getCatalogOrderForPdv,
+  getCatalogOrderCustomerMatches,
   getCatalogOrderPage,
+  linkCatalogOrderCustomer,
+  registerCatalogOrderCustomer,
   registerCatalogOrderFromLink,
 } = await import("@/actions/catalog-orders");
 
@@ -472,5 +475,137 @@ describe("pedido carregado no PDV", () => {
       ok: false,
       error: CATALOG_ORDER_CLOSED_ERROR,
     });
+  });
+});
+
+describe("cadastro do cliente a partir do pedido", () => {
+  const orderCustomer = async (id: string) =>
+    (await prisma.catalogOrder.findUniqueOrThrow({ where: { id } })).customerId;
+
+  it("cadastra com o nome editado e o telefone do pedido e vincula", async () => {
+    const order = await createOrder();
+    const result = await registerCatalogOrderCustomer({ orderId: order.id, name: "  Maria  S. " });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(authorize).toHaveBeenCalledWith("customers.manage");
+    const customer = await prisma.customer.findUniqueOrThrow({ where: { id: result.customer.id } });
+    expect(customer).toMatchObject({ name: "Maria S.", phone: CONTACT.phone, deletedAt: null });
+    expect(await orderCustomer(order.id)).toBe(customer.id);
+    const loaded = await getCatalogOrderForPdv(order.id);
+    expect(loaded.ok && loaded.order.customer?.id).toBe(customer.id);
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/clientes");
+  });
+
+  it("funciona em pedido convertido sem alterar a venda", async () => {
+    const order = await createOrder();
+    const sale = await registerSale(store.user.id, saleInput(store, { catalogOrderId: order.id }));
+    expect(sale.success).toBe(true);
+    if (!sale.success) return;
+
+    const result = await registerCatalogOrderCustomer({ orderId: order.id, name: CONTACT.name });
+
+    expect(result.success).toBe(true);
+    const saved = await prisma.sale.findUniqueOrThrow({ where: { id: sale.data.id } });
+    expect(saved.customerId).toBeNull();
+  });
+
+  it("telefone já cadastrado bloqueia e permite vincular ao existente", async () => {
+    const order = await createOrder();
+    await prisma.customer.create({ data: { name: "Maria A", phone: CONTACT.phone } });
+    await prisma.customer.create({ data: { name: "Maria B", phone: CONTACT.phone } });
+    const before = await prisma.customer.count();
+
+    const matches = await getCatalogOrderCustomerMatches(order.id);
+    expect(matches?.byPhone.map((c) => c.name)).toEqual(["Maria A", "Maria B"]);
+
+    const refused = await registerCatalogOrderCustomer({
+      orderId: order.id,
+      name: CONTACT.name,
+      confirmSimilarName: true,
+    });
+    expect(refused).toMatchObject({ success: false, code: "PHONE_EXISTS" });
+    expect(await prisma.customer.count()).toBe(before);
+    expect(await orderCustomer(order.id)).toBeNull();
+
+    const target = matches!.byPhone[1];
+    expect(await linkCatalogOrderCustomer({ orderId: order.id, customerId: target.id })).toEqual({
+      success: true,
+    });
+    expect(await orderCustomer(order.id)).toBe(target.id);
+  });
+
+  it("nome igual avisa e só cadastra com a confirmação", async () => {
+    const order = await createOrder();
+    await prisma.customer.create({ data: { name: "MARIA SOUZA", phone: "21988887777" } });
+
+    const warned = await registerCatalogOrderCustomer({ orderId: order.id, name: CONTACT.name });
+    expect(warned).toMatchObject({
+      success: false,
+      code: "SIMILAR_NAME",
+      matches: { byPhone: [], byName: [{ name: "MARIA SOUZA" }] },
+    });
+    expect(await orderCustomer(order.id)).toBeNull();
+
+    const confirmed = await registerCatalogOrderCustomer({
+      orderId: order.id,
+      name: CONTACT.name,
+      confirmSimilarName: true,
+    });
+    expect(confirmed.success).toBe(true);
+    expect(await prisma.customer.count({ where: { phone: CONTACT.phone } })).toBe(1);
+  });
+
+  it("cadastros simultâneos do mesmo telefone criam um só cliente", async () => {
+    const first = await createOrder();
+    const second = await createOrder();
+    const results = await Promise.all([
+      registerCatalogOrderCustomer({ orderId: first.id, name: CONTACT.name }),
+      registerCatalogOrderCustomer({ orderId: second.id, name: CONTACT.name }),
+    ]);
+
+    expect(results.filter((r) => r.success)).toHaveLength(1);
+    expect(results.find((r) => !r.success)).toMatchObject({ code: "PHONE_EXISTS" });
+    expect(await prisma.customer.count({ where: { phone: CONTACT.phone } })).toBe(1);
+  });
+
+  it("pedido já vinculado recusa; vínculo com cliente excluído pode ser refeito", async () => {
+    await prisma.customer.update({
+      where: { id: store.customer.id },
+      data: { phone: CONTACT.phone },
+    });
+    const order = await createOrder();
+    expect(await orderCustomer(order.id)).toBe(store.customer.id);
+    expect(
+      await registerCatalogOrderCustomer({ orderId: order.id, name: CONTACT.name }),
+    ).toMatchObject({ success: false, error: "Este pedido já tem cliente vinculado." });
+
+    await prisma.customer.update({
+      where: { id: store.customer.id },
+      data: { deletedAt: new Date() },
+    });
+    expect(
+      await linkCatalogOrderCustomer({ orderId: order.id, customerId: store.customer.id }),
+    ).toEqual({ success: false, error: "Cliente não encontrado ou excluído." });
+    const result = await registerCatalogOrderCustomer({ orderId: order.id, name: CONTACT.name });
+    expect(result.success).toBe(true);
+    if (result.success) expect(await orderCustomer(order.id)).toBe(result.customer.id);
+  });
+
+  it("sem permissão não cadastra nem vincula", async () => {
+    const order = await createOrder();
+    const before = await prisma.customer.count();
+    authorize.mockResolvedValue({ ok: false, error: "Sem permissão." });
+
+    expect(await registerCatalogOrderCustomer({ orderId: order.id, name: "Maria" })).toEqual({
+      success: false,
+      error: "Sem permissão.",
+    });
+    expect(
+      await linkCatalogOrderCustomer({ orderId: order.id, customerId: store.customer.id }),
+    ).toEqual({ success: false, error: "Sem permissão." });
+    expect(await getCatalogOrderCustomerMatches(order.id)).toBeNull();
+    expect(await prisma.customer.count()).toBe(before);
+    expect(await orderCustomer(order.id)).toBeNull();
   });
 });

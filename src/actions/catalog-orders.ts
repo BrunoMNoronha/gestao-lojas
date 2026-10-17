@@ -368,3 +368,204 @@ export async function registerCatalogOrderFromLink(
     return { success: false, error: "Não foi possível registrar o pedido agora." };
   }
 }
+
+// Cadastro do cliente a partir do pedido (issue #81). Duplicidade: mesmo telefone em cliente ativo
+// impede o cadastro (o operador vincula ao existente); nome igual só avisa. Vale em qualquer
+// situação do pedido e não altera a venda já concluída.
+
+export interface CustomerMatch {
+  id: string;
+  name: string;
+  phone: string | null;
+  document: string | null;
+}
+
+export interface CustomerMatches {
+  byPhone: CustomerMatch[];
+  byName: CustomerMatch[];
+}
+
+export type RegisterOrderCustomerResult =
+  | { success: true; customer: { id: string; name: string } }
+  | {
+      success: false;
+      error: string;
+      code?: "PHONE_EXISTS" | "SIMILAR_NAME";
+      matches?: CustomerMatches;
+    };
+
+const MATCH_LIMIT = 5;
+const customerMatchSelect = { id: true, name: true, phone: true, document: true } as const;
+
+function cleanName(value: unknown): string {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+async function findCustomerMatches(
+  db: Prisma.TransactionClient | typeof prisma,
+  phone: string,
+  name: string,
+): Promise<CustomerMatches> {
+  const byPhone = await db.customer.findMany({
+    where: { phone, deletedAt: null },
+    select: customerMatchSelect,
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    take: MATCH_LIMIT,
+  });
+  const byName = name
+    ? await db.customer.findMany({
+        where: {
+          name: { equals: name, mode: "insensitive" },
+          deletedAt: null,
+          id: { notIn: byPhone.map((c) => c.id) },
+        },
+        select: customerMatchSelect,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        take: MATCH_LIMIT,
+      })
+    : [];
+  return { byPhone, byName };
+}
+
+/** Clientes ativos que podem ser o mesmo do pedido: mesmo telefone ou mesmo nome. */
+export async function getCatalogOrderCustomerMatches(
+  orderId: string,
+): Promise<CustomerMatches | null> {
+  const authz = await authorize("customers.view");
+  if (!authz.ok || typeof orderId !== "string" || !orderId) return null;
+  try {
+    const order = await prisma.catalogOrder.findUnique({
+      where: { id: orderId },
+      select: { customerPhone: true, customerName: true },
+    });
+    if (!order?.customerPhone) return null;
+    return await findCustomerMatches(prisma, order.customerPhone, cleanName(order.customerName));
+  } catch (error) {
+    console.error("Erro ao buscar clientes parecidos com o do pedido:", error);
+    return null;
+  }
+}
+
+// Recusa dentro da transação com os dados para a tela (desfaz tudo)
+class RegisterRefused extends Error {
+  constructor(readonly result: RegisterOrderCustomerResult) {
+    super("refused");
+  }
+}
+
+/**
+ * Cadastra o cliente do pedido com o nome (editável) e o telefone do pedido e vincula o pedido a
+ * ele. A trava por telefone serializa cadastros simultâneos do mesmo número, mesmo de pedidos
+ * diferentes, para a checagem de duplicidade valer.
+ */
+export async function registerCatalogOrderCustomer(input: {
+  orderId: string;
+  name: string;
+  confirmSimilarName?: boolean;
+}): Promise<RegisterOrderCustomerResult> {
+  const authz = await authorize("customers.manage");
+  if (!authz.ok) return { success: false, error: authz.error };
+  if (!input || typeof input.orderId !== "string" || !input.orderId) {
+    return { success: false, error: "Pedido inválido." };
+  }
+  const name = cleanName(input.name);
+  if (name.length < 2 || name.length > 80) {
+    return { success: false, error: "Informe o nome do cliente (2 a 80 caracteres)." };
+  }
+  try {
+    const customer = await prisma.$transaction(async (tx) => {
+      const order = await tx.catalogOrder.findUnique({
+        where: { id: input.orderId },
+        select: {
+          customerPhone: true,
+          customerId: true,
+          customer: { select: { deletedAt: true } },
+        },
+      });
+      if (!order) throw new RegisterRefused({ success: false, error: "Pedido não encontrado." });
+      if (!order.customerPhone) {
+        throw new RegisterRefused({ success: false, error: "Este pedido não tem telefone." });
+      }
+      // Vínculo com cliente excluído depois do pedido pode ser substituído
+      if (order.customerId && !order.customer?.deletedAt) {
+        throw new RegisterRefused({
+          success: false,
+          error: "Este pedido já tem cliente vinculado.",
+        });
+      }
+      const phone = order.customerPhone;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`customer-phone:${phone}`}))::text`;
+
+      const matches = await findCustomerMatches(tx, phone, name);
+      if (matches.byPhone.length > 0) {
+        throw new RegisterRefused({
+          success: false,
+          code: "PHONE_EXISTS",
+          error: "Já existe cliente cadastrado com este telefone. Vincule o pedido a ele.",
+          matches,
+        });
+      }
+      if (matches.byName.length > 0 && !input.confirmSimilarName) {
+        throw new RegisterRefused({
+          success: false,
+          code: "SIMILAR_NAME",
+          error: "Há cliente com o mesmo nome. Confira se não é a mesma pessoa.",
+          matches,
+        });
+      }
+
+      const created = await tx.customer.create({
+        data: { name, phone },
+        select: { id: true, name: true },
+      });
+      const linked = await tx.catalogOrder.updateMany({
+        // Só se o vínculo não mudou desde a leitura (outro cadastro ou vínculo simultâneo)
+        where: { id: input.orderId, customerId: order.customerId },
+        data: { customerId: created.id },
+      });
+      if (linked.count === 0) {
+        throw new RegisterRefused({
+          success: false,
+          error: "Este pedido já tem cliente vinculado.",
+        });
+      }
+      return created;
+    });
+    revalidatePath("/admin/pedidos");
+    revalidatePath("/admin/clientes");
+    return { success: true, customer };
+  } catch (error) {
+    if (error instanceof RegisterRefused) return error.result;
+    console.error("Erro ao cadastrar o cliente do pedido:", error);
+    return { success: false, error: "Falha ao cadastrar o cliente." };
+  }
+}
+
+/** Vincula o pedido a um cliente ativo já cadastrado (opção oferecida na duplicidade). */
+export async function linkCatalogOrderCustomer(input: {
+  orderId: string;
+  customerId: string;
+}): Promise<CatalogOrderActionResult> {
+  const authz = await authorize("customers.view");
+  if (!authz.ok) return { success: false, error: authz.error };
+  if (!input || typeof input.orderId !== "string" || typeof input.customerId !== "string") {
+    return { success: false, error: "Dados inválidos." };
+  }
+  try {
+    const customer = await prisma.customer.findFirst({
+      where: { id: input.customerId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!customer) return { success: false, error: "Cliente não encontrado ou excluído." };
+    const linked = await prisma.catalogOrder.updateMany({
+      where: { id: input.orderId },
+      data: { customerId: customer.id },
+    });
+    if (linked.count === 0) return { success: false, error: "Pedido não encontrado." };
+    revalidatePath("/admin/pedidos");
+    return { success: true };
+  } catch (error) {
+    console.error("Erro ao vincular o cliente do pedido:", error);
+    return { success: false, error: "Falha ao vincular o cliente." };
+  }
+}
