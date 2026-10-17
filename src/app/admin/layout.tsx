@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
-import { AdminMobileHeader, AdminSidebar } from "@/components/admin-sidebar";
+import { AdminSidebar } from "@/components/admin-sidebar";
+import { AdminTopbar } from "@/components/admin-topbar";
 import { getSessionUser } from "@/lib/authz";
 import { INVALID_SESSION_LOGIN } from "@/lib/login-paths";
-import { getStoreBrandName } from "@/lib/store-brand";
+import { getStoreBrandName, isCatalogEnabled } from "@/lib/store-brand";
 import { isReceivablesVisible } from "@/lib/on-account";
 import { can } from "@/lib/permissions";
 import { OfflineUserGuard } from "@/components/offline-pdv/offline-user-guard";
@@ -13,15 +14,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const user = await getSessionUser();
   if (!user) redirect(INVALID_SESSION_LOGIN);
 
-  const [storeName, showReceivables] = await Promise.all([
+  const [storeName, catalogEnabled, showReceivables] = await Promise.all([
     getStoreBrandName(),
+    // Mesma leitura de StoreSettings da marca (cache da requisição): sem consulta extra
+    isCatalogEnabled(),
     // Só consulta o banco para quem vê o item no menu
     can(user.role, "receivables.view") ? isReceivablesVisible() : true,
   ]);
   const navProps = {
     user: { name: user.name, role: user.role },
     storeName,
-    features: { onAccount: showReceivables },
+    features: { onAccount: showReceivables, catalog: catalogEnabled },
   };
 
   return (
@@ -38,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <CommandPalette user={navProps.user} features={navProps.features} />
       <AdminSidebar {...navProps} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminMobileHeader {...navProps} />
+        <AdminTopbar {...navProps} />
         {/* min-w-0 permite que tabelas largas rolem dentro do próprio contêiner */}
         <main id="conteudo" className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
           {children}

@@ -113,6 +113,7 @@ Toda a lógica de negócios e persistência deve ser encapsulada em Server Actio
 ### 3. Componentes da Interface (`src/components/`)
 - **`src/components/ui/`**: Componentes puramente visuais e reutilizáveis do Shadcn UI.
 - **`src/components/`**: Componentes de domínio (formulários, tabelas e visões específicas).
+- **Navegação do painel:** `admin-sidebar.tsx` (menu lateral; gaveta no celular) e `admin-topbar.tsx` (barra superior fixa com os atalhos "PDV sem internet", "Sincronização offline" e catálogo público, a instalação do app e o menu do usuário com Minha conta, tema e sair). Rotas com `placement: "topbar"` em `APP_ROUTES` saem do menu lateral e continuam na paleta de comandos; o link do catálogo só aparece com o catálogo ativo.
 
 ### 4. Catálogo público (`/catalogo`, issue #17)
 Única área sem login além de `/login`. Liberada explicitamente em `src/auth.config.ts`.

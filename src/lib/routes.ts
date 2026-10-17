@@ -18,21 +18,25 @@ import {
 } from "lucide-react";
 import { type AppRole, type Permission, can, homePathFor } from "@/lib/permissions";
 
-// Mapa central das rotas do painel: o menu lateral e a checagem de acesso das páginas leem daqui.
+// Mapa central das rotas do painel: os menus (lateral, barra superior e paleta de comandos) e a
+// checagem de acesso das páginas leem daqui.
 export interface AppRoute {
   href: string;
   label: string;
   icon: LucideIcon;
   permission: Permission;
-  // Fora do menu lateral (ex.: "Minha conta", acessada pelo bloco do usuário)
+  // Fora dos menus (ex.: "Minha conta", acessada pelo menu do usuário)
   hidden?: boolean;
+  // "topbar": atalho na barra superior do painel, fora do menu lateral (continua na paleta)
+  placement?: "topbar";
   // Item que some do menu quando o recurso da loja está inativo (só visual: a página continua
   // protegida pela permissão)
   feature?: NavFeature;
 }
 
 // "onAccount": Contas a Receber, oculto com o fiado desligado e sem títulos a receber (issue #29)
-export type NavFeature = "onAccount";
+// "catalog": link do catálogo público na barra superior, só com o catálogo ativo
+export type NavFeature = "onAccount" | "catalog";
 
 /** Recursos visíveis no menu; ausente ou true = exibido. */
 export type NavFeatures = Partial<Record<NavFeature, boolean>>;
@@ -41,7 +45,13 @@ export const APP_ROUTES: AppRoute[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard.view" },
   { href: "/admin/pdv", label: "Frente de Caixa (PDV)", icon: ShoppingCart, permission: "pdv.use" },
   // PDV que abre sem internet depois da preparação (issue #37); fica fora do layout do /admin
-  { href: "/pdv", label: "PDV sem internet", icon: WifiOff, permission: "pdv.use" },
+  {
+    href: "/pdv",
+    label: "PDV sem internet",
+    icon: WifiOff,
+    permission: "pdv.use",
+    placement: "topbar",
+  },
   // Pedidos recebidos pelo catálogo público, carregados no PDV para virar venda (issue #81)
   {
     href: "/admin/pedidos",
@@ -56,6 +66,7 @@ export const APP_ROUTES: AppRoute[] = [
     label: "Sincronização offline",
     icon: RefreshCw,
     permission: "offline.reconcile",
+    placement: "topbar",
   },
   {
     href: "/admin/contas-a-receber",
@@ -95,16 +106,32 @@ export const APP_ROUTES: AppRoute[] = [
   },
 ];
 
-export function routesFor(
-  role: AppRole | null | undefined,
-  features: NavFeatures = {},
-): AppRoute[] {
+function visibleRoutes(role: AppRole | null | undefined, features: NavFeatures): AppRoute[] {
   return APP_ROUTES.filter(
     (route) =>
       !route.hidden &&
       can(role, route.permission) &&
       (!route.feature || features[route.feature] !== false),
   );
+}
+
+/** Rotas do menu lateral; com `includeTopbar`, também os atalhos da barra superior (paleta). */
+export function routesFor(
+  role: AppRole | null | undefined,
+  features: NavFeatures = {},
+  { includeTopbar = false }: { includeTopbar?: boolean } = {},
+): AppRoute[] {
+  return visibleRoutes(role, features).filter(
+    (route) => includeTopbar || route.placement !== "topbar",
+  );
+}
+
+/** Atalhos da barra superior do painel que o perfil pode ver. */
+export function topbarRoutesFor(
+  role: AppRole | null | undefined,
+  features: NavFeatures = {},
+): AppRoute[] {
+  return visibleRoutes(role, features).filter((route) => route.placement === "topbar");
 }
 
 /**

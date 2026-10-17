@@ -427,7 +427,8 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
 
 ### 6.1.1 Instalação do app (#61)
 
-- **Oferta na tela:** "Instalar app Gestão Lojas" no menu do painel (barra lateral e menu do celular)
+- **Oferta na tela:** "Instalar app Gestão Lojas" na barra superior do painel (no celular, no menu
+  "Mais opções")
   e no cabeçalho do `/pdv` (`src/components/install-app-button.tsx`). O evento
   `beforeinstallprompt` do Chrome/Edge é guardado num estado único (`src/lib/pwa-install.ts`,
   carregado pelo layout raiz) e só abre a janela do navegador depois do clique, uma vez por evento.
@@ -457,6 +458,7 @@ Verificadas contra `node_modules/next/dist/docs/01-app/` (Next.js 16.3.8):
   proteger). A proteção fica nos handlers (`authorize("pdv.use")`).
 - **Decisões da #37 (aprovadas pelo responsável em 03/10/2026):**
   1. O `/admin/pdv` fica como está (PDV online). O `/pdv` entra no menu como "PDV sem internet"
+     (hoje um atalho da barra superior do painel)
      (`APP_ROUTES`) e é aceito como destino do login. O redirecionamento fica para a #38.
   2. (Substituída na #38, abaixo.) No `/pdv` a venda só é finalizada com conexão, pelo `createSale` com a idempotência da #35. Sem
      conexão, o carrinho é montado normalmente e o botão de finalizar fica desativado com aviso.
