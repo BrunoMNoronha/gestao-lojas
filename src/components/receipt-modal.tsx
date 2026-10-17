@@ -8,8 +8,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Printer, CheckCircle, ShoppingBag } from "lucide-react";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import { Printer, CheckCircle, ReceiptText, ShoppingBag } from "lucide-react";
+import { cn, formatCurrency, formatNumber } from "@/lib/utils";
 import { StoreSettingsData } from "@/actions/settings";
 import { displayCep, displayDocument, displayPhone } from "@/lib/masks";
 import { STORE_TIME_ZONE } from "@/lib/store-time";
@@ -25,8 +25,9 @@ export interface CompletedSale {
   total: number;
   discount: number;
   paymentMethod: string;
-  amountPaid: number;
-  change: number;
+  // Nulos na 2ª via: valor recebido e troco não ficam gravados na venda
+  amountPaid: number | null;
+  change: number | null;
   occurredAt: string;
   createdAt: string;
   userName: string;
@@ -50,6 +51,8 @@ interface ReceiptModalProps {
   storeSettings: StoreSettingsData;
   // Rótulo do botão de fechar (padrão: "Nova Venda", logo depois de vender)
   closeLabel?: string;
+  // Título no lugar de "Venda Concluída" (ex.: reimpressão a partir do detalhe da venda)
+  title?: string;
 }
 
 const paymentMethodLabels: Record<string, string> = {
@@ -66,6 +69,7 @@ export function ReceiptModal({
   sale,
   storeSettings,
   closeLabel = "Nova Venda",
+  title,
 }: ReceiptModalProps) {
   if (!sale) return null;
 
@@ -85,10 +89,11 @@ export function ReceiptModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
         <DialogHeader className="print:hidden">
-          <div className="text-success flex items-center gap-2">
-            <CheckCircle className="h-6 w-6" />
+          <div className={cn("flex items-center gap-2", title ? "text-primary" : "text-success")}>
+            {title ? <ReceiptText className="h-6 w-6" /> : <CheckCircle className="h-6 w-6" />}
             <DialogTitle className="text-foreground text-lg font-bold">
-              {provisional ? "Venda registrada neste aparelho" : "Venda Concluída com Sucesso!"}
+              {title ??
+                (provisional ? "Venda registrada neste aparelho" : "Venda Concluída com Sucesso!")}
             </DialogTitle>
           </div>
         </DialogHeader>
@@ -214,7 +219,7 @@ export function ReceiptModal({
               </span>
             </div>
 
-            {sale.paymentMethod === "MONEY" && (
+            {sale.paymentMethod === "MONEY" && sale.amountPaid !== null && sale.change !== null && (
               <>
                 <div className="flex justify-between text-gray-600">
                   <span>Valor Recebido:</span>

@@ -43,6 +43,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/components/confirm-dialog";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payments";
+import { RECONCILIATION_ISSUE_LABELS } from "@/lib/reconciliation-labels";
 import { formatStoreDateTime } from "@/lib/store-time";
 import { cn, formatCurrency, formatNumber } from "@/lib/utils";
 
@@ -69,14 +70,6 @@ const CONFLICT_REASONS: Record<string, string> = {
 
 // Não têm como ser gravadas: só o descarte resolve (o servidor recusa a aprovação)
 const DISCARD_ONLY = new Set(["PRODUCT_NOT_FOUND", "CUSTOMER_NOT_FOUND", "INVALID_AMOUNTS"]);
-
-const ISSUE_TYPES: Record<string, string> = {
-  NEGATIVE_STOCK: "Estoque negativo",
-  POST_CLOSING_SALE: "Venda depois do fechamento",
-  PRICE_DIVERGENCE: "Preço diferente do atual",
-  DATE_ADJUSTED: "Data ajustada",
-  DELETED_CUSTOMER: "Cliente excluído",
-};
 
 const money = (value: string | null | undefined) =>
   value === null || value === undefined ? "-" : formatCurrency(Number(value));
@@ -428,7 +421,7 @@ function IssueCard({
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={i.acknowledgedAt ? "secondary" : "warning"}>
-              {ISSUE_TYPES[i.type] ?? i.type}
+              {RECONCILIATION_ISSUE_LABELS[i.type] ?? i.type}
             </Badge>
             <span className="text-sm font-semibold">Venda #{i.saleCode}</span>
             <span className="text-muted-foreground text-xs">

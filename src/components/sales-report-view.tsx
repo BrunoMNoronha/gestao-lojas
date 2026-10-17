@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/table";
 import { SalesReport, getSalesReport } from "@/actions/reports";
 import { CashOperator } from "@/actions/cash-register";
+import type { StoreSettingsData } from "@/actions/settings";
+import { SaleDetailDialog } from "@/components/sale-detail-dialog";
 import { PaymentMethodBars } from "@/components/payment-method-bars";
 import { PAYMENT_METHOD_LABELS, PaymentMethodValue } from "@/lib/payments";
 import { formatDayKeyBR, formatStoreDateTime } from "@/lib/store-time";
@@ -27,6 +29,7 @@ interface SalesReportViewProps {
   operators: CashOperator[];
   initialFilters: { from: string; to: string };
   initialReport: SalesReport;
+  storeSettings: StoreSettingsData;
 }
 
 interface Filters {
@@ -56,6 +59,7 @@ export function SalesReportView({
   operators,
   initialFilters,
   initialReport,
+  storeSettings,
 }: SalesReportViewProps) {
   const [filters, setFilters] = useState<Filters>({
     ...initialFilters,
@@ -65,6 +69,13 @@ export function SalesReportView({
   const [report, setReport] = useState<SalesReport>(initialReport);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [dialogKey, setDialogKey] = useState(0);
+
+  const openDetail = (id: string) => {
+    setDialogKey((k) => k + 1);
+    setDetailId(id);
+  };
 
   const load = async (next: Filters, append = false) => {
     setLoading(true);
@@ -271,6 +282,7 @@ export function SalesReportView({
                       <TableHead>Forma</TableHead>
                       <TableHead className="text-right">Desconto</TableHead>
                       <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="w-0" />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -294,6 +306,11 @@ export function SalesReportView({
                         </TableCell>
                         <TableCell className="text-right font-mono font-semibold">
                           {formatCurrency(s.total)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button size="sm" variant="outline" onClick={() => openDetail(s.id)}>
+                            Ver
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -320,6 +337,14 @@ export function SalesReportView({
           </CardContent>
         </Card>
       </div>
+
+      <SaleDetailDialog
+        key={`sale-${dialogKey}`}
+        open={detailId !== null}
+        onOpenChange={(open) => !open && setDetailId(null)}
+        saleId={detailId}
+        storeSettings={storeSettings}
+      />
     </div>
   );
 }
