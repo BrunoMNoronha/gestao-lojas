@@ -12,6 +12,7 @@ import {
   Building2,
   ExternalLink,
   MapPin,
+  Percent,
   Share2,
   Receipt,
   Save,
@@ -37,6 +38,16 @@ const PERSON_TYPES: { value: PersonTypeValue; label: string; hint: string }[] = 
   { value: "INDIVIDUAL", label: "Pessoa Física", hint: "Loja em nome de uma pessoa, com CPF" },
 ];
 
+// Texto da margem (aceita vírgula) → número com até 2 casas; vazio = sem sugestão
+function parseMargin(text: string): number | null {
+  const normalized = text.replace(",", ".");
+  return normalized === "" || normalized === "." ? null : Number(normalized);
+}
+
+function formatMargin(value: number | null | undefined): string {
+  return value == null ? "" : String(value).replace(".", ",");
+}
+
 interface Props {
   initialSettings: StoreSettingsData;
 }
@@ -44,6 +55,8 @@ interface Props {
 export function StoreSettingsForm({ initialSettings }: Props) {
   const [formData, setFormData] = useState<StoreSettingsData>(initialSettings);
   const [loading, setLoading] = useState(false);
+  // O campo guarda o texto digitado ("30," no meio da digitação); formData recebe o número
+  const [marginText, setMarginText] = useState(formatMargin(initialSettings.defaultProfitMargin));
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -81,7 +94,9 @@ export function StoreSettingsForm({ initialSettings }: Props) {
         zipCode: res.data?.zipCode ?? "",
         onAccountDueDays: res.data?.onAccountDueDays ?? null,
         onAccountCreditLimit: res.data?.onAccountCreditLimit ?? null,
+        defaultProfitMargin: res.data?.defaultProfitMargin ?? null,
       }));
+      setMarginText(formatMargin(res.data?.defaultProfitMargin));
       toast.success("Configurações da loja salvas com sucesso!");
       // Atualiza o nome da loja exibido na sidebar
     } else {
@@ -460,6 +475,46 @@ export function StoreSettingsForm({ initialSettings }: Props) {
             <p id="store-settings-whatsapp-ajuda" className="text-muted-foreground text-xs">
               Com DDD; sem o código do país, assume +55. Sem número, o catálogo funciona, mas o
               envio do pedido fica desabilitado.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Precificação */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Percent className="text-primary h-5 w-5" />
+            Precificação
+          </CardTitle>
+          <CardDescription>
+            Sugestão de preço de venda no cadastro de novos produtos. Produtos já cadastrados não
+            são alterados.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="store-settings-margem-de-lucro" className="text-sm font-medium">
+              Margem de lucro padrão (%)
+            </Label>
+            <Input
+              id="store-settings-margem-de-lucro"
+              inputMode="decimal"
+              autoComplete="off"
+              value={marginText}
+              onChange={(e) => {
+                // Só dígitos e uma vírgula, com até 4 dígitos inteiros e 2 decimais
+                const text = e.target.value.replace(".", ",");
+                if (!/^\d{0,4}(,\d{0,2})?$/.test(text)) return;
+                setMarginText(text);
+                setFormData((prev) => ({ ...prev, defaultProfitMargin: parseMargin(text) }));
+              }}
+              placeholder="Sem sugestão"
+              aria-describedby="store-settings-margem-ajuda"
+            />
+            <p id="store-settings-margem-ajuda" className="text-muted-foreground text-xs">
+              Preço de venda sugerido = custo + N% do custo. Ex.: custo R$ 10,00 com 30% → R$ 13,00.
+              Vazio: sem sugestão.
             </p>
           </div>
         </CardContent>

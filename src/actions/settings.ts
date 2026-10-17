@@ -9,7 +9,8 @@ import { normalizeWhatsappNumber } from "@/lib/catalog-shared";
 import { normalizeCep, normalizeDocument, normalizePhone } from "@/lib/masks";
 import { parseMoney } from "@/lib/cash-register";
 import { MAX_ON_ACCOUNT_DUE_DAYS } from "@/lib/on-account";
-import type { StoreSettings } from "@prisma/client";
+import { MAX_PROFIT_MARGIN } from "@/lib/pricing";
+import { Prisma, type StoreSettings } from "@prisma/client";
 
 export type PersonTypeValue = "INDIVIDUAL" | "COMPANY";
 
@@ -41,6 +42,8 @@ export interface StoreSettingsData {
   onAccountDueDays?: number | null;
   onAccountCreditLimit?: number | null;
   onAccountBlockOverdue?: boolean;
+  // Margem de lucro padrão (% sobre o custo) que sugere o preço de venda de produto novo; nulo = sem sugestão
+  defaultProfitMargin?: number | null;
 }
 
 // Converte o registro do banco em dados serializáveis (o limite é Decimal no banco)
@@ -69,6 +72,7 @@ function toStoreSettingsData(settings: StoreSettings): StoreSettingsData {
     onAccountDueDays: settings.onAccountDueDays,
     onAccountCreditLimit: settings.onAccountCreditLimit?.toNumber() ?? null,
     onAccountBlockOverdue: settings.onAccountBlockOverdue,
+    defaultProfitMargin: settings.defaultProfitMargin?.toNumber() ?? null,
   };
 }
 
@@ -104,6 +108,7 @@ export async function getStoreSettings(): Promise<StoreSettingsData> {
         onAccountDueDays: null,
         onAccountCreditLimit: null,
         onAccountBlockOverdue: false,
+        defaultProfitMargin: null,
       };
     }
 
@@ -172,6 +177,20 @@ export async function updateStoreSettings(data: StoreSettingsData) {
       };
     }
 
+    // Margem de lucro: % sobre o custo, de 0 a MAX_PROFIT_MARGIN com 2 casas (vazio = sem sugestão)
+    const marginInput = data.defaultProfitMargin ?? null;
+    if (
+      marginInput !== null &&
+      (!Number.isFinite(marginInput) || marginInput < 0 || marginInput > MAX_PROFIT_MARGIN)
+    ) {
+      return {
+        success: false,
+        error: `A margem de lucro deve ficar entre 0% e ${MAX_PROFIT_MARGIN}%.`,
+      };
+    }
+    const defaultProfitMargin =
+      marginInput === null ? null : new Prisma.Decimal(marginInput).toDecimalPlaces(2);
+
     const values = {
       personType,
       companyName,
@@ -196,6 +215,7 @@ export async function updateStoreSettings(data: StoreSettingsData) {
       onAccountDueDays: dueDays,
       onAccountCreditLimit: creditLimit,
       onAccountBlockOverdue: data.onAccountBlockOverdue === true,
+      defaultProfitMargin,
     };
 
     const updated = await prisma.storeSettings.upsert({
