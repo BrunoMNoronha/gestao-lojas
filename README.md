@@ -12,6 +12,35 @@ Tailwind CSS v4 + Shadcn UI · pnpm.
 
 ## Rodando localmente
 
+### Com Docker (recomendado)
+
+Pré-requisito: Docker com Compose 2.22+. Um único container sobe o PostgreSQL 17 e o `next dev`
+com hot reload, e as migrations são aplicadas a cada início.
+
+```bash
+docker compose up --build --watch   # http://localhost:3000
+```
+
+- **Hot reload:** o `--watch` copia para o container cada arquivo editado na sua pasta. Sem ele o
+  app roda com o código da última build e não atualiza. No Windows/macOS um volume simples não
+  serve, porque o Turbopack não recebe os eventos de arquivo. Mudar `package.json` ou
+  `pnpm-lock.yaml` refaz a imagem sozinho; `next.config.ts` reinicia o Next.
+
+- Login: no primeiro acesso é criado o admin local `admin@gestaolojas.com` / `admin123` (ou o de
+  `ADMIN_EMAIL` / `ADMIN_PASSWORD`, se houver `.env`). O `.env` é opcional: banco, `AUTH_SECRET` de
+  desenvolvimento e `ENABLE_STORE_TEST_TOOLS` já vêm do `docker-compose.yml`.
+- Portas ocupadas por outro projeto? Use `APP_PORT` e `DB_PORT` (no `.env` ou na linha de comando).
+  O PostgreSQL fica no host em `127.0.0.1:5434` (usuário/senha `postgres`, banco `gestao_lojas`).
+- Comandos dentro do container: `docker compose exec app pnpm db:migrate --name <nome>`,
+  `docker compose exec app pnpm lint`, `docker compose exec app pnpm check:actions`. A pasta
+  `prisma/` é montada direto, então migrations criadas no container aparecem no projeto.
+- `docker compose down` para; `docker compose down -v` apaga também o banco.
+
+Este compose é só para desenvolvimento; produção roda na Vercel + Neon
+([`docs/DEPLOY.md`](docs/DEPLOY.md)).
+
+### Sem Docker
+
 Pré-requisitos: Node.js 20+, pnpm e um PostgreSQL.
 
 ```bash
