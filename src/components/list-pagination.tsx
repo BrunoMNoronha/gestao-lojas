@@ -3,6 +3,7 @@ import { useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { PAGE_SIZE, type PageInfo } from "@/lib/pagination";
+import { cn } from "@/lib/utils";
 
 export function useListQuery(key = "q", fallback = "") {
   const [filters, setFilters] = useListFilters({ [key]: fallback });
@@ -22,9 +23,10 @@ export function ListPagination({ page, total }: PageInfo) {
   return (
     <nav aria-label="Paginação" className="flex items-center justify-between gap-3 py-3 text-sm">
       <span aria-live="polite">
-        {total} registros · Página {page} de {pages}
+        {total} registros{pages > 1 && ` · Página ${page} de ${pages}`}
       </span>
-      <div className="flex gap-2">
+      {/* Com uma página só, os botões ficariam sempre desabilitados */}
+      <div className={cn("flex gap-2", pages <= 1 && "hidden")}>
         <Button
           variant="outline"
           disabled={pending || page <= 1}

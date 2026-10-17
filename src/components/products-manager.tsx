@@ -12,6 +12,8 @@ import {
   Trash2,
   AlertTriangle,
   Boxes,
+  MoreVertical,
+  SlidersHorizontal,
   Store,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +28,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { getProductOptions } from "@/actions/browse";
 import { ProductItem, deleteProduct } from "@/actions/products";
 import { CategoryData } from "@/actions/categories";
@@ -37,9 +46,60 @@ import { IconButton } from "@/components/icon-button";
 import { OptionSelect } from "@/components/option-select";
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import { formatQuantity, type CatalogUnit } from "@/lib/catalog-shared";
+import { cn, formatCurrency } from "@/lib/utils";
 import { isStockLow } from "@/lib/stock";
 import { ScanBarcodeButton } from "@/components/barcode-scanner-dialog";
+
+// Estoque com a unidade ("4 CX", "2,5 KG"); abaixo do mínimo, em destaque com aviso
+function StockValue({ product }: { product: ProductItem }) {
+  const low = isStockLow(product);
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 tabular-nums",
+        low && "text-destructive font-medium",
+      )}
+      title={low ? "Estoque baixo (no mínimo ou abaixo)" : undefined}
+    >
+      {low && <AlertTriangle className="size-3.5 shrink-0" aria-hidden />}
+      {formatQuantity(product.unit as CatalogUnit, product.currentStock)} {product.unit}
+      {low && <span className="sr-only">, estoque baixo</span>}
+    </span>
+  );
+}
+
+// Conteúdo do cartão do produto no celular
+function ProductCardBody({ product: p }: { product: ProductItem }) {
+  const low = isStockLow(p);
+  return (
+    <span className="block space-y-1">
+      <span className="flex items-start justify-between gap-3">
+        <span className="line-clamp-2 font-medium break-words">{p.name}</span>
+        <span className="shrink-0 font-semibold tabular-nums">{formatCurrency(p.salePrice)}</span>
+      </span>
+      <span className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+        <StockValue product={p} />
+        {p.categoryName && <span>· {p.categoryName}</span>}
+        {p.containedProductId && p.unitsPerBox && <span>· Caixa com {p.unitsPerBox} un.</span>}
+      </span>
+      {(p.showInCatalog || low) && (
+        <span className="flex flex-wrap gap-1.5 pt-0.5">
+          {p.showInCatalog && (
+            <Badge variant="info" className="gap-1 text-[11px] font-normal">
+              <Store aria-hidden /> Catálogo
+            </Badge>
+          )}
+          {low && (
+            <Badge variant="destructive" className="gap-1 text-[11px]">
+              <AlertTriangle aria-hidden /> Estoque baixo
+            </Badge>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
 
 interface ProductsManagerProps {
   initialProducts: ProductItem[];
@@ -72,6 +132,8 @@ export function ProductsManager({
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<ProductItem | null>(null);
   const [newProductBarcode, setNewProductBarcode] = useState<string | undefined>();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilters = (catalogFilter !== "ALL" ? 1 : 0) + (selectedCategory !== "ALL" ? 1 : 0);
 
   const filteredProducts = initialProducts;
 
@@ -126,6 +188,33 @@ export function ProductsManager({
 
   const handleRefreshData = () => {};
 
+  const catalogSelect = (
+    <OptionSelect
+      aria-label="Filtrar pelo catálogo público"
+      value={catalogFilter}
+      onValueChange={setCatalogFilter}
+      options={[
+        { value: "ALL", label: "Catálogo: todos" },
+        { value: "IN", label: "No catálogo" },
+        { value: "OUT", label: "Fora do catálogo" },
+      ]}
+    />
+  );
+  const categorySelect = (
+    <OptionSelect
+      aria-label="Filtrar por categoria"
+      value={selectedCategory}
+      onValueChange={setSelectedCategory}
+      options={[
+        { value: "ALL", label: "Todas as Categorias" },
+        ...initialCategories.map((cat) => ({
+          value: cat.id,
+          label: `${cat.name} (${cat._count?.products ?? 0})`,
+        })),
+      ]}
+    />
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -148,62 +237,73 @@ export function ProductsManager({
         }
       />
 
-      {/* Filters & Search */}
-      <Card>
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
-          <div className="flex flex-1 gap-2">
-            <div className="relative flex-1">
-              <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
-              <Input
-                aria-label="Buscar produto"
-                placeholder="Buscar por nome, código de barras ou SKU..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <ScanBarcodeButton
-              size="icon-sm"
-              className="size-8"
-              label="Consultar código pela câmera"
-              title="Consultar produto"
-              description="Aponte a câmera para o código de barras para encontrar o produto."
-              onDetected={handleScannedCode}
+      {/* Busca e filtros: no celular, catálogo e categoria ficam no painel "Filtros" */}
+      <div className="md:bg-card md:ring-foreground/10 flex flex-col gap-3 md:flex-row md:rounded-xl md:p-4 md:ring-1">
+        <div className="flex flex-1 gap-2">
+          <div className="relative flex-1">
+            <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+            <Input
+              aria-label="Buscar produto"
+              placeholder="Buscar por nome, EAN ou SKU"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-11 pl-9 md:h-8"
             />
           </div>
+          <ScanBarcodeButton
+            size="icon-sm"
+            className="size-11 md:size-8"
+            label="Consultar código pela câmera"
+            title="Consultar produto"
+            description="Aponte a câmera para o código de barras para encontrar o produto."
+            onDetected={handleScannedCode}
+          />
+          <Button
+            variant="outline"
+            className="h-11 md:hidden"
+            onClick={() => setFiltersOpen(true)}
+            aria-label={activeFilters > 0 ? `Filtros, ${activeFilters} ativo(s)` : "Filtros"}
+          >
+            <SlidersHorizontal />
+            {activeFilters > 0 ? `(${activeFilters})` : null}
+          </Button>
+        </div>
 
-          <div className="w-full sm:w-48">
-            <OptionSelect
-              aria-label="Filtrar pelo catálogo público"
-              value={catalogFilter}
-              onValueChange={setCatalogFilter}
-              options={[
-                { value: "ALL", label: "Catálogo: todos" },
-                { value: "IN", label: "No catálogo" },
-                { value: "OUT", label: "Fora do catálogo" },
-              ]}
-            />
+        <div className="hidden md:block md:w-48">{catalogSelect}</div>
+        <div className="hidden md:block md:w-64">{categorySelect}</div>
+      </div>
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="bottom" className="gap-4 p-4">
+          <SheetTitle>Filtros</SheetTitle>
+          <SheetDescription className="sr-only">
+            Filtrar produtos por catálogo e categoria
+          </SheetDescription>
+          <div className="space-y-3">
+            {catalogSelect}
+            {categorySelect}
           </div>
-
-          <div className="w-full sm:w-64">
-            <OptionSelect
-              aria-label="Filtrar por categoria"
-              value={selectedCategory}
-              onValueChange={setSelectedCategory}
-              options={[
-                { value: "ALL", label: "Todas as Categorias" },
-                ...initialCategories.map((cat) => ({
-                  value: cat.id,
-                  label: `${cat.name} (${cat._count?.products ?? 0})`,
-                })),
-              ]}
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              className="h-11"
+              disabled={activeFilters === 0}
+              onClick={() => {
+                setSelectedCategory("ALL");
+                setCatalogFilter("ALL");
+              }}
+            >
+              Limpar filtros
+            </Button>
+            <Button className="h-11" onClick={() => setFiltersOpen(false)}>
+              Ver produtos
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </SheetContent>
+      </Sheet>
 
-      {/* Data Table */}
-      <Card>
+      {/* Lista: cartões no celular, tabela a partir de md */}
+      <Card className="max-md:py-1">
         <CardContent className="p-0">
           {filteredProducts.length === 0 ? (
             <EmptyState
@@ -227,27 +327,70 @@ export function ProductsManager({
               }
             />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produto</TableHead>
-                  <TableHead className="hidden lg:table-cell">Código / SKU</TableHead>
-                  <TableHead className="hidden md:table-cell">Categoria</TableHead>
-                  {canManage && (
-                    <TableHead className="hidden text-right md:table-cell">P. Custo</TableHead>
-                  )}
-                  <TableHead className="text-right">P. Venda</TableHead>
-                  <TableHead className="hidden text-center sm:table-cell">Un.</TableHead>
-                  <TableHead className="text-right">Estoque</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  {canManage && <TableHead className="text-center">Ações</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <ul className="divide-y md:hidden">
                 {filteredProducts.map((p) => {
-                  const lowStock = isStockLow(p);
-
+                  const body = <ProductCardBody product={p} />;
                   return (
+                    <li key={p.id} className="flex items-start gap-1 p-2">
+                      {canManage ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditProduct(p)}
+                          className="hover:bg-muted/50 focus-visible:ring-ring/50 min-h-11 min-w-0 flex-1 rounded-md p-2 text-left outline-none focus-visible:ring-3"
+                        >
+                          <span className="sr-only">Editar: </span>
+                          {body}
+                        </button>
+                      ) : (
+                        <div className="min-w-0 flex-1 p-2">{body}</div>
+                      )}
+                      {canManage && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            render={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-11 shrink-0"
+                                aria-label={`Mais ações para ${p.name}`}
+                              />
+                            }
+                          >
+                            <MoreVertical />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-40">
+                            <DropdownMenuItem onClick={() => handleOpenEditProduct(p)}>
+                              <Edit2 /> Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() => handleDeleteProduct(p.id, p.name)}
+                            >
+                              <Trash2 /> Excluir
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <Table className="hidden md:table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Produto</TableHead>
+                    <TableHead className="hidden lg:table-cell">Código / SKU</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    {canManage && <TableHead className="text-right">P. Custo</TableHead>}
+                    <TableHead className="text-right">P. Venda</TableHead>
+                    <TableHead className="text-right">Estoque</TableHead>
+                    {canManage && <TableHead className="text-center">Ações</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredProducts.map((p) => (
                     <TableRow key={p.id}>
                       <TableCell className="min-w-40 font-medium whitespace-normal">
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -276,7 +419,7 @@ export function ProductsManager({
                         )}
                       </TableCell>
 
-                      <TableCell className="hidden md:table-cell">
+                      <TableCell>
                         {p.categoryName ? (
                           <Badge variant="secondary" className="text-xs font-normal">
                             {p.categoryName}
@@ -287,35 +430,17 @@ export function ProductsManager({
                       </TableCell>
 
                       {canManage && (
-                        <TableCell className="text-muted-foreground hidden text-right md:table-cell">
+                        <TableCell className="text-muted-foreground text-right tabular-nums">
                           {p.costPrice !== undefined ? formatCurrency(p.costPrice) : "-"}
                         </TableCell>
                       )}
 
-                      <TableCell className="text-right font-semibold">
+                      <TableCell className="text-right font-semibold tabular-nums">
                         {formatCurrency(p.salePrice)}
                       </TableCell>
 
-                      <TableCell className="hidden text-center sm:table-cell">
-                        <Badge variant="outline" className="text-xs">
-                          {p.unit}
-                        </Badge>
-                      </TableCell>
-
-                      <TableCell className="text-right font-mono">
-                        {formatNumber(p.currentStock)}
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        {lowStock ? (
-                          <Badge variant="destructive" className="gap-1 text-[11px]">
-                            <AlertTriangle className="h-3 w-3" /> Estoque Baixo
-                          </Badge>
-                        ) : (
-                          <Badge variant="success" className="text-[11px]">
-                            OK
-                          </Badge>
-                        )}
+                      <TableCell className="text-right">
+                        <StockValue product={p} />
                       </TableCell>
 
                       {canManage && (
@@ -337,10 +462,10 @@ export function ProductsManager({
                         </TableCell>
                       )}
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  ))}
+                </TableBody>
+              </Table>
+            </>
           )}
         </CardContent>
       </Card>
