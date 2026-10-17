@@ -37,7 +37,7 @@ export const searchBox = (page: Page) => page.getByRole("textbox", { name: "Busc
 // finalização fica numa barra fixa e a lista de produtos do painel vira cartões com menu "⋮".
 export const isCompact = (page: Page) => page.viewportSize()!.width < 768;
 
-/** Item do carrinho (linha da tabela no desktop, item da lista no celular). */
+/** Item do carrinho (linha da tabela a partir de xl, item da lista abaixo disso). */
 export const cartItem = (page: Page, name: string) =>
   page.locator("[data-cart-item]:visible").filter({ hasText: name });
 
