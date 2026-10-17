@@ -38,8 +38,10 @@ export async function getOnAccountSettings(db: Db = prisma): Promise<OnAccountSe
   };
 }
 
-/** Títulos ainda não quitados (em aberto ou parciais). */
-export const unpaidReceivables = { status: { not: ReceivableStatus.PAID } };
+/** Títulos ainda não quitados (em aberto ou parciais); quitados e cancelados ficam de fora. */
+export const unpaidReceivables = {
+  status: { in: [ReceivableStatus.OPEN, ReceivableStatus.PARTIAL] },
+};
 
 /**
  * Contas a Receber aparece no menu e no Dashboard enquanto o fiado estiver permitido ou houver

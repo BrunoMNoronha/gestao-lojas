@@ -223,7 +223,8 @@ export async function getCustomerPage(filters: ListFilters = {}) {
     const counts = rows.length
       ? await prisma.sale.groupBy({
           by: ["customerId"],
-          where: { customerId: { in: rows.map((c) => c.id) } },
+          // Estornadas não contam como compra do cliente
+          where: { customerId: { in: rows.map((c) => c.id) }, reversedAt: null },
           _count: { _all: true },
         })
       : [];

@@ -75,7 +75,8 @@ export async function getCustomers(searchQuery?: string): Promise<CustomerItem[]
       where: whereClause,
       include: {
         _count: {
-          select: { sales: true },
+          // Estornadas não contam como compra do cliente
+          select: { sales: { where: { reversedAt: null } } },
         },
       },
       orderBy: { name: "asc" },

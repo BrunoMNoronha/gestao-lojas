@@ -71,6 +71,13 @@ export function CashSummary({ summary, className }: CashSummaryProps) {
           <span>Total vendido</span>
           <span className="font-mono">{formatCurrency(summary.salesTotal)}</span>
         </div>
+        {summary.reversedCount > 0 && (
+          <Row
+            label={`Estornadas neste turno (${summary.reversedCount}), fora do total`}
+            value={summary.reversedTotal}
+            muted
+          />
+        )}
 
         {summary.receivedByMethod.length > 0 && (
           <>

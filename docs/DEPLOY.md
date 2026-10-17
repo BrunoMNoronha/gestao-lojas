@@ -206,8 +206,9 @@ dependem de esperar um deploy novo e uma noite, e podem ser feitos em outro dia.
 
 ### 10.1 Antes de começar
 
-**Ambiente e dados.** Só existe produção: tudo o que a homologação gravar fica no banco real. Não há
-estorno de venda, então as vendas de teste entram em relatórios, caixa e estoque.
+**Ambiente e dados.** Só existe produção: tudo o que a homologação gravar fica no banco real. As
+vendas de teste podem ser estornadas pela gerência (saem dos totais e devolvem o estoque), mas
+continuam listadas no relatório, nos movimentos de estoque e nas sangrias do caixa.
 
 - [ ] **DECISÃO PENDENTE (responsável):** o que fazer com os registros da homologação.
   - **RECOMENDAÇÃO:** fazer a homologação **antes** de a loja operar com dados reais, ou fora do

@@ -107,6 +107,7 @@ enum ReceivableStatus {
   OPEN
   PARTIAL
   PAID
+  CANCELED // Venda estornada; não conta como dívida
 }
 
 model User {
@@ -120,6 +121,7 @@ model User {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   sales               Sale[]
+  reversedSales       Sale[]                @relation("SaleReversedBy")
   stockMovements      StockMovement[]
   cashRegisters       CashRegister[]
   cashMovements       CashMovement[]
@@ -241,6 +243,15 @@ model Sale {
   receivable           Receivable?
   syncOperation        SyncOperation?
   reconciliationIssues ReconciliationIssue[]
+  // Estorno da venda inteira (src/lib/reverse-sale.ts). A venda continua listada, mas sai de
+  // todos os totais. reversedInRegister: o dinheiro saiu do próprio caixa da venda, ainda aberto
+  // (a venda deixa de contar no esperado dele); senão, a devolução é uma sangria em refundMovements.
+  reversedAt           DateTime?
+  reversedById         String?
+  reversedBy           User?                 @relation("SaleReversedBy", fields: [reversedById], references: [id])
+  reversalReason       String?
+  reversedInRegister   Boolean               @default(false)
+  refundMovements      CashMovement[]
 
   @@index([occurredAt])
   @@index([createdAt])
@@ -394,8 +405,12 @@ model CashMovement {
   reason         String
   userId         String
   user           User             @relation(fields: [userId], references: [id])
+  // Sangria de devolução de um estorno de venda
+  saleId         String?
+  sale           Sale?            @relation(fields: [saleId], references: [id])
   createdAt      DateTime         @default(now())
   @@index([cashRegisterId])
+  @@index([saleId])
 }
 
 // Título a receber gerado por venda no Fiado (ON_ACCOUNT)

@@ -12,6 +12,7 @@ import {
   type CreateSaleInput,
   type SaleReceipt,
 } from "@/lib/create-sale";
+import { reverseSale, type ReverseSaleInput, type ReverseSaleResult } from "@/lib/reverse-sale";
 import type { PaymentMethodValue } from "@/lib/payments";
 
 export interface SaleDetail extends Omit<SaleReceipt, "amountPaid" | "change" | "items"> {
@@ -21,7 +22,7 @@ export interface SaleDetail extends Omit<SaleReceipt, "amountPaid" | "change" | 
   items: (SaleReceipt["items"][number] & { productDeleted: boolean })[];
   cashRegister: { userName: string; openedAt: string; closedAt: string | null } | null;
   receivable: {
-    status: "OPEN" | "PARTIAL" | "PAID";
+    status: "OPEN" | "PARTIAL" | "PAID" | "CANCELED";
     amount: number;
     paidAmount: number;
     dueDate: string | null;
@@ -41,6 +42,17 @@ export interface SaleDetail extends Omit<SaleReceipt, "amountPaid" | "change" | 
     submittedByName: string | null;
   } | null;
   issues: { id: string; type: string; acknowledged: boolean }[];
+  reversal: {
+    at: string;
+    byName: string | null;
+    reason: string;
+    // O dinheiro saiu do próprio caixa da venda, ainda aberto
+    inRegister: boolean;
+    // Sangrias de devolução (caixa fechado ou recebimentos do Fiado)
+    refunds: { amount: number; registerUserName: string; createdAt: string }[];
+  } | null;
+  // Quem pode estornar e a venda ainda não foi estornada
+  canReverse: boolean;
 }
 
 // As regras da venda (preço, estoque, caixa, Fiado e idempotência pela chave da operação)
@@ -70,6 +82,34 @@ export async function createSale(data: CreateSaleInput) {
   } catch (error) {
     console.error("Erro ao registrar venda:", error);
     return { success: false, error: "Falha ao processar a venda no banco de dados." };
+  }
+}
+
+// Estorno da venda inteira: regras em src/lib/reverse-sale.ts
+export async function reverseSaleAction(data: ReverseSaleInput): Promise<ReverseSaleResult> {
+  try {
+    const authz = await authorize("sales.reverse");
+    if (!authz.ok) {
+      return { success: false, error: authz.error };
+    }
+
+    const result = await reverseSale(authz.user.id, data);
+    if (!result.success) return result;
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/relatorios/vendas");
+    revalidatePath("/admin/pdv");
+    invalidateCatalog();
+    revalidatePath("/admin/produtos");
+    revalidatePath("/admin/estoque");
+    revalidatePath("/admin/caixa");
+    revalidatePath("/admin/contas-a-receber");
+    revalidatePath("/admin/clientes");
+
+    return result;
+  } catch (error) {
+    console.error("Erro ao estornar venda:", error);
+    return { success: false, error: "Falha ao estornar a venda no banco de dados." };
   }
 }
 
@@ -111,6 +151,15 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
         },
         reconciliationIssues: {
           select: { id: true, type: true, acknowledgedAt: true },
+          orderBy: { createdAt: "asc" },
+        },
+        reversedBy: { select: { name: true } },
+        refundMovements: {
+          select: {
+            amount: true,
+            createdAt: true,
+            cashRegister: { select: { user: { select: { name: true } } } },
+          },
           orderBy: { createdAt: "asc" },
         },
       },
@@ -160,6 +209,20 @@ export async function getSaleDetail(id: string): Promise<SaleDetail | null> {
         type: issue.type,
         acknowledged: issue.acknowledgedAt !== null,
       })),
+      reversal: sale.reversedAt
+        ? {
+            at: sale.reversedAt.toISOString(),
+            byName: sale.reversedBy?.name ?? null,
+            reason: sale.reversalReason ?? "",
+            inRegister: sale.reversedInRegister,
+            refunds: sale.refundMovements.map((m) => ({
+              amount: m.amount.toNumber(),
+              registerUserName: m.cashRegister.user.name,
+              createdAt: m.createdAt.toISOString(),
+            })),
+          }
+        : null,
+      canReverse: !sale.reversedAt && can(authz.user.role, "sales.reverse"),
     };
   } catch (error) {
     console.error("Erro ao buscar detalhe da venda:", error);

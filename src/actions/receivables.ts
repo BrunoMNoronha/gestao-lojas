@@ -5,9 +5,10 @@ import { authorize } from "@/lib/authz";
 import { revalidatePath } from "next/cache";
 import { PaymentMethod, Prisma, ReceivableStatus } from "@prisma/client";
 import { lockOpenCashRegister, parseMoney } from "@/lib/cash-register";
+import { unpaidReceivables } from "@/lib/on-account";
 import type { PaymentMethodValue } from "@/lib/payments";
 
-export type ReceivableStatusValue = "OPEN" | "PARTIAL" | "PAID";
+export type ReceivableStatusValue = "OPEN" | "PARTIAL" | "PAID" | "CANCELED";
 
 export interface ReceivableItem {
   id: string;
@@ -78,7 +79,7 @@ export async function getReceivables(
             orderBy: { createdAt: "asc" },
           },
         },
-        // Ordem do enum: OPEN, PARTIAL, PAID → títulos em aberto primeiro, mais antigos antes
+        // Ordem do enum: OPEN, PARTIAL, PAID, CANCELED → títulos em aberto primeiro, mais antigos antes
         orderBy: [{ status: "asc" }, { createdAt: "asc" }],
         take,
         skip,
@@ -95,7 +96,8 @@ export async function getReceivables(
         saleDate: r.sale.occurredAt.toISOString(),
         amount: r.amount.toNumber(),
         paidAmount: r.paidAmount.toNumber(),
-        balance: r.amount.sub(r.paidAmount).toNumber(),
+        // Título cancelado pelo estorno da venda não tem mais saldo a receber
+        balance: r.status === ReceivableStatus.CANCELED ? 0 : r.amount.sub(r.paidAmount).toNumber(),
         status: r.status,
         dueDate: r.dueDate?.toISOString() ?? null,
         payments: r.payments.map((p) => ({
@@ -120,7 +122,7 @@ export async function getReceivablesSummary(): Promise<ReceivablesSummary> {
     const authz = await authorize("receivables.view");
     if (!authz.ok) return empty;
 
-    const where = { status: { not: ReceivableStatus.PAID } };
+    const where = unpaidReceivables;
     const [totals, debtors] = await Promise.all([
       prisma.receivable.aggregate({
         where,
@@ -179,10 +181,13 @@ export async function registerReceivablePayment(data: {
 
       const receivable = await tx.receivable.findUnique({
         where: { id: data.receivableId },
-        select: { id: true, amount: true, paidAmount: true },
+        select: { id: true, amount: true, paidAmount: true, status: true },
       });
       if (!receivable) {
         throw new ReceivableValidationError("Título não encontrado. Atualize a tela.");
+      }
+      if (receivable.status === ReceivableStatus.CANCELED) {
+        throw new ReceivableValidationError("Este título foi cancelado pelo estorno da venda.");
       }
 
       const balance = receivable.amount.sub(receivable.paidAmount);
@@ -200,9 +205,13 @@ export async function registerReceivablePayment(data: {
         ? ReceivableStatus.PAID
         : ReceivableStatus.PARTIAL;
 
-      // Guarda otimista: só grava se nenhum outro recebimento alterou o título
+      // Guarda otimista: só grava se nenhum outro recebimento ou estorno alterou o título
       const updated = await tx.receivable.updateMany({
-        where: { id: receivable.id, paidAmount: receivable.paidAmount },
+        where: {
+          id: receivable.id,
+          paidAmount: receivable.paidAmount,
+          status: { not: ReceivableStatus.CANCELED },
+        },
         data: { paidAmount: newPaid, status },
       });
       if (updated.count === 0) {

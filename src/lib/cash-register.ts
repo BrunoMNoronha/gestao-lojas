@@ -30,6 +30,9 @@ export interface CashRegisterSummary {
   receivedByMethod: MethodTotal[];
   receivedCash: number;
   expectedCash: number;
+  // Vendas deste caixa estornadas com ele aberto: já fora das vendas e do esperado
+  reversedCount: number;
+  reversedTotal: number;
 }
 
 /**
@@ -82,6 +85,9 @@ export async function lockCashRegisterById(tx: Db, cashRegisterId: string) {
  * Vendas offline aplicadas com o caixa já fechado (pendência POST_CLOSING_SALE, gravada na mesma
  * transação da venda) ficam de fora: o dinheiro delas não estava na conferência da gaveta e
  * aparecem à parte como ajuste pós-fechamento (docs/OFFLINE.md seção 3.3).
+ * Vendas estornadas com o caixa ainda aberto (reversedInRegister) também ficam de fora: o dinheiro
+ * voltou ao cliente pela própria gaveta. Estornadas depois do fechamento continuam aqui (o resumo
+ * segue igual ao fechamento) e a devolução é uma sangria em outro caixa.
  */
 export async function computeCashSummary(tx: Db, cashRegisterId: string) {
   const beforeClosing = {
@@ -92,10 +98,15 @@ export async function computeCashSummary(tx: Db, cashRegisterId: string) {
     select: { openingAmount: true },
   });
 
-  const [sales, movements, received] = await Promise.all([
+  const [sales, reversed, movements, received] = await Promise.all([
     tx.sale.groupBy({
       by: ["paymentMethod"],
-      where: { cashRegisterId, ...beforeClosing },
+      where: { cashRegisterId, reversedInRegister: false, ...beforeClosing },
+      _sum: { total: true },
+      _count: { _all: true },
+    }),
+    tx.sale.aggregate({
+      where: { cashRegisterId, reversedInRegister: true },
       _sum: { total: true },
       _count: { _all: true },
     }),
@@ -144,6 +155,8 @@ export async function computeCashSummary(tx: Db, cashRegisterId: string) {
     })),
     receivedCash: receivedCash.toNumber(),
     expectedCash: expectedCash.toNumber(),
+    reversedCount: reversed._count._all,
+    reversedTotal: (reversed._sum.total ?? zero).toNumber(),
   };
 
   return { expectedCash, summary };
