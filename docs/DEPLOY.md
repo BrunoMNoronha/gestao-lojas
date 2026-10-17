@@ -1,7 +1,7 @@
 # Deploy em produção — Vercel + Neon
 
-Runbook da publicação do sistema (issues #7 e #23). Banco: **Neon via Vercel Marketplace** (sucessor
-do "Vercel Postgres"). Hospedagem: **Vercel** (time TechLab, projeto `gestao-lojas`).
+Runbook da publicação do sistema (issues #7 e #23). Banco: **Neon**, projeto criado no console da
+Neon (seção 3). Hospedagem: **Vercel** (time TechLab, projeto `gestao-lojas`).
 
 Só existe o ambiente de **produção** (`main`). Não há previews nem banco de desenvolvimento na nuvem.
 
@@ -16,14 +16,16 @@ Só existe o ambiente de **produção** (`main`). Não há previews nem banco de
 
 | Variável         | Ambiente   | Valor                                                                                     |
 | ---------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| `DATABASE_URL`   | Production | URL **com pooler** da Neon (criada pela integração)                                       |
-| `DIRECT_URL`     | Production | URL **sem pooler** da Neon (`DATABASE_URL_UNPOOLED` da integração)                        |
+| `DATABASE_URL`   | Production | URL **com pooler** da Neon com o role **`app_runtime`** (seção 3.1)                        |
 | `AUTH_SECRET`    | Production | Segredo aleatório: `npx auth secret` ou `openssl rand -base64 32`. Também cifra o link do pedido do catálogo: trocá-lo encerra as sessões e invalida os links ainda não abertos |
 | `ADMIN_EMAIL`    | Production | E-mail do primeiro administrador                                                          |
 | `ADMIN_PASSWORD` | Production | Senha do primeiro administrador (mínimo 12 caracteres), definida pelo responsável da loja. Remova depois do primeiro acesso (seção 5) |
 | `ADMIN_NAME`     | Production | Opcional (padrão "Administrador")                                                         |
 
 `AUTH_URL` não é necessário na Vercel (o host é detectado automaticamente).
+
+`DIRECT_URL` (conexão direta com o dono do banco) **não** fica na Vercel: o app em execução só usa a
+`DATABASE_URL`, e as migrations recebem a `DIRECT_URL` no próprio shell na hora de migrar (seção 4).
 
 Variáveis do reCAPTCHA do login (passo a passo na seção 9):
 
@@ -59,19 +61,67 @@ cada um de novo em `gestao-loja.dev2bless.tech`.
 2. Banco atual de produção (criado em 2026-10-02): projeto Neon **`gestao-lojas`**
    (`fancy-violet-38898614`), org **"TechLab+ Gestão Lojas"** (plano Free), região **São Paulo
    (`aws-sa-east-1`)**, Postgres 18, branch `production`, banco `neondb`. Foi criado no console da
-   Neon (não pelo Marketplace), então **não há integração** sincronizando variáveis: as URLs foram
-   gravadas manualmente na Vercel. Se a senha do role `neondb_owner` for trocada na Neon, atualize
-   `DATABASE_URL` e `DIRECT_URL` e faça redeploy.
+   Neon (não pelo Marketplace), então **não há integração** sincronizando variáveis: a
+   `DATABASE_URL` foi gravada manualmente na Vercel. Se a senha do role `app_runtime` for trocada
+   na Neon, atualize a `DATABASE_URL` e faça redeploy. Trocar a senha do `neondb_owner` não afeta o
+   app, só a `DIRECT_URL` usada nas migrations.
    - Alternativa para um banco novo: _Storage_ → _Create Database_ → **Neon** pelo Marketplace,
      ligado só a Production. A org "TechLab Aldeia" é gerida pela Vercel e bloqueia criação de
      projetos pela API/console da Neon.
 3. Em _Settings → Environment Variables_, ambiente **Production**, tipo **Sensitive**:
-   - `DATABASE_URL`: URL **com pooler** (host com `-pooler`);
-   - `DIRECT_URL`: a mesma URL **sem** `-pooler` (conexão direta, usada pelas migrations);
+   - `DATABASE_URL`: URL **com pooler** (host com `-pooler`) e usuário `app_runtime` (seção 3.1);
    - `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`;
    - `RECAPTCHA_SECRET_KEY` (seção 9).
 4. Preview e Development ficam sem banco e sem variáveis: os previews estão desligados no
    `vercel.json`. Nunca conecte o banco de produção a esses ambientes.
+
+### 3.1 Roles do banco
+
+| Role           | Usado por                          | Permissões                                                                                   |
+| -------------- | ---------------------------------- | -------------------------------------------------------------------------------------------- |
+| `neondb_owner` | Migrations (`DIRECT_URL`, sem pooler) | Dono do banco e das tabelas (DDL)                                                        |
+| `app_runtime`  | App na Vercel (`DATABASE_URL`, pooler) | `SELECT/INSERT/UPDATE/DELETE` nas tabelas, só `SELECT` em `_prisma_migrations`, uso das sequences; sem DDL; `statement_timeout` de 30 s |
+
+O `app_runtime` foi criado **por SQL** (2026-10-17). Roles criados pela API ou pelo console da Neon
+entram no grupo `neon_superuser` (podem criar bancos e roles), o que anula o menor privilégio; por
+isso a senha é definida depois, no console (_Roles_ → _Reset password_) ou com `ALTER ROLE`.
+Comandos aplicados, como `neondb_owner`:
+
+```sql
+CREATE ROLE app_runtime WITH LOGIN;
+GRANT CONNECT ON DATABASE neondb TO app_runtime;
+GRANT USAGE ON SCHEMA public TO app_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_runtime;
+REVOKE INSERT, UPDATE, DELETE ON "_prisma_migrations" FROM app_runtime;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO app_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public
+  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO app_runtime;
+ALTER ROLE app_runtime SET statement_timeout = '30s';
+```
+
+Os privilégios padrão fazem as tabelas e sequences criadas por migrations futuras (sempre como
+`neondb_owner`) já nascerem acessíveis ao app; nenhuma migration precisa de `GRANT`. Se uma
+migration for aplicada com outro role, o app recebe `permission denied`: repita os dois `GRANT ...
+ON ALL ...` acima.
+
+A **restauração do banco** da seção 11 (`TRUNCATE ... RESTART IDENTITY`) exige ser dono das tabelas
+e falha com o `app_runtime`. Ela fica desligada em produção; nos ambientes de teste, use o owner na
+`DATABASE_URL`.
+
+### 3.2 Limites do plano Free da Neon
+
+- Retorno por ponto no tempo: só as **últimas 6 h** (_history retention_). Snapshots agendados não
+  estão disponíveis no plano (a API recusa a agenda). Para um ponto de retorno mais antigo, crie um
+  branch de backup à mão antes de cada mudança arriscada (seções 4, 8, 10 e 11).
+- Compute de 0,25 a 2 CU, desliga após 5 min sem uso (cold start de poucos segundos; o app já usa
+  timeouts folgados em `src/lib/database-url.ts`).
+- Até 10 branches, cada um com até 1 GB de dados (o banco tinha cerca de 10 MB em 2026-10-17).
+  Apague os branches de backup quando não forem mais úteis: eles passam a ocupar espaço à medida
+  que a produção muda.
+- Sem branch protegido e sem lista de IPs permitidos (recursos de planos pagos).
+- Manutenção às terças, 05:00–06:00 UTC (02:00–03:00 em Brasília).
 
 ## 4. Aplicar as migrations no banco de produção
 
@@ -81,15 +131,20 @@ cada um de novo em `gestao-loja.dev2bless.tech`.
 > recusado por ~3 minutos (`[login-limit] ... LoginAttempt does not exist`). Ordem: backup da Neon
 > → `pnpm db:deploy` → merge.
 
+A `DIRECT_URL` não está na Vercel (seção 1). Pegue-a no console da Neon: projeto `gestao-lojas` →
+_Connect_ → branch `production`, role **`neondb_owner`**, **Connection pooling desligado** (host
+sem `-pooler`). Cole só no shell, nunca em arquivo versionado:
+
 ```bash
-# baixa as variáveis de produção para um arquivo local (ignorado pelo Git: .env*)
-vercel env pull .env.production.local --environment=production
-# carrega DATABASE_URL / DIRECT_URL no shell e aplica as migrations
-set -a; . ./.env.production.local; set +a
+# o prisma lê DATABASE_URL e DIRECT_URL do schema; as duas apontam para a conexão direta do owner
+read -rs -p "DIRECT_URL (owner, sem pooler): " DIRECT_URL; echo
+export DIRECT_URL DATABASE_URL="$DIRECT_URL"
 pnpm db:deploy
-# apague o arquivo em seguida
-rm .env.production.local
+unset DIRECT_URL DATABASE_URL
 ```
+
+No PowerShell: `$env:DIRECT_URL = Read-Host "DIRECT_URL"; $env:DATABASE_URL = $env:DIRECT_URL;
+pnpm db:deploy`, e feche o terminal em seguida.
 
 ### Banco criado antes das migrations (`db push`)
 
@@ -145,10 +200,15 @@ variáveis estão ausentes ou se a senha tem menos de 12 caracteres.
 
 ## 8. Rollback
 
-- **Código:** Vercel → _Deployments_ → deploy anterior → _Promote to Production_.
+- **Código:** Vercel → _Deployments_ → deploy anterior → _Promote to Production_. Cada deploy
+  guarda as variáveis do momento em que foi gerado: os anteriores a 2026-10-17 19:2x UTC usam a
+  `DATABASE_URL` antiga (`neondb_owner`, senha já trocada) e ficam **sem banco** se promovidos.
+  Para voltar a um código dessa época, faça _Redeploy_ do deploy (com as variáveis atuais) em vez
+  de _Promote_.
 - **Banco:** migrations não são revertidas automaticamente. Se uma migration causar problema,
   publique uma nova migration corretiva. Antes de mudanças de schema arriscadas, crie um branch
-  ou snapshot da Neon.
+  de backup na Neon: no plano Free a restauração por ponto no tempo só alcança as últimas 6 h
+  (seção 3.2).
 - **Restauração do banco pela tela (seção 11):** o sistema não guarda cópia. Só a restauração por
   ponto no tempo ou um branch da Neon criado antes trazem os dados de volta.
 
