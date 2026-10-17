@@ -69,5 +69,5 @@ test("PDV: ler o código pela câmera, finalizar e gerar o comprovante", async (
   const video = page.video()!;
   await context.close();
   mkdirSync(VIDEO_DIR, { recursive: true });
-  await video.saveAs(path.join(VIDEO_DIR, "pdv-leitor-codigo.webm"));
+  await video.saveAs(path.join(VIDEO_DIR, "pdv-leitor-codigo-v1.webm"));
 });

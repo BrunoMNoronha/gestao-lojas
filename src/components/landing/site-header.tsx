@@ -19,32 +19,35 @@ export function Brand({ className }: { className?: string }) {
   );
 }
 
-/** Entrar (visitante) ou Ir para o painel (sessão ativa): /inicio leva à página do perfil. */
+/**
+ * Acesso ao sistema, igual para todos (a landing é estática e cacheada na CDN). Quem já tem sessão
+ * passa por /login direto para o painel do perfil (src/auth.config.ts → /inicio).
+ */
 export function PrimaryCta({
-  loggedIn,
+  label = "Entrar",
   className,
   size = "lg",
 }: {
-  loggedIn: boolean;
+  label?: string;
   className?: string;
   size?: "lg" | "xl";
 }) {
   return (
     <Link
-      href={loggedIn ? "/inicio" : "/login"}
+      href="/login"
       className={cn(
         buttonVariants({ size: "lg" }),
         size === "xl" && "h-11 gap-2 px-5 text-base",
         className,
       )}
     >
-      {loggedIn ? "Ir para o painel" : "Entrar"}
+      {label}
       <ArrowRight aria-hidden="true" />
     </Link>
   );
 }
 
-export function SiteHeader({ loggedIn }: { loggedIn: boolean }) {
+export function SiteHeader() {
   return (
     <header className="bg-background/80 supports-[backdrop-filter]:bg-background/70 sticky top-0 z-40 border-b backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
@@ -73,7 +76,7 @@ export function SiteHeader({ loggedIn }: { loggedIn: boolean }) {
 
         <div className="ml-auto flex items-center gap-1 md:ml-2">
           <ThemeToggle />
-          <PrimaryCta loggedIn={loggedIn} className="ml-1" />
+          <PrimaryCta className="ml-1" />
           {/* Celular: âncoras num <details>, sem JavaScript */}
           <details className="group relative md:hidden">
             <summary

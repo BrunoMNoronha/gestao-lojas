@@ -19,7 +19,7 @@ export const authConfig = {
       if (pathname === "/catalogo" || pathname.startsWith("/catalogo/")) {
         return true;
       }
-      // Landing de apresentação: pública para todos (logado ou não)
+      // Landing de apresentação: pública para todos (o matcher de src/proxy.ts já a deixa de fora)
       if (pathname === "/") {
         return true;
       }

@@ -5,7 +5,8 @@ import { SectionHeading } from "./section-heading";
 
 // Gravação real do PDV (pnpm screenshots, tests/screenshots/video.spec.ts). O arquivo fica em
 // public/videos/, fora do precache do Service Worker (src/app/serwist/[path]/route.ts).
-const VIDEO_SRC = "/videos/pdv-leitor-codigo.webm";
+// Cacheado por 1 ano (next.config.ts): suba o sufixo -vN a cada nova gravação.
+const VIDEO_SRC = "/videos/pdv-leitor-codigo-v1.webm";
 
 const STEPS = [
   { icon: Camera, text: "A câmera lê o código de barras do produto" },
