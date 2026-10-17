@@ -1,4 +1,4 @@
-import { expect, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { PASSWORD } from "./db";
 
 // Ações do /pdv nos testes de navegador: entrar, preparar o aparelho, vender pela tela, cortar e
@@ -32,6 +32,38 @@ export async function expireSession(context: BrowserContext) {
 }
 
 export const searchBox = (page: Page) => page.getByRole("textbox", { name: "Buscar produto" });
+
+// Celular (abaixo de md, 768px): o carrinho do PDV vira lista, as teclas F somem dos botões, a
+// finalização fica numa barra fixa e a lista de produtos do painel vira cartões com menu "⋮".
+export const isCompact = (page: Page) => page.viewportSize()!.width < 768;
+
+/** Item do carrinho (linha da tabela no desktop, item da lista no celular). */
+export const cartItem = (page: Page, name: string) =>
+  page.locator("[data-cart-item]:visible").filter({ hasText: name });
+
+/** "Finalizar Venda (F10)" no resumo (desktop) ou "Finalizar" na barra fixa (celular). */
+export const finishSaleButton = (page: Page) =>
+  page.getByRole("button", { name: /^Finalizar( Venda)?( \(F10\))?$/ });
+
+export const confirmSaleButton = (scope: Page | Locator) =>
+  scope.getByRole("button", { name: /^Confirmar Venda( \(F10\))?$/ });
+
+export const selectCustomerButton = (page: Page) =>
+  page.getByRole("button", { name: /^Selecionar Cliente( \(F4\))?$/ });
+
+/** Abre a edição de um produto na lista do painel (/admin/produtos). */
+export async function openProductEdit(page: Page, name: string) {
+  if (isCompact(page)) {
+    await page.getByRole("button", { name: `Mais ações para ${name}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: "Editar", exact: true }).click();
+  } else {
+    await page
+      .getByRole("row")
+      .filter({ hasText: name })
+      .getByRole("button", { name: "Editar produto", exact: true })
+      .click();
+  }
+}
 
 /** Abre o /pdv, prepara o aparelho e espera o terminal e o Service Worker no controle. */
 export async function preparePdv(page: Page) {
@@ -94,10 +126,10 @@ export async function addToCart(page: Page, lines: SaleLine[]) {
 
 /** Abre o "Finalizar Venda", escolhe o pagamento e confirma. Devolve o diálogo. */
 export async function confirmCheckout(page: Page, payment: Payment = "PIX") {
-  await page.getByRole("button", { name: "Finalizar Venda (F10)" }).click();
+  await finishSaleButton(page).click();
   const checkout = page.getByRole("dialog", { name: "Finalizar Venda" });
   await checkout.getByRole("button", { name: payment, exact: true }).click();
-  await checkout.getByRole("button", { name: "Confirmar Venda (F10)" }).click();
+  await confirmSaleButton(checkout).click();
   return checkout;
 }
 

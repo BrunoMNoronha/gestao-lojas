@@ -8,6 +8,7 @@ import {
   goOffline,
   goOnline,
   login,
+  openProductEdit,
   preparePdv,
   searchBox,
   sell,
@@ -241,8 +242,7 @@ test("gerente vincula a caixa no cadastro e abre duas caixas no estoque sem vend
   });
   await login(context, store.manager.email);
   await page.goto("/admin/produtos");
-  const row = page.getByRole("row").filter({ hasText: beer.box.name });
-  await row.getByRole("button", { name: "Editar produto", exact: true }).click();
+  await openProductEdit(page, beer.box.name);
   const edit = page.getByRole("dialog", { name: "Editar Produto", exact: true });
   await edit.getByLabel("Produto avulso gerado ao abrir a caixa").click();
   await page.getByRole("option", { name: beer.unit.name, exact: true }).click();
