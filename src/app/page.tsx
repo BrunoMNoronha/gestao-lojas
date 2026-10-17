@@ -9,6 +9,7 @@ import { SCREENSHOTS } from "@/components/landing/screenshots";
 import { FinalCta, SiteFooter } from "@/components/landing/site-footer";
 import { SiteHeader } from "@/components/landing/site-header";
 import { VideoSection } from "@/components/landing/video-section";
+import { WhatsAppButton } from "@/components/landing/whatsapp-button";
 
 const TITLE = "Gestão de Lojas — ERP e PDV para lojas físicas";
 const DESCRIPTION =
@@ -64,6 +65,7 @@ export default function LandingPage() {
         <FinalCta />
       </main>
       <SiteFooter />
+      <WhatsAppButton />
     </>
   );
 }
