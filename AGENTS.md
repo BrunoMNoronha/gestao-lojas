@@ -35,6 +35,9 @@ pnpm build
 # Gerar Prisma Client
 pnpm prisma generate
 
+# Regerar favicon, icon.svg e ícones do PWA a partir da marca (scripts/generate-icons.mjs)
+pnpm icons
+
 # Criar migration após alterar prisma/schema.prisma (desenvolvimento)
 pnpm db:migrate --name <descricao>
 

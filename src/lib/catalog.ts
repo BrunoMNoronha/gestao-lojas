@@ -211,9 +211,30 @@ const readCatalogProduct = unstable_cache(
   CATALOG_CACHE_OPTIONS,
 );
 
+/** Produtos visíveis no catálogo para o sitemap.xml (só id e data da última alteração). */
+const readCatalogSitemapEntries = unstable_cache(
+  async (): Promise<{ id: string; updatedAt: string }[]> => {
+    try {
+      const rows = await prisma.product.findMany({
+        where: { showInCatalog: true, deletedAt: null },
+        select: { id: true, updatedAt: true },
+        orderBy: { updatedAt: "desc" },
+      });
+      // ISO em vez de Date: o unstable_cache serializa o retorno em JSON
+      return rows.map((row) => ({ id: row.id, updatedAt: row.updatedAt.toISOString() }));
+    } catch (error) {
+      console.error("Erro ao listar os produtos do catálogo para o sitemap:", error);
+      throw error;
+    }
+  },
+  ["catalog-sitemap-v1"],
+  CATALOG_CACHE_OPTIONS,
+);
+
 // Falhas ficam fora do cache: uma indisponibilidade transitória não vira vitrine vazia por 60 s.
 export const getCatalogStore = cache(() => readCatalogStore().catch(() => null));
 export const getCatalogProduct = cache((id: string) => readCatalogProduct(id).catch(() => null));
 export const getCatalogProducts = (filters: CatalogFilters) =>
   readCatalogProducts(filters).catch(() => null);
 export const getCatalogCategories = () => readCatalogCategories().catch(() => []);
+export const getCatalogSitemapEntries = () => readCatalogSitemapEntries().catch(() => []);

@@ -1,7 +1,9 @@
 import { PdvOfflineLoader } from "@/components/offline-pdv/pdv-offline-loader";
+import { NO_INDEX } from "@/lib/site-url";
 
 export const metadata = {
   title: "Frente de Caixa (PDV)",
+  robots: NO_INDEX,
 };
 
 // PDV que abre sem internet (issue #37, docs/OFFLINE.md seção 6.2). Página estática, fora do
