@@ -191,8 +191,40 @@ faturamento no projeto.
 - `score ... abaixo de`: pessoas reais sendo recusadas com frequência. Reduza
   `RECAPTCHA_MIN_SCORE` (por exemplo para `0.3`) e faça redeploy.
 
-Complementos recomendados (fora desta issue): limite de tentativas por usuário/IP e regras de
-firewall da Vercel.
+### Limite de tentativas de login
+
+Depois do reCAPTCHA e antes de conferir a senha, o `authorize()` consulta a tabela `LoginAttempt`
+(`src/lib/login-rate-limit.ts`, migration `0019_login_attempts`). Isso continua protegendo quando o
+reCAPTCHA deixa de filtrar (cota estourada, _fail open_ do Google).
+
+- **Por e-mail:** 5 falhas em 15 minutos bloqueiam aquele e-mail, de qualquer IP.
+- **Por IP:** 20 falhas em 15 minutos bloqueiam o IP, para qualquer e-mail. O IP vem de
+  `x-forwarded-for` / `x-real-ip`, preenchidos pela Vercel. Sem esses cabeçalhos (fora da Vercel),
+  vale só o limite por e-mail.
+- Contam como falha: e-mail inexistente, senha errada e usuário desativado. A recusa acontece antes
+  de buscar o usuário e a tela mostra a mesma mensagem ("Muitas tentativas. Aguarde 15 minutos.")
+  para qualquer e-mail: o limite não revela quais e-mails existem.
+- A janela é deslizante: o acesso volta 15 minutos depois da última falha. Tentativas recusadas
+  pelo limite não são gravadas e não prolongam a espera.
+- Login certo zera o contador daquele e-mail, mas não o do IP.
+- Tentativas em paralelo não passam do limite: cada uma é gravada sob uma trava consultiva por
+  e-mail e outra por IP antes da conferência da senha.
+- Registros com mais de 24 h são apagados pelo próprio login; não há rotina agendada.
+- **Banco fora do ar ao contar:** o login é recusado (_fail closed_), com log `[login-limit]`. Sem
+  banco a senha também não seria conferida, então isso não bloqueia ninguém que entraria.
+
+**Liberar alguém antes dos 15 minutos** (por exemplo, a própria gerência errou a senha): no SQL
+Editor da Neon, apague as falhas daquele e-mail ou daquele IP:
+
+```sql
+DELETE FROM "LoginAttempt" WHERE email = 'pessoa@loja.com' AND NOT success;
+DELETE FROM "LoginAttempt" WHERE ip = '200.1.2.3' AND NOT success;
+```
+
+Uma loja com todos os caixas atrás do mesmo IP divide o limite de 20 falhas.
+
+Complemento recomendado: regras de firewall da Vercel (_Firewall_ → _Rate limiting_ em
+`/api/auth/callback/credentials`), que barram excesso de pedidos antes de chegar à função.
 
 ## 10. Homologação da operação offline (#33)
 

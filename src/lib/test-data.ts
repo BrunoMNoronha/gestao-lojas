@@ -69,8 +69,17 @@ export const RESET_TABLES = [
   "Supplier",
 ] as const;
 
-/** Tabelas que a restauração mantém. */
-export const KEPT_TABLES = ["User", "StoreSettings", "TestDataRun", "_prisma_migrations"] as const;
+/**
+ * Tabelas que a restauração mantém. LoginAttempt também: restaurar o banco não zera o limite de
+ * tentativas de login (os registros já somem sozinhos em 24 h).
+ */
+export const KEPT_TABLES = [
+  "User",
+  "StoreSettings",
+  "TestDataRun",
+  "LoginAttempt",
+  "_prisma_migrations",
+] as const;
 
 export type ResetTable = (typeof RESET_TABLES)[number];
 export type ResetCounts = Record<ResetTable, number>;

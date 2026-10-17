@@ -650,3 +650,19 @@ model TestDataRun {
   @@index([kind, status, createdAt])
   @@index([userId, createdAt])
 }
+
+// Tentativas de login com e-mail e senha (limite de tentativas, src/lib/login-rate-limit.ts). Cada
+// tentativa entra como falha antes de conferir a senha e vira sucesso só se o login passar. Guarda
+// também e-mails que não existem, para o limite não revelar quais existem. Registros com mais de
+// 24 h são apagados pelo próprio login.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String // Normalizado (minúsculas, sem espaços nas pontas)
+  ip        String? // Sem IP conhecido (fora da Vercel), vale só o limite por e-mail
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@index([createdAt])
+}
