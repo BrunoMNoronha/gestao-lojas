@@ -32,9 +32,8 @@ import {
 } from "@/actions/receivables";
 import { ReceivablePaymentDialog } from "@/components/receivable-payment-dialog";
 import { PAYMENT_METHOD_LABELS, RECEIVABLE_STATUS_LABELS } from "@/lib/payments";
-import { formatDate, formatDateTime } from "@/lib/dates";
 import { cn, formatCurrency } from "@/lib/utils";
-import { formatStoreDate, isOverdue } from "@/lib/store-time";
+import { formatStoreDate, formatStoreDateTime, isOverdue } from "@/lib/store-time";
 import { OptionSelect } from "@/components/option-select";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
@@ -299,7 +298,7 @@ export function ReceivablesManager({
                           <TableCell className="text-sm" suppressHydrationWarning>
                             #{r.saleCode}{" "}
                             <span className="text-muted-foreground text-xs">
-                              {formatDate(r.saleDate)}
+                              {formatStoreDate(r.saleDate)}
                             </span>
                           </TableCell>
                           <TableCell
@@ -355,7 +354,7 @@ export function ReceivablesManager({
                                       className="text-muted-foreground"
                                       suppressHydrationWarning
                                     >
-                                      {formatDateTime(p.createdAt)}
+                                      {formatStoreDateTime(p.createdAt)}
                                     </span>
                                     <span>{PAYMENT_METHOD_LABELS[p.method]}</span>
                                     <span className="font-mono">{formatCurrency(p.amount)}</span>
