@@ -31,6 +31,7 @@ const MESSAGES = {
   recaptchaUnavailable:
     "Não foi possível concluir a verificação de segurança agora. Aguarde alguns instantes e tente novamente.",
   recaptchaLoad: "Não foi possível carregar a verificação de segurança. Recarregue a página.",
+  tooManyAttempts: "Muitas tentativas. Aguarde 15 minutos.",
 };
 
 type RecaptchaStatus = "disabled" | "loading" | "ready" | "error";
@@ -148,6 +149,8 @@ export function LoginForm({
           setError(MESSAGES.recaptchaRejected);
         } else if (res.code === LOGIN_ERROR_CODES.recaptchaUnavailable) {
           setError(MESSAGES.recaptchaUnavailable);
+        } else if (res.code === LOGIN_ERROR_CODES.tooManyAttempts) {
+          setError(MESSAGES.tooManyAttempts);
         } else {
           setError(MESSAGES.credentials);
         }

@@ -7,4 +7,6 @@ export const RECAPTCHA_LOGIN_ACTION = "login";
 export const LOGIN_ERROR_CODES = {
   recaptchaRejected: "recaptcha_rejected",
   recaptchaUnavailable: "recaptcha_unavailable",
+  // Limite de tentativas (src/lib/login-rate-limit.ts): vale também para e-mails inexistentes
+  tooManyAttempts: "too_many_attempts",
 } as const;
