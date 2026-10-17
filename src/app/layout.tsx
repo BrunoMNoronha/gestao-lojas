@@ -23,15 +23,20 @@ export const metadata: Metadata = {
   },
   description: "Sistema de gestão comercial e frente de caixa (PDV) para lojas físicas.",
   applicationName: "Gestão Lojas",
+  // favicon.ico e icon.svg entram pela convenção de arquivos de src/app (gerados por `pnpm icons`).
   // Instalação no iPhone/iPad (issue #61): ícone e nome na Tela de Início, abrindo em tela cheia.
   // O manifest (src/app/manifest.ts) cobre Chrome e Edge.
   icons: { apple: "/icons/apple-touch-icon.png" },
   appleWebApp: { capable: true, title: "Gestão Lojas", statusBarStyle: "default" },
 };
 
-// Cor da barra do navegador e da janela do app instalado, a mesma do manifest
+// Cor da barra do navegador e da janela do app instalado: a mesma do manifest no tema claro e o
+// fundo do tema escuro (--background de .dark em globals.css)
 export const viewport: Viewport = {
-  themeColor: "#126a70",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#126a70" },
+    { media: "(prefers-color-scheme: dark)", color: "#090e11" },
+  ],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

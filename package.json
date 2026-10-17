@@ -15,7 +15,8 @@
     "screenshots": "next build && playwright test -c playwright.screenshots.config.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "postinstall": "prisma generate && node scripts/copy-zxing-wasm.mjs"
+    "postinstall": "prisma generate && node scripts/copy-zxing-wasm.mjs",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
@@ -58,6 +59,7 @@
     "eslint-config-next": "16.3.8",
     "fake-indexeddb": "^6.2.5",
     "prisma": "^6.4.0",
+    "sharp": "0.35.5",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^5.0.3"
