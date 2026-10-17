@@ -6,3 +6,9 @@ node_modules
 test-results
 playwright-report
 coverage
+# Worktrees do Claude Code (.claude/worktrees/<nome>/) trazem cópias inteiras do projeto,
+# cada uma com seu node_modules: deixavam o contexto do build com centenas de MB.
+.claude
+# Dependências e builds aninhados em qualquer nível
+**/node_modules
+**/.next
