@@ -1,8 +1,18 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PaymentMethod, Prisma } from "@prisma/client";
+import { PaymentMethod, Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { registerSale } from "@/lib/create-sale";
-import { createUser, resetDatabase, saleInput, seedStore, type Store } from "./fixtures";
+import { approveConflict, syncOfflineOperation } from "@/lib/offline-sale";
+import {
+  createUser,
+  offlineSale,
+  prepareOffline,
+  resetDatabase,
+  saleInput,
+  seedStore,
+  type OfflineContext,
+  type Store,
+} from "./fixtures";
 
 // Server Action getSaleDetail: autoriza com "cash.own"; quem tem reports.view vê qualquer venda,
 // os demais só as próprias. A sessão do Auth.js é simulada.
@@ -145,5 +155,95 @@ describe("getSaleDetail (Server Action)", () => {
       productName: "Arroz 5kg",
       productDeleted: true,
     });
+  });
+});
+
+describe("getSaleDetail com venda feita sem internet", () => {
+  let ctx: OfflineContext;
+  const seller = () => ({ id: store.user.id, name: store.user.name, role: "SELLER" as const });
+
+  beforeEach(async () => {
+    const { device, grant } = await prepareOffline(store.user.id, store.cashRegister.id);
+    ctx = {
+      userId: store.user.id,
+      deviceId: device.id,
+      grantId: grant.id,
+      cashRegisterId: store.cashRegister.id,
+    };
+  });
+
+  async function applyOffline(payload: Record<string, unknown> = {}) {
+    const result = await syncOfflineOperation(seller(), offlineSale(store, ctx, {}, payload));
+    if (result.status !== "applied") throw new Error(JSON.stringify(result));
+    return result.sale.id;
+  }
+
+  it("venda online tem operação de idempotência, mas não aparece como offline", async () => {
+    const sale = await sell();
+    expect(await prisma.syncOperation.count({ where: { saleId: sale.id } })).toBe(1);
+    loginAs(store.user.id, "ADMIN");
+
+    expect((await getSaleDetail(sale.id))?.offline).toBeNull();
+  });
+
+  it("venda sincronizada mostra o aparelho, o recebimento e a situação", async () => {
+    const saleId = await applyOffline();
+    const operation = await prisma.syncOperation.findUniqueOrThrow({ where: { saleId } });
+    loginAs(store.user.id, "SELLER");
+
+    const detail = await getSaleDetail(saleId);
+
+    expect(detail?.offline).toEqual({
+      deviceName: "Chrome · Windows",
+      receivedAt: operation.receivedAt.toISOString(),
+      status: "APPLIED",
+      submittedByName: null,
+    });
+    expect(detail?.issues).toEqual([]);
+  });
+
+  it("envio assistido aprovado mostra quem enviou", async () => {
+    const managerRow = await prisma.user.update({
+      where: { id: (await createUser("Gerente")).id },
+      data: { role: Role.MANAGER },
+    });
+    const manager = { id: managerRow.id, name: managerRow.name, role: "MANAGER" as const };
+    const op = offlineSale(store, ctx);
+    expect(await syncOfflineOperation(manager, op)).toMatchObject({ status: "conflict" });
+    expect(await approveConflict(manager, op.operationId, "Conferido")).toMatchObject({
+      success: true,
+    });
+    const { saleId } = await prisma.syncOperation.findUniqueOrThrow({
+      where: { id: op.operationId },
+    });
+    loginAs(manager.id, "MANAGER");
+
+    const detail = await getSaleDetail(saleId!);
+
+    expect(detail?.userName).toBe(store.user.name);
+    expect(detail?.offline).toMatchObject({ status: "APPROVED", submittedByName: "Gerente" });
+  });
+
+  it("lista as pendências de conciliação e se já foram conferidas", async () => {
+    // 12 arroz com 10 em estoque: a venda é aceita e gera pendência de estoque negativo
+    const saleId = await applyOffline({
+      amountPaid: "120.00",
+      items: [{ productId: store.rice.id, quantity: "12", unitPrice: "10.00" }],
+    });
+    loginAs(store.user.id, "ADMIN");
+
+    const before = await getSaleDetail(saleId);
+    expect(before?.issues).toEqual([
+      { id: expect.any(String), type: "NEGATIVE_STOCK", acknowledged: false },
+    ]);
+
+    await prisma.reconciliationIssue.update({
+      where: { id: before!.issues[0].id },
+      data: { acknowledgedAt: new Date(), acknowledgedById: store.user.id },
+    });
+
+    expect((await getSaleDetail(saleId))?.issues).toEqual([
+      { id: before!.issues[0].id, type: "NEGATIVE_STOCK", acknowledged: true },
+    ]);
   });
 });
