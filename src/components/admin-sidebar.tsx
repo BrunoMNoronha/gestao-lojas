@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { InstallAppButton } from "@/components/install-app-button";
+import { CommandPaletteTrigger } from "@/components/command-palette";
 import { AppRole, ROLE_LABELS } from "@/lib/permissions";
 import { type NavFeatures, routesFor } from "@/lib/routes";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,8 @@ function SidebarContent({
       <div className="px-1 py-1">
         <Brand storeName={storeName} />
       </div>
+
+      <CommandPaletteTrigger variant="sidebar" onClick={onNavigate} />
 
       <nav aria-label="Menu principal" className="-mx-1 flex-1 space-y-1 overflow-y-auto px-1">
         {navItems.map((item) => {
@@ -146,6 +149,7 @@ export function AdminMobileHeader(props: AdminNavProps) {
         </SheetContent>
       </Sheet>
       <Brand storeName={props.storeName} />
+      <CommandPaletteTrigger variant="icon" className="ml-auto" />
     </header>
   );
 }

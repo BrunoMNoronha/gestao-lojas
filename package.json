@@ -24,6 +24,7 @@
     "barcode-detector": "^3.2.2",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
+    "cmdk": "^1.1.1",
     "cn": "^0.4.0",
     "dexie": "4.4.6",
     "dexie-react-hooks": "4.4.0",
