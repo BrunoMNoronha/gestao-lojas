@@ -116,11 +116,12 @@ const DRAFT_SAVE_DELAY_MS = 300;
 interface QuantityInputProps {
   item: CartItem;
   onCommit: (productId: string, quantity: number) => void;
+  className?: string;
 }
 
 // Campo de quantidade editável: mantém o texto digitado localmente e só aplica ao carrinho
 // ao confirmar (Enter/blur), para permitir digitar valores como "0,5" sem remover o item.
-function QuantityInput({ item, onCommit }: QuantityInputProps) {
+function QuantityInput({ item, onCommit, className }: QuantityInputProps) {
   const [draft, setDraft] = useState<string | null>(null);
 
   const commit = () => {
@@ -150,9 +151,14 @@ function QuantityInput({ item, onCommit }: QuantityInputProps) {
           e.currentTarget.blur();
         }
       }}
-      className="h-7 w-20 text-center font-mono font-semibold"
+      className={cn("h-7 w-20 text-center font-semibold tabular-nums", className)}
     />
   );
+}
+
+// Teclas de atalho no texto dos botões: só com teclado físico (a partir de md)
+function KeyHint({ children }: { children: React.ReactNode }) {
+  return <span className="max-md:hidden"> ({children})</span>;
 }
 
 // Campos que o terminal usa: vêm do servidor (/admin/pdv) ou da cópia local (/pdv, issue #37)
@@ -861,6 +867,40 @@ export function PdvTerminal({
     setNotice(null);
   };
 
+  // Botões "−/+" e campo de quantidade de um item (tabela no desktop, lista no celular).
+  // Função de render, não componente: o campo não é recriado a cada atualização.
+  const quantityStepper = (item: CartItem, mobile = false) => (
+    <div className="flex items-center gap-1">
+      <Button
+        size="icon-xs"
+        variant="outline"
+        className={cn(mobile && "size-11")}
+        aria-label={`Diminuir quantidade de ${item.name}`}
+        onClick={() => updateQuantity(item.productId, -1)}
+      >
+        <Minus className={mobile ? "h-4 w-4" : "h-3 w-3"} />
+      </Button>
+      <QuantityInput
+        item={item}
+        onCommit={setQuantity}
+        className={cn(mobile && "h-11 w-16 text-base")}
+      />
+      <Button
+        size="icon-xs"
+        variant="outline"
+        className={cn(mobile && "size-11")}
+        aria-label={`Aumentar quantidade de ${item.name}`}
+        onClick={() => updateQuantity(item.productId, 1)}
+        disabled={
+          item.quantity + 1 > item.maxStock &&
+          (offline || !suggestUnpack(products, item.productId, item.quantity + 1, cart))
+        }
+      >
+        <Plus className={mobile ? "h-4 w-4" : "h-3 w-3"} />
+      </Button>
+    </div>
+  );
+
   const focusSearch = () => {
     // Defer so it runs after any dialog finishes closing and releases focus
     setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -1141,7 +1181,12 @@ export function PdvTerminal({
       <div
         inert={interactionBlocked}
         aria-busy={unpackBusy}
-        className={cn("flex flex-col gap-4 lg:h-[calc(100svh-4rem)] lg:flex-row", className)}
+        className={cn(
+          "flex flex-col gap-4 lg:h-[calc(100svh-4rem)] lg:flex-row",
+          // Espaço para a barra fixa de finalização do celular não cobrir o resumo
+          cart.length > 0 && "max-lg:pb-24",
+          className,
+        )}
       >
         {/* Terminal ocupa a tela toda: título só para leitores de tela */}
         <h1 className="sr-only">Frente de Caixa (PDV)</h1>
@@ -1154,7 +1199,7 @@ export function PdvTerminal({
               <Input
                 ref={searchInputRef}
                 aria-label="Buscar produto"
-                placeholder="Buscar produto por nome, código de barras ou SKU... (F2 · Enter para adicionar)"
+                placeholder="Buscar produto, EAN ou SKU"
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -1162,8 +1207,15 @@ export function PdvTerminal({
                 }}
                 onFocus={() => setShowSuggestions(true)}
                 onKeyDown={handleSearchKeyDown}
-                className="h-12 pl-10 text-base"
+                aria-keyshortcuts="F2"
+                className="h-12 pl-10 text-base md:pr-28"
               />
+              <span
+                aria-hidden
+                className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 hidden -translate-y-1/2 items-center gap-1 text-[11px] md:flex"
+              >
+                <kbd className="bg-muted rounded border px-1.5 font-mono">F2</kbd>· Enter adiciona
+              </span>
 
               {/* Suggestions Dropdown */}
               {showSuggestions && filteredProducts.length > 0 && (
@@ -1260,7 +1312,7 @@ export function PdvTerminal({
           )}
 
           {/* Cart Table */}
-          <Card className="flex min-h-72 flex-1 flex-col overflow-hidden lg:min-h-0">
+          <Card className="flex flex-1 flex-col overflow-hidden md:min-h-72 lg:min-h-0">
             <CardContent className="flex-1 overflow-auto p-0">
               {cart.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center p-8 text-center">
@@ -1273,74 +1325,84 @@ export function PdvTerminal({
                   </p>
                 </div>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 sticky top-0">
-                    <tr className="text-muted-foreground border-b text-xs">
-                      <th className="p-3 text-left font-medium">Produto</th>
-                      <th className="w-36 p-3 text-center font-medium">Qtd</th>
-                      <th className="p-3 text-right font-medium">Unitário</th>
-                      <th className="p-3 text-right font-medium">Subtotal</th>
-                      <th className="w-10 p-3"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <>
+                  {/* Celular: um item por linha em dois níveis, sem rolagem lateral */}
+                  <ul className="divide-y md:hidden">
                     {cart.map((item) => (
-                      <tr
-                        key={item.productId}
-                        className="hover:bg-muted/30 border-b transition-colors"
-                      >
-                        <td className="min-w-40 p-3">
-                          <div className="font-medium">{item.name}</div>
-                          <div className="text-muted-foreground text-[11px]">
-                            {item.barcode && <>EAN: {item.barcode} · </>}
-                            {item.unit}
-                          </div>
-                        </td>
-                        <td className="p-3">
-                          <div className="flex items-center justify-center gap-1">
-                            <Button
-                              size="icon-xs"
-                              variant="outline"
-                              aria-label={`Diminuir quantidade de ${item.name}`}
-                              onClick={() => updateQuantity(item.productId, -1)}
-                            >
-                              <Minus className="h-3 w-3" />
-                            </Button>
-                            <QuantityInput item={item} onCommit={setQuantity} />
-                            <Button
-                              size="icon-xs"
-                              variant="outline"
-                              aria-label={`Aumentar quantidade de ${item.name}`}
-                              onClick={() => updateQuantity(item.productId, 1)}
-                              disabled={
-                                item.quantity + 1 > item.maxStock &&
-                                (offline ||
-                                  !suggestUnpack(products, item.productId, item.quantity + 1, cart))
-                              }
-                            >
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="text-muted-foreground p-3 text-right">
-                          {formatCurrency(item.unitPrice)}
-                        </td>
-                        <td className="p-3 text-right font-semibold">
-                          {formatCurrency(item.subtotal)}
-                        </td>
-                        <td className="p-3">
+                      <li key={item.productId} data-cart-item className="space-y-2 p-3">
+                        <div className="flex items-start gap-2">
+                          <span className="min-w-0 flex-1">
+                            <span className="line-clamp-2 font-medium">{item.name}</span>
+                            <span className="text-muted-foreground text-xs tabular-nums">
+                              {formatCurrency(item.unitPrice)} / {item.unit}
+                            </span>
+                          </span>
                           <IconButton
                             size="icon-xs"
+                            className="-mt-2 -mr-2 size-11"
                             label={`Remover ${item.name}`}
                             onClick={() => removeItem(item.productId)}
                           >
-                            <X className="text-destructive h-3.5 w-3.5" />
+                            <X className="text-destructive h-4 w-4" />
                           </IconButton>
-                        </td>
-                      </tr>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {quantityStepper(item, true)}
+                          <span className="text-muted-foreground text-xs">{item.unit}</span>
+                          <span className="ml-auto font-semibold tabular-nums">
+                            {formatCurrency(item.subtotal)}
+                          </span>
+                        </div>
+                      </li>
                     ))}
-                  </tbody>
-                </table>
+                  </ul>
+                  <table className="hidden w-full text-sm md:table">
+                    <thead className="bg-muted/50 sticky top-0">
+                      <tr className="text-muted-foreground border-b text-xs">
+                        <th className="p-3 text-left font-medium">Produto</th>
+                        <th className="w-36 p-3 text-center font-medium">Qtd</th>
+                        <th className="p-3 text-right font-medium">Unitário</th>
+                        <th className="p-3 text-right font-medium">Subtotal</th>
+                        <th className="w-10 p-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cart.map((item) => (
+                        <tr
+                          key={item.productId}
+                          data-cart-item
+                          className="hover:bg-muted/30 border-b transition-colors"
+                        >
+                          <td className="min-w-40 p-3">
+                            <div className="font-medium">{item.name}</div>
+                            <div className="text-muted-foreground text-[11px]">
+                              {item.barcode && <>EAN: {item.barcode} · </>}
+                              {item.unit}
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex justify-center">{quantityStepper(item)}</div>
+                          </td>
+                          <td className="text-muted-foreground p-3 text-right tabular-nums">
+                            {formatCurrency(item.unitPrice)}
+                          </td>
+                          <td className="p-3 text-right font-semibold tabular-nums">
+                            {formatCurrency(item.subtotal)}
+                          </td>
+                          <td className="p-3">
+                            <IconButton
+                              size="icon-xs"
+                              label={`Remover ${item.name}`}
+                              onClick={() => removeItem(item.productId)}
+                            >
+                              <X className="text-destructive h-3.5 w-3.5" />
+                            </IconButton>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
               )}
             </CardContent>
           </Card>
@@ -1350,14 +1412,14 @@ export function PdvTerminal({
         <div className="flex w-full flex-col gap-4 lg:w-80 lg:shrink-0">
           {/* Customer */}
           <Card>
-            <CardContent className="space-y-2 p-4">
-              <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            <CardContent className="space-y-2 p-4 max-md:flex max-md:items-center max-md:gap-3 max-md:space-y-0 max-md:p-3">
+              <h3 className="text-muted-foreground shrink-0 text-xs font-semibold tracking-wide uppercase">
                 Cliente
               </h3>
               {selectedCustomer ? (
-                <div className="flex items-center justify-between">
-                  <div className="text-sm">
-                    <div className="font-medium">{selectedCustomer.name}</div>
+                <div className="flex min-w-0 flex-1 items-center justify-between">
+                  <div className="min-w-0 text-sm">
+                    <div className="truncate font-medium">{selectedCustomer.name}</div>
                     {selectedCustomer.document && (
                       <div className="text-muted-foreground text-xs">
                         {displayDocument(selectedCustomer.document)}
@@ -1375,11 +1437,12 @@ export function PdvTerminal({
               ) : (
                 <Button
                   variant="outline"
-                  className="w-full gap-1.5 text-xs"
+                  className="w-full gap-1.5 text-xs max-md:h-11 max-md:flex-1"
                   onClick={openCustomerDialog}
                 >
                   <UserRound className="h-4 w-4" />
-                  Selecionar Cliente (F4)
+                  Selecionar Cliente
+                  <KeyHint>F4</KeyHint>
                 </Button>
               )}
             </CardContent>
@@ -1400,13 +1463,14 @@ export function PdvTerminal({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Subtotal:</span>
-                    <span className="font-medium">{formatCurrency(subtotal)}</span>
+                    <span className="font-medium tabular-nums">{formatCurrency(subtotal)}</span>
                   </div>
 
                   {/* Discount Input */}
                   <div className="flex items-center gap-2">
                     <span className="text-muted-foreground shrink-0 text-sm">
-                      Desconto R$ (F8):
+                      Desconto R$
+                      <KeyHint>F8</KeyHint>:
                     </span>
                     <MoneyInput
                       ref={discountInputRef}
@@ -1424,7 +1488,7 @@ export function PdvTerminal({
                 <div className="border-t pt-3">
                   <div className="flex items-baseline justify-between">
                     <span className="text-lg font-bold">TOTAL</span>
-                    <span className="text-primary text-2xl font-extrabold">
+                    <span className="text-primary text-2xl font-extrabold tabular-nums">
                       {formatCurrency(total)}
                     </span>
                   </div>
@@ -1441,17 +1505,18 @@ export function PdvTerminal({
                   </p>
                 )}
                 <Button
-                  className="h-12 w-full gap-2 text-base"
+                  className={cn("h-12 w-full gap-2 text-base", cart.length > 0 && "max-lg:hidden")}
                   onClick={openCheckout}
                   disabled={cart.length === 0 || searching}
                 >
                   <DollarSign className="h-5 w-5" />
-                  Finalizar Venda (F10)
+                  Finalizar Venda
+                  <KeyHint>F10</KeyHint>
                 </Button>
 
                 <Button
-                  variant="destructive"
-                  className="w-full gap-2"
+                  variant="ghost"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive w-full gap-2 max-md:h-11"
                   onClick={clearCart}
                   disabled={cart.length === 0 || searching}
                 >
@@ -1482,6 +1547,28 @@ export function PdvTerminal({
             </CardContent>
           </Card>
         </div>
+
+        {/* Celular e tablet: total e "Finalizar" sempre à mão, sem rolar até o resumo */}
+        {cart.length > 0 && (
+          <div className="bg-background/95 supports-backdrop-filter:bg-background/80 fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur lg:hidden">
+            <div className="min-w-0 flex-1">
+              <p className="text-muted-foreground text-xs">
+                Total · {cart.length} {cart.length === 1 ? "item" : "itens"}
+              </p>
+              <p className="text-primary text-xl font-extrabold tabular-nums">
+                {formatCurrency(total)}
+              </p>
+            </div>
+            <Button
+              className="h-11 gap-2 px-6 text-base"
+              onClick={openCheckout}
+              disabled={searching}
+            >
+              <DollarSign className="h-5 w-5" />
+              Finalizar
+            </Button>
+          </div>
+        )}
 
         {/* CUSTOMER SELECTION DIALOG */}
         <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
@@ -1565,7 +1652,8 @@ export function PdvTerminal({
               <div className="border-warning/30 bg-warning/10 text-warning flex items-center justify-between gap-2 rounded-md border p-2.5 text-xs">
                 <span>Venda no Fiado exige um cliente vinculado.</span>
                 <Button size="xs" variant="outline" onClick={openCustomerDialog}>
-                  Selecionar (F4)
+                  Selecionar
+                  <KeyHint>F4</KeyHint>
                 </Button>
               </div>
             )}
@@ -1661,7 +1749,8 @@ export function PdvTerminal({
                   </>
                 ) : (
                   <>
-                    <DollarSign className="h-4 w-4" /> Confirmar Venda (F10)
+                    <DollarSign className="h-4 w-4" /> Confirmar Venda
+                    <KeyHint>F10</KeyHint>
                   </>
                 )}
               </Button>

@@ -3,6 +3,7 @@ import { resetDatabase, seedStore, snapshot, type Store } from "./support/db";
 import {
   addToCart,
   confirmCheckout,
+  confirmSaleButton,
   expectQueue,
   goOffline,
   goOnline,
@@ -81,12 +82,14 @@ for (const failure of FAILURES) {
     await expect(checkout.getByText("O carrinho foi mantido")).toBeVisible();
     await expect(page.locator("#receipt-print-area")).toHaveCount(0);
     // O carrinho fica atrás do diálogo (fora da árvore de acessibilidade enquanto ele está aberto)
-    await expect(page.locator('input[aria-label="Quantidade de Arroz 5kg"]')).toHaveValue("2");
+    await expect(page.locator('input[aria-label="Quantidade de Arroz 5kg"]:visible')).toHaveValue(
+      "2",
+    );
     expect(await readQueue(page, store.seller.id)).toEqual([]);
 
     // Espaço liberado: a mesma venda é gravada, uma única vez
     await restoreQueueWrites(page);
-    await checkout.getByRole("button", { name: "Confirmar Venda (F10)" }).click();
+    await confirmSaleButton(checkout).click();
     const receipt = await takeReceipt(page);
     expect(receipt).toContain("PROVISÓRIA");
     expect(receipt).toContain("Arroz 5kg");

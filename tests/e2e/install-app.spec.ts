@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { resetDatabase, seedStore, type Store } from "./support/db";
-import { addToCart, login, preparePdv } from "./support/pdv";
+import { addToCart, cartItem, login, preparePdv } from "./support/pdv";
 
 // Oferta de instalação do app (issue #61). O evento `beforeinstallprompt` é simulado na página:
 // isso confere a tela (botão, janela aberta uma vez, ajuda, app instalado), não a instalação
@@ -105,7 +105,7 @@ test("cabeçalho do /pdv: instalar não mexe no carrinho nem recarrega a página
   await login(context, store.seller.email);
   await preparePdv(page);
   await addToCart(page, [{ code: "ARZ", quantity: 2 }]);
-  const cartRow = page.getByRole("row").filter({ hasText: "Arroz 5kg" });
+  const cartRow = cartItem(page, "Arroz 5kg");
   await expect(cartRow).toBeVisible();
 
   // Marca na página: some se ela recarregar

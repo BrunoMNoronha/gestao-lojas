@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { db, resetDatabase, seedStore, type Store } from "./support/db";
-import { login, searchBox, confirmCheckout, takeReceipt } from "./support/pdv";
+import { login, searchBox, confirmCheckout, openProductEdit, takeReceipt } from "./support/pdv";
 
 let store: Store;
 test.beforeEach(async () => {
@@ -64,7 +64,7 @@ test("listas buscam no servidor, paginam e edição atualiza a página com uma r
   await page.getByRole("textbox", { name: "Buscar produto" }).fill("Queijo minas");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page).toHaveURL(/q=Queijo/);
-  await page.getByRole("button", { name: "Editar produto", exact: true }).click();
+  await openProductEdit(page, "Queijo minas");
   const edit = page.getByRole("dialog", { name: "Editar Produto", exact: true });
   await edit.getByLabel(/Preço de Venda/).fill("5000");
   let extraRsc = 0;
@@ -96,11 +96,7 @@ test("preço público é invalidado pela edição do produto", async ({ page, co
   await login(context, store.manager.email);
   await page.goto("/admin/produtos");
   const changePrice = async (value: string) => {
-    await page
-      .getByRole("row")
-      .filter({ hasText: "Arroz 5kg" })
-      .getByRole("button", { name: "Editar produto", exact: true })
-      .click();
+    await openProductEdit(page, "Arroz 5kg");
     const edit = page.getByRole("dialog", { name: "Editar Produto", exact: true });
     await edit.getByLabel(/Preço de Venda/).fill(value);
     await edit.getByRole("button", { name: "Atualizar Produto", exact: true }).click();

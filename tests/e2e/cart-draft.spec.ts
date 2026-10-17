@@ -3,12 +3,16 @@ import { Prisma } from "@prisma/client";
 import { db, resetDatabase, seedStore, snapshot, type Store } from "./support/db";
 import {
   addToCart,
+  cartItem,
+  confirmSaleButton,
   expectQueue,
+  finishSaleButton,
   goOffline,
   goOnline,
   login,
   preparePdv,
   searchBox,
+  selectCustomerButton,
   syncNow,
   takeReceipt,
 } from "./support/pdv";
@@ -55,7 +59,7 @@ async function readDraft(page: Page, userId: string): Promise<StoredDraft | null
   }, userId);
 }
 
-const cartRow = (page: Page, name: string) => page.getByRole("row").filter({ hasText: name });
+const cartRow = cartItem;
 const quantityOf = (page: Page, name: string) =>
   page.getByRole("textbox", { name: `Quantidade de ${name}` });
 
@@ -72,7 +76,7 @@ test("o carrinho volta ao recarregar, com e sem rede, e vira uma única venda", 
     { code: "ARZ", quantity: 2 },
     { code: "QJO", quantity: "0,5", name: "Queijo minas" },
   ]);
-  await page.getByRole("button", { name: "Selecionar Cliente (F4)" }).click();
+  await selectCustomerButton(page).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: /Cliente Teste/ })
@@ -92,7 +96,7 @@ test("o carrinho volta ao recarregar, com e sem rede, e vira uma única venda", 
 
   // Com rede, abre o pagamento, escolhe Débito e recarrega: volta no pagamento
   await goOnline(context, page);
-  await page.getByRole("button", { name: "Finalizar Venda (F10)" }).click();
+  await finishSaleButton(page).click();
   const checkout = page.getByRole("dialog", { name: "Finalizar Venda" });
   await checkout.getByRole("button", { name: "Débito", exact: true }).click();
   await expect
@@ -107,7 +111,7 @@ test("o carrinho volta ao recarregar, com e sem rede, e vira uma única venda", 
   // Total: 2 x 10,00 + 0,5 x 45,90 - 1,50 = 41,45
   await expect(checkout.getByText(/41,45/)).toBeVisible();
 
-  await checkout.getByRole("button", { name: "Confirmar Venda (F10)" }).click();
+  await confirmSaleButton(checkout).click();
   const receipt = await takeReceipt(page);
   expect(receipt).toContain("Cliente Teste");
   expect(await readDraft(page, store.seller.id)).toBeNull();
