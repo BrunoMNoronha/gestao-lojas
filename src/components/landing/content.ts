@@ -21,6 +21,7 @@ import { SCREENSHOTS, type Screenshot } from "./screenshots";
 // inventados ou depoimentos.
 
 export const NAV_LINKS = [
+  { href: "#demonstracao", label: "Demonstração" },
   { href: "#funcionalidades", label: "Funcionalidades" },
   { href: "#offline", label: "PDV offline" },
   { href: "#celular", label: "Celular" },

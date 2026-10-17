@@ -10,6 +10,7 @@ import { MoreFeatures, RolesSection } from "@/components/landing/roles-section";
 import { SCREENSHOTS } from "@/components/landing/screenshots";
 import { FinalCta, SiteFooter } from "@/components/landing/site-footer";
 import { SiteHeader } from "@/components/landing/site-header";
+import { VideoSection } from "@/components/landing/video-section";
 
 const TITLE = "Gestão de Lojas — ERP e PDV para lojas físicas";
 const DESCRIPTION =
@@ -50,6 +51,7 @@ export default async function LandingPage() {
       <SiteHeader loggedIn={loggedIn} />
       <main id="conteudo" tabIndex={-1} className="flex-1 outline-none">
         <Hero loggedIn={loggedIn} />
+        <VideoSection />
         <FeatureShowcase />
         <OfflineSection />
         <MobileSection />
