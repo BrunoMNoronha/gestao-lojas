@@ -171,10 +171,15 @@ Os nomes abaixo são os da documentação oficial em 2026-10; confira no console
 1. No [Google Cloud Console](https://console.cloud.google.com/), crie ou escolha um projeto da loja
    e abra a página **Fraud Defense** (reCAPTCHA) → aba **Keys** → **Create key**.
 2. _Display name_ à escolha; tipo **Web**; deixe **Disable domain verification** desligado.
-3. **Add a domain**: `gestao-loja.dev2bless.tech`, `gestao-lojas-dpv.vercel.app` e `localhost`.
+3. **Add a domain**: `dev2bless.tech` (vale para os subdomínios, como `gestao-loja.dev2bless.tech`),
+   `gestao-lojas-dpv.vercel.app` e, se quiser testar o login localmente com as chaves, `localhost`.
    Mantenha a opção padrão (por score, sem checkbox). Mudanças de domínio levam até 30 minutos
    para valer. Todo domínio novo do projeto na Vercel precisa entrar nesta lista, senão o login
-   nele é recusado.
+   nele é recusado. Pelo Cloud Shell (o `--domains` substitui a lista inteira):
+
+   ```bash
+   gcloud recaptcha keys update <ID da chave> --web --domains=gestao-lojas-dpv.vercel.app,dev2bless.tech
+   ```
 4. Copie o **ID da chave** (chave do site) → `RECAPTCHA_SITE_KEY`.
 5. Na chave criada: **Key Details** → aba **Integration** → **Use Legacy Key** → copie a chave
    secreta legada → `RECAPTCHA_SECRET_KEY` (é a usada pelo `siteverify`).
