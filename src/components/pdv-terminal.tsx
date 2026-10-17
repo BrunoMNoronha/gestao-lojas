@@ -867,28 +867,29 @@ export function PdvTerminal({
     setNotice(null);
   };
 
-  // Botões "−/+" e campo de quantidade de um item (tabela no desktop, lista no celular).
+  // Botões "−/+" e campo de quantidade de um item (tabela a partir de xl, lista abaixo disso; os
+  // alvos de toque maiores da lista valem só no celular, abaixo de md).
   // Função de render, não componente: o campo não é recriado a cada atualização.
   const quantityStepper = (item: CartItem, mobile = false) => (
     <div className="flex items-center gap-1">
       <Button
         size="icon-xs"
         variant="outline"
-        className={cn(mobile && "size-11")}
+        className={cn(mobile && "max-md:size-11")}
         aria-label={`Diminuir quantidade de ${item.name}`}
         onClick={() => updateQuantity(item.productId, -1)}
       >
-        <Minus className={mobile ? "h-4 w-4" : "h-3 w-3"} />
+        <Minus className={cn("h-3 w-3", mobile && "max-md:h-4 max-md:w-4")} />
       </Button>
       <QuantityInput
         item={item}
         onCommit={setQuantity}
-        className={cn(mobile && "h-11 w-16 text-base")}
+        className={cn(mobile && "max-md:h-11 max-md:w-16 max-md:text-base")}
       />
       <Button
         size="icon-xs"
         variant="outline"
-        className={cn(mobile && "size-11")}
+        className={cn(mobile && "max-md:size-11")}
         aria-label={`Aumentar quantidade de ${item.name}`}
         onClick={() => updateQuantity(item.productId, 1)}
         disabled={
@@ -896,7 +897,7 @@ export function PdvTerminal({
           (offline || !suggestUnpack(products, item.productId, item.quantity + 1, cart))
         }
       >
-        <Plus className={mobile ? "h-4 w-4" : "h-3 w-3"} />
+        <Plus className={cn("h-3 w-3", mobile && "max-md:h-4 max-md:w-4")} />
       </Button>
     </div>
   );
@@ -1326,8 +1327,9 @@ export function PdvTerminal({
                 </div>
               ) : (
                 <>
-                  {/* Celular: um item por linha em dois níveis, sem rolagem lateral */}
-                  <ul className="divide-y md:hidden">
+                  {/* Abaixo de xl (celular e desktop estreito com a barra lateral e o resumo abertos): um
+                      item por linha em dois níveis, sem rolagem lateral */}
+                  <ul className="divide-y xl:hidden">
                     {cart.map((item) => (
                       <li key={item.productId} data-cart-item className="space-y-2 p-3">
                         <div className="flex items-start gap-2">
@@ -1339,11 +1341,11 @@ export function PdvTerminal({
                           </span>
                           <IconButton
                             size="icon-xs"
-                            className="-mt-2 -mr-2 size-11"
+                            className="max-md:-mt-2 max-md:-mr-2 max-md:size-11"
                             label={`Remover ${item.name}`}
                             onClick={() => removeItem(item.productId)}
                           >
-                            <X className="text-destructive h-4 w-4" />
+                            <X className="text-destructive h-4 w-4 md:h-3.5 md:w-3.5" />
                           </IconButton>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1356,7 +1358,7 @@ export function PdvTerminal({
                       </li>
                     ))}
                   </ul>
-                  <table className="hidden w-full text-sm md:table">
+                  <table className="hidden w-full text-sm xl:table">
                     <thead className="bg-muted/50 sticky top-0">
                       <tr className="text-muted-foreground border-b text-xs">
                         <th className="p-3 text-left font-medium">Produto</th>
