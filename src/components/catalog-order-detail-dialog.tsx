@@ -30,6 +30,7 @@ import {
   getCatalogOrderDetail,
   type CatalogOrderDetail,
 } from "@/actions/catalog-orders";
+import { CatalogOrderCustomerRegister } from "@/components/catalog-order-customer-register";
 import { CatalogOrderStatusBadge } from "@/components/catalog-order-status";
 import { displayPhone } from "@/lib/masks";
 import { formatStoreDateTime } from "@/lib/store-time";
@@ -163,6 +164,17 @@ export function CatalogOrderDetailDialog({
                       ? `Cadastro: ${detail.customer.name}${detail.customer.deleted ? " (excluído)" : ""}`
                       : "Sem cadastro com este telefone"}
                   </div>
+                  {(!detail.customer || detail.customer.deleted) && detail.customerPhone && (
+                    <CatalogOrderCustomerRegister
+                      orderId={detail.id}
+                      name={detail.customerName ?? ""}
+                      phone={detail.customerPhone}
+                      onDone={() => {
+                        setReloadKey((k) => k + 1);
+                        onChanged?.();
+                      }}
+                    />
+                  )}
                 </div>
                 <div>
                   <div className="text-muted-foreground text-xs">Telefone</div>
