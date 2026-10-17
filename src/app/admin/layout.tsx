@@ -6,6 +6,7 @@ import { getStoreBrandName } from "@/lib/store-brand";
 import { isReceivablesVisible } from "@/lib/on-account";
 import { can } from "@/lib/permissions";
 import { OfflineUserGuard } from "@/components/offline-pdv/offline-user-guard";
+import { CommandPalette } from "@/components/command-palette";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // O proxy já barra quem não está logado; aqui a sessão define o menu exibido para o perfil
@@ -33,6 +34,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </a>
       {/* Outro usuário entrou no aparelho: apaga a cópia local do PDV do anterior (#37) */}
       <OfflineUserGuard userId={user.id} />
+      {/* Ctrl/Cmd+K: telas, ações e busca de produtos e clientes */}
+      <CommandPalette user={navProps.user} features={navProps.features} />
       <AdminSidebar {...navProps} />
       <div className="flex min-w-0 flex-1 flex-col">
         <AdminMobileHeader {...navProps} />

@@ -57,6 +57,7 @@ import { MoneyInput } from "@/components/money-input";
 import { displayDocument, displayPhone, matchesMaskedValue } from "@/lib/masks";
 import { formatStoreDate, storeDueDate } from "@/lib/store-time";
 import { newOperationId } from "@/lib/operation-id";
+import { isCommandPaletteOpen } from "@/lib/command-palette";
 import {
   lineSubtotal,
   type PdvSaleDraft,
@@ -1013,6 +1014,8 @@ export function PdvTerminal({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (interactionBlockedRef.current || unpackWorking.current) return;
+      // A paleta de comandos (Ctrl/Cmd+K) aberta por cima do PDV fica com o teclado
+      if (isCommandPaletteOpen()) return;
       const handlers = shortcutHandlers.current;
       const dialogs = dialogState.current;
       const anyDialogOpen =
