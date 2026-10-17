@@ -46,6 +46,7 @@ import { OptionSelect } from "@/components/option-select";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
+import { formatStoreDateTime } from "@/lib/store-time";
 
 interface StockManagerProps {
   products: ProductItem[];
@@ -81,11 +82,6 @@ function dayBoundary(value: string, endOfDay: boolean): string | null {
     : new Date(y, m - 1, d, 0, 0, 0, 0);
   return date.toISOString();
 }
-
-const formatDateTime = (iso: string) =>
-  new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(
-    new Date(iso),
-  );
 
 function signedQuantity(m: StockMovementItem) {
   const value = m.type === "OUT" ? -m.quantity : m.quantity;
@@ -674,7 +670,7 @@ export function StockManager({
                             className="text-muted-foreground text-xs whitespace-nowrap"
                             suppressHydrationWarning
                           >
-                            {formatDateTime(m.createdAt)}
+                            {formatStoreDateTime(m.createdAt)}
                           </TableCell>
                           <TableCell className="min-w-40 font-medium whitespace-normal">
                             {m.productName}

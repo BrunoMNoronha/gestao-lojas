@@ -41,7 +41,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDateTime } from "@/lib/dates";
+import { formatStoreDateTime } from "@/lib/store-time";
 import { newOperationId } from "@/lib/operation-id";
 import { cn } from "@/lib/utils";
 
@@ -482,7 +482,7 @@ function BlockerList({ blockers, onRefresh }: { blockers: ResetBlockers; onRefre
         {blockers.openCashRegisters.map((register) => (
           <li key={register.id}>
             Caixa aberto de <span className="font-medium">{register.userName}</span> desde{" "}
-            {formatDateTime(register.openedAt)}: feche o caixa.
+            {formatStoreDateTime(register.openedAt)}: feche o caixa.
           </li>
         ))}
         {blockers.pendingDevices.map((device) => (
@@ -525,7 +525,7 @@ function RunHistory({ runs }: { runs: TestDataRunItem[] }) {
                     <span className="font-medium">{KIND_LABELS[run.kind]}</span>
                     <Badge variant={badge.variant}>{badge.label}</Badge>
                     <span className="text-muted-foreground text-xs">
-                      {formatDateTime(run.createdAt)} · {run.userName}
+                      {formatStoreDateTime(run.createdAt)} · {run.userName}
                     </span>
                   </div>
                   <p

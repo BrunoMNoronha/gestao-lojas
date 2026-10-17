@@ -8,11 +8,3 @@ export function dayBoundary(value: string, endOfDay: boolean): string | null {
     : new Date(y, m - 1, d, 0, 0, 0, 0);
   return date.toISOString();
 }
-
-export const formatDateTime = (iso: string) =>
-  new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(
-    new Date(iso),
-  );
-
-export const formatDate = (iso: string) =>
-  new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(iso));

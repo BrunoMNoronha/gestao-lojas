@@ -13,7 +13,7 @@ import { Loader2, ReceiptText } from "lucide-react";
 import { CashRegisterDetail, getCashRegisterDetail } from "@/actions/cash-register";
 import { CashSummary } from "@/components/cash-summary";
 import { PAYMENT_METHOD_LABELS } from "@/lib/payments";
-import { formatDateTime } from "@/lib/dates";
+import { formatStoreDateTime } from "@/lib/store-time";
 import { cn, formatCurrency } from "@/lib/utils";
 
 interface CashRegisterDetailDialogProps {
@@ -56,8 +56,8 @@ export function CashRegisterDetailDialog({
           </div>
           {detail && (
             <DialogDescription suppressHydrationWarning>
-              Operador {detail.userName} · aberto em {formatDateTime(detail.openedAt)}
-              {detail.closedAt && ` · fechado em ${formatDateTime(detail.closedAt)}`}
+              Operador {detail.userName} · aberto em {formatStoreDateTime(detail.openedAt)}
+              {detail.closedAt && ` · fechado em ${formatStoreDateTime(detail.closedAt)}`}
             </DialogDescription>
           )}
         </DialogHeader>
@@ -123,7 +123,7 @@ export function CashRegisterDetailDialog({
                         <span>{m.reason}</span>
                       </div>
                       <div className="text-muted-foreground flex items-center gap-3 text-xs">
-                        <span suppressHydrationWarning>{formatDateTime(m.createdAt)}</span>
+                        <span suppressHydrationWarning>{formatStoreDateTime(m.createdAt)}</span>
                         <span className="text-foreground font-mono text-sm">
                           {formatCurrency(m.amount)}
                         </span>
@@ -168,7 +168,7 @@ export function CashRegisterDetailDialog({
                       </span>
                       <div className="text-muted-foreground flex items-center gap-3 text-xs">
                         <span suppressHydrationWarning>
-                          lançada em {formatDateTime(s.appliedAt)}
+                          lançada em {formatStoreDateTime(s.appliedAt)}
                         </span>
                         <span className="text-foreground font-mono text-sm">
                           {formatCurrency(s.total)}

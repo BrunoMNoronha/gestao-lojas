@@ -37,7 +37,8 @@ import {
   CashRegisterDetailDialog,
   DifferenceValue,
 } from "@/components/cash-register-detail-dialog";
-import { dayBoundary, formatDateTime } from "@/lib/dates";
+import { dayBoundary } from "@/lib/dates";
+import { formatStoreDateTime } from "@/lib/store-time";
 import { formatCurrency } from "@/lib/utils";
 import { OptionSelect } from "@/components/option-select";
 import { DateRangePicker } from "@/components/date-range-picker";
@@ -245,7 +246,7 @@ export function CashRegisterManager({
             <CardHeader>
               <CardTitle className="text-base">Turno em andamento</CardTitle>
               <CardDescription suppressHydrationWarning>
-                Operador {current.userName} · aberto em {formatDateTime(current.openedAt)}
+                Operador {current.userName} · aberto em {formatStoreDateTime(current.openedAt)}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -351,13 +352,13 @@ export function CashRegisterManager({
                             className="text-muted-foreground text-xs whitespace-nowrap"
                             suppressHydrationWarning
                           >
-                            {formatDateTime(r.openedAt)}
+                            {formatStoreDateTime(r.openedAt)}
                           </TableCell>
                           <TableCell
                             className="text-muted-foreground text-xs whitespace-nowrap"
                             suppressHydrationWarning
                           >
-                            {r.closedAt ? formatDateTime(r.closedAt) : "-"}
+                            {r.closedAt ? formatStoreDateTime(r.closedAt) : "-"}
                           </TableCell>
                           <TableCell className="text-right font-mono">
                             {formatCurrency(r.openingAmount)}
