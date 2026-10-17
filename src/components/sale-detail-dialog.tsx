@@ -19,10 +19,11 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Printer, ShoppingCart } from "lucide-react";
+import { Loader2, Printer, ShoppingCart, Undo2 } from "lucide-react";
 import { getSaleDetail, type SaleDetail } from "@/actions/sales";
 import type { StoreSettingsData } from "@/actions/settings";
 import { ReceiptModal } from "@/components/receipt-modal";
+import { SaleReversalDialog } from "@/components/sale-reversal-dialog";
 import { PAYMENT_METHOD_LABELS, RECEIVABLE_STATUS_LABELS } from "@/lib/payments";
 import { RECONCILIATION_ISSUE_LABELS } from "@/lib/reconciliation-labels";
 import { formatStoreDate, formatStoreDateTime, isOverdue } from "@/lib/store-time";
@@ -34,6 +35,8 @@ interface SaleDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   saleId: string | null;
   storeSettings: StoreSettingsData;
+  // Chamado depois de um estorno, para a lista de origem se atualizar
+  onReversed?: () => void;
 }
 
 const OFFLINE_STATUS_LABELS: Record<NonNullable<SaleDetail["offline"]>["status"], string> = {
@@ -51,11 +54,16 @@ export function SaleDetailDialog({
   onOpenChange,
   saleId,
   storeSettings,
+  onReversed,
 }: SaleDetailDialogProps) {
   const [detail, setDetail] = useState<SaleDetail | null>(null);
   const [loading, setLoading] = useState(!!saleId);
   const [failed, setFailed] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [reversalOpen, setReversalOpen] = useState(false);
+  const [reversalKey, setReversalKey] = useState(0);
+  // Recarrega o detalhe depois do estorno
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!saleId) return;
@@ -69,7 +77,7 @@ export function SaleDetailDialog({
     return () => {
       active = false;
     };
-  }, [saleId]);
+  }, [saleId, reloadKey]);
 
   const subtotal = detail ? detail.total + detail.discount : 0;
 
@@ -81,6 +89,11 @@ export function SaleDetailDialog({
             <div className="flex items-center gap-2">
               <ShoppingCart className="text-primary h-5 w-5" />
               <DialogTitle>{detail ? `Venda #${detail.code}` : "Detalhe da venda"}</DialogTitle>
+              {detail?.reversal && (
+                <Badge variant="destructive" className="text-[11px]">
+                  Estornada
+                </Badge>
+              )}
             </div>
             {detail && (
               <DialogDescription suppressHydrationWarning>
@@ -99,6 +112,31 @@ export function SaleDetailDialog({
             </p>
           ) : (
             <div className="space-y-6">
+              {detail.reversal && (
+                <div
+                  className="border-destructive/30 bg-destructive/5 space-y-1 rounded-lg border p-3 text-sm"
+                  suppressHydrationWarning
+                >
+                  <p className="font-medium">
+                    Estornada em {formatStoreDateTime(detail.reversal.at)}
+                    {detail.reversal.byName && ` por ${detail.reversal.byName}`}
+                  </p>
+                  <p className="text-muted-foreground">Motivo: {detail.reversal.reason}</p>
+                  <p className="text-muted-foreground">
+                    {detail.reversal.inRegister
+                      ? `${formatCurrency(detail.total)} devolvido pela gaveta do caixa da venda (fora do esperado desse caixa).`
+                      : detail.reversal.refunds.length > 0
+                        ? detail.reversal.refunds
+                            .map(
+                              (r) =>
+                                `${formatCurrency(r.amount)} devolvido em sangria do caixa de ${r.registerUserName}.`,
+                            )
+                            .join(" ")
+                        : "Nenhum dinheiro saiu da gaveta; a devolução foi feita fora do sistema."}
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-3 rounded-lg border p-3 text-sm sm:grid-cols-3">
                 <div>
                   <div className="text-muted-foreground text-xs">Cliente</div>
@@ -191,7 +229,13 @@ export function SaleDetailDialog({
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-semibold">Fiado</h3>
                     <Badge
-                      variant={detail.receivable.status === "PAID" ? "success" : "warning"}
+                      variant={
+                        detail.receivable.status === "PAID"
+                          ? "success"
+                          : detail.receivable.status === "CANCELED"
+                            ? "secondary"
+                            : "warning"
+                      }
                       className="text-[11px]"
                     >
                       {RECEIVABLE_STATUS_LABELS[detail.receivable.status]}
@@ -213,7 +257,11 @@ export function SaleDetailDialog({
                     <div>
                       <div className="text-muted-foreground text-xs">Restante</div>
                       <div className="font-mono font-semibold">
-                        {formatCurrency(detail.receivable.amount - detail.receivable.paidAmount)}
+                        {formatCurrency(
+                          detail.receivable.status === "CANCELED"
+                            ? 0
+                            : detail.receivable.amount - detail.receivable.paidAmount,
+                        )}
                       </div>
                     </div>
                     <div>
@@ -223,7 +271,8 @@ export function SaleDetailDialog({
                           suppressHydrationWarning
                           className={cn(
                             "font-medium",
-                            detail.receivable.status !== "PAID" &&
+                            (detail.receivable.status === "OPEN" ||
+                              detail.receivable.status === "PARTIAL") &&
                               isOverdue(detail.receivable.dueDate) &&
                               "text-destructive",
                           )}
@@ -307,6 +356,17 @@ export function SaleDetailDialog({
 
           {detail && (
             <DialogFooter>
+              {detail.canReverse && (
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setReversalKey((k) => k + 1);
+                    setReversalOpen(true);
+                  }}
+                >
+                  <Undo2 className="mr-2 h-4 w-4" /> Estornar venda
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setReceiptOpen(true)}>
                 <Printer className="mr-2 h-4 w-4" /> Reimprimir comprovante
               </Button>
@@ -314,6 +374,19 @@ export function SaleDetailDialog({
           )}
         </DialogContent>
       </Dialog>
+
+      {detail?.canReverse && (
+        <SaleReversalDialog
+          key={`reversal-${reversalKey}`}
+          open={reversalOpen}
+          onOpenChange={setReversalOpen}
+          sale={detail}
+          onReversed={() => {
+            setReloadKey((k) => k + 1);
+            onReversed?.();
+          }}
+        />
+      )}
 
       {detail && (
         <ReceiptModal

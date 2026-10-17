@@ -10,6 +10,8 @@ export const PERMISSIONS = {
   "dashboard.view": MANAGEMENT,
   "reports.view": MANAGEMENT,
   "pdv.use": ALL,
+  // Estorno da venda inteira, com motivo (src/lib/reverse-sale.ts)
+  "sales.reverse": MANAGEMENT,
   // Caixa do próprio operador: abrir, sangria, suprimento, fechar e ver o próprio histórico
   "cash.own": ALL,
   // Histórico e detalhe de caixas de outros operadores

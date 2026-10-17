@@ -19,7 +19,8 @@ import { SaleDetailDialog } from "@/components/sale-detail-dialog";
 import { PaymentMethodBars } from "@/components/payment-method-bars";
 import { PAYMENT_METHOD_LABELS, PaymentMethodValue } from "@/lib/payments";
 import { formatDayKeyBR, formatStoreDateTime } from "@/lib/store-time";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { OptionSelect } from "@/components/option-select";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { Label } from "@/components/ui/label";
@@ -111,7 +112,7 @@ export function SalesReportView({
       <PageHeader
         title="Relatório de Vendas"
         icon={BarChart3}
-        description="Faturamento = vendas registradas (líquidas de desconto), incluindo o Fiado. Datas no horário da loja."
+        description="Faturamento = vendas registradas (líquidas de desconto), incluindo o Fiado. Vendas estornadas aparecem na lista, mas ficam fora dos totais. Datas no horário da loja."
       />
 
       {/* Filters */}
@@ -272,7 +273,14 @@ export function SalesReportView({
                   <TableBody>
                     {report.sales.map((s) => (
                       <TableRow key={s.id}>
-                        <TableCell className="font-mono">#{s.code}</TableCell>
+                        <TableCell className="font-mono whitespace-nowrap">
+                          #{s.code}
+                          {s.reversed && (
+                            <Badge variant="destructive" className="ml-2 font-sans text-[11px]">
+                              Estornada
+                            </Badge>
+                          )}
+                        </TableCell>
                         <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
                           {formatStoreDateTime(s.occurredAt)}
                         </TableCell>
@@ -288,7 +296,12 @@ export function SalesReportView({
                         <TableCell className="text-muted-foreground text-right font-mono">
                           {s.discount > 0 ? formatCurrency(s.discount) : "-"}
                         </TableCell>
-                        <TableCell className="text-right font-mono font-semibold">
+                        <TableCell
+                          className={cn(
+                            "text-right font-mono font-semibold",
+                            s.reversed && "text-muted-foreground line-through",
+                          )}
+                        >
                           {formatCurrency(s.total)}
                         </TableCell>
                         <TableCell className="text-center">
@@ -328,6 +341,7 @@ export function SalesReportView({
         onOpenChange={(open) => !open && setDetailId(null)}
         saleId={detailId}
         storeSettings={storeSettings}
+        onReversed={() => load(filters)}
       />
     </div>
   );

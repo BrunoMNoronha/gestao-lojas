@@ -20,4 +20,5 @@ export const RECEIVABLE_STATUS_LABELS: Record<string, string> = {
   OPEN: "Em aberto",
   PARTIAL: "Parcial",
   PAID: "Quitado",
+  CANCELED: "Cancelado",
 };

@@ -66,6 +66,8 @@ export interface SalesReportRow {
   paymentMethod: PaymentMethodValue;
   discount: number;
   total: number;
+  // Venda estornada: continua na lista, mas fora dos totais
+  reversed: boolean;
 }
 
 export interface SalesReport {
@@ -93,9 +95,12 @@ function periodTotals(total: Prisma.Decimal | null, count: number): PeriodTotals
   };
 }
 
+// Vendas estornadas ficam fora de todos os totais (src/lib/reverse-sale.ts)
+const notReversed = { reversedAt: null } satisfies Prisma.SaleWhereInput;
+
 async function salesTotals(where: Prisma.SaleWhereInput) {
   const result = await prisma.sale.aggregate({
-    where,
+    where: { ...where, ...notReversed },
     _sum: { total: true, discount: true },
     _count: { _all: true },
   });
@@ -108,7 +113,7 @@ async function salesTotals(where: Prisma.SaleWhereInput) {
 async function salesByMethod(where: Prisma.SaleWhereInput): Promise<MethodBreakdown[]> {
   const groups = await prisma.sale.groupBy({
     by: ["paymentMethod"],
-    where,
+    where: { ...where, ...notReversed },
     _sum: { total: true },
     _count: { _all: true },
   });
@@ -137,6 +142,7 @@ async function topProducts(range: DateRange): Promise<TopProduct[]> {
     JOIN "Sale" s ON s.id = si."saleId"
     JOIN "Product" p ON p.id = si."productId"
     WHERE s."occurredAt" >= ${range.from} AND s."occurredAt" <= ${range.to}
+      AND s."reversedAt" IS NULL
     GROUP BY si."productId", p.name, p.unit
     ORDER BY revenue DESC, p.name ASC
     LIMIT ${TOP_PRODUCTS_LIMIT}
@@ -239,6 +245,7 @@ export async function getSalesReport(
     const conditions = [
       Prisma.sql`s."occurredAt" >= ${range.from}`,
       Prisma.sql`s."occurredAt" <= ${range.to}`,
+      Prisma.sql`s."reversedAt" IS NULL`,
     ];
     if (method) conditions.push(Prisma.sql`s."paymentMethod"::text = ${method}`);
     if (userId) conditions.push(Prisma.sql`s."userId" = ${userId}`);
@@ -249,7 +256,7 @@ export async function getSalesReport(
     );
     const skip = Math.max(Math.trunc(filters.skip ?? 0), 0);
 
-    const [totals, byMethod, daily, sales] = await Promise.all([
+    const [totals, byMethod, daily, sales, listed] = await Promise.all([
       salesTotals(where),
       salesByMethod(where),
       // Agrupa pelo dia no relógio da loja ("occurredAt" é gravado em UTC)
@@ -271,6 +278,8 @@ export async function getSalesReport(
         take,
         skip,
       }),
+      // A lista inclui as estornadas (marcadas), então a paginação conta todas
+      prisma.sale.count({ where }),
     ]);
 
     return {
@@ -292,8 +301,9 @@ export async function getSalesReport(
           paymentMethod: s.paymentMethod as PaymentMethodValue,
           discount: s.discount.toNumber(),
           total: s.total.toNumber(),
+          reversed: s.reversedAt !== null,
         })),
-        salesTotal: totals.count,
+        salesTotal: listed,
       },
     };
   } catch (error) {

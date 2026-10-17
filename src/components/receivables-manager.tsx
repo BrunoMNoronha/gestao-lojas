@@ -62,6 +62,7 @@ function StatusBadge({ status }: { status: ReceivableStatusValue }) {
     OPEN: "text-destructive border-destructive/30 bg-destructive/5",
     PARTIAL: "text-warning border-warning/30 bg-warning/10",
     PAID: "text-success border-success/30 bg-success/10",
+    CANCELED: "text-muted-foreground border-border",
   }[status];
   return (
     <Badge variant="outline" className={cn("text-[11px]", className)}>
@@ -219,6 +220,7 @@ export function ReceivablesManager({
                 { value: "OPEN", label: "Em aberto" },
                 { value: "PARTIAL", label: "Parcial" },
                 { value: "PAID", label: "Quitado" },
+                { value: "CANCELED", label: "Cancelado" },
               ]}
             />
           </div>
