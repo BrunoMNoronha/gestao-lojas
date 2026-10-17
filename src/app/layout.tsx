@@ -25,10 +25,14 @@ export const metadata: Metadata = {
   },
   description: "Sistema de gestão comercial e frente de caixa (PDV) para lojas físicas.",
   applicationName: "Gestão Lojas",
-  // favicon.ico e icon.svg entram pela convenção de arquivos de src/app (gerados por `pnpm icons`).
+  // Ícones gerados por `pnpm icons`. O favicon.ico entra sozinho pela convenção de src/app, mas o
+  // icon.svg precisa estar aqui: com `icons` definido, o Next descarta os ícones por arquivo.
   // Instalação no iPhone/iPad (issue #61): ícone e nome na Tela de Início, abrindo em tela cheia.
   // O manifest (src/app/manifest.ts) cobre Chrome e Edge.
-  icons: { apple: "/icons/apple-touch-icon.png" },
+  icons: {
+    icon: { url: "/icon.svg", type: "image/svg+xml" },
+    apple: "/icons/apple-touch-icon.png",
+  },
   appleWebApp: { capable: true, title: "Gestão Lojas", statusBarStyle: "default" },
   openGraph: { type: "website", locale: "pt_BR", siteName: "Gestão de Lojas" },
 };
