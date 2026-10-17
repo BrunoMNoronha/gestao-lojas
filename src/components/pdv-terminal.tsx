@@ -339,8 +339,11 @@ export function PdvTerminal({
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Customer selection
+  // O cliente cadastrado do pedido do catálogo (mesmo telefone) já vem selecionado
   const [selectedCustomer, setSelectedCustomer] = useState<PdvCustomer | null>(() =>
-    restored?.customer ? (customers.find((c) => c.id === restored.customer!.id) ?? null) : null,
+    restored?.customer
+      ? (customers.find((c) => c.id === restored.customer!.id) ?? null)
+      : (linkedOrder?.customer ?? null),
   );
   const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
@@ -1211,7 +1214,11 @@ export function PdvTerminal({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <ClipboardList className="text-primary h-4 w-4 shrink-0" aria-hidden />
-                <span className="flex-1 font-medium">Pedido nº {linkedOrder.code} do catálogo</span>
+                <span className="flex-1 font-medium">
+                  Pedido nº {linkedOrder.code} do catálogo
+                  {linkedOrder.customerName && ` · ${linkedOrder.customerName}`}
+                  {linkedOrder.customerPhone && ` · ${displayPhone(linkedOrder.customerPhone)}`}
+                </span>
                 <Button size="sm" variant="ghost" onClick={unlinkOrder} disabled={loading}>
                   <X className="h-3.5 w-3.5" /> Desvincular
                 </Button>

@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { CATALOG_ORDER_CLOSED_ERROR, encodeOrderLink } from "@/lib/catalog-shared";
+import { CATALOG_ORDER_CLOSED_ERROR } from "@/lib/catalog-shared";
+import { decodeOrderLink, encodeOrderLink } from "@/lib/order-link";
 import { effectCounts, resetDatabase, saleInput, seedStore, stockOf, type Store } from "./fixtures";
 
 // Pedidos do catálogo (issue #81): a prévia pública não grava; o link do pedido gera o pedido para
@@ -49,13 +50,20 @@ function allow() {
 }
 
 /** Link com 2 arroz + 0,5 kg de queijo (total 42,95) e chave nova. */
-function orderToken(key = randomUUID(), items?: { productId: string; quantity: number }[]) {
+const CONTACT = { name: "Maria Souza", phone: "11999998888" };
+
+function orderToken(
+  key = randomUUID(),
+  items?: { productId: string; quantity: number }[],
+  contact = CONTACT,
+) {
   return encodeOrderLink({
     key,
     items: items ?? [
       { productId: store.rice.id, quantity: 2 },
       { productId: store.cheese.id, quantity: 0.5 },
     ],
+    contact,
   });
 }
 
@@ -79,11 +87,16 @@ afterAll(async () => {
 });
 
 describe("prévia pública do pedido", () => {
-  it("não grava nada e leva o link do pedido com só os itens", async () => {
+  it("não grava nada e leva o link criptografado com itens e contato", async () => {
     const result = await buildCatalogOrder(
       {
         items: [{ productId: store.rice.id, quantity: 2 }],
-        customer: { name: "Maria", fulfillment: "DELIVERY", address: "Rua das Flores, 10" },
+        customer: {
+          name: "Maria",
+          phone: "(11) 99999-8888",
+          fulfillment: "DELIVERY",
+          address: "Rua das Flores, 10",
+        },
       },
       catalogStore,
       "https://loja.exemplo",
@@ -95,7 +108,109 @@ describe("prévia pública do pedido", () => {
     const url = /\*Link do pedido:\* (\S+)/.exec(result.message)?.[1] ?? "";
     expect(url).toMatch(/^https:\/\/loja\.exemplo\/catalogo\/pedido\?p=[A-Za-z0-9_-]+$/);
     expect(url).not.toContain("Maria");
+    expect(url).not.toContain("99999");
+    expect(result.message).toContain("*Telefone:* (11) 99999-8888");
     expect(decodeURIComponent(result.whatsappUrl)).toContain(url);
+    expect(decodeOrderLink(new URL(url).searchParams.get("p"))).toMatchObject({
+      items: [{ productId: store.rice.id, quantity: 2 }],
+      contact: { name: "Maria", phone: "11999998888" },
+    });
+  });
+
+  it("exige o telefone com DDD", async () => {
+    const body = (phone?: string) => ({
+      items: [{ productId: store.rice.id, quantity: 2 }],
+      customer: { name: "Maria", phone, fulfillment: "PICKUP" },
+    });
+    for (const phone of [undefined, "", "9999-8888"]) {
+      expect(await buildCatalogOrder(body(phone), catalogStore, "https://loja.exemplo")).toEqual({
+        ok: false,
+        status: 400,
+        error: "Informe um telefone com DDD, ex.: (11) 99999-8888.",
+      });
+    }
+  });
+});
+
+describe("contato do pedido", () => {
+  it("grava nome e telefone e vincula o cliente cadastrado com o mesmo telefone", async () => {
+    await prisma.customer.update({
+      where: { id: store.customer.id },
+      data: { phone: CONTACT.phone },
+    });
+    const order = await createOrder();
+    const saved = await prisma.catalogOrder.findUniqueOrThrow({ where: { id: order.id } });
+
+    expect(saved).toMatchObject({
+      customerName: CONTACT.name,
+      customerPhone: CONTACT.phone,
+      customerId: store.customer.id,
+    });
+    const detail = await getCatalogOrderDetail(order.id);
+    expect(detail).toMatchObject({
+      customerName: CONTACT.name,
+      customerPhone: CONTACT.phone,
+      customer: { id: store.customer.id, name: "Cliente Teste", deleted: false },
+    });
+    const loaded = await getCatalogOrderForPdv(order.id);
+    expect(loaded.ok && loaded.order.customer).toEqual({
+      id: store.customer.id,
+      name: "Cliente Teste",
+      document: null,
+      phone: CONTACT.phone,
+    });
+  });
+
+  it("não vincula sem cadastro, com cadastro duplicado ou excluído", async () => {
+    const alone = await createOrder();
+    expect(
+      (await prisma.catalogOrder.findUniqueOrThrow({ where: { id: alone.id } })).customerId,
+    ).toBeNull();
+
+    await prisma.customer.update({
+      where: { id: store.customer.id },
+      data: { phone: CONTACT.phone },
+    });
+    await prisma.customer.create({ data: { name: "Outro", phone: CONTACT.phone } });
+    const duplicated = await createOrder();
+    expect(
+      (await prisma.catalogOrder.findUniqueOrThrow({ where: { id: duplicated.id } })).customerId,
+    ).toBeNull();
+
+    await prisma.customer.updateMany({
+      where: { phone: CONTACT.phone },
+      data: { deletedAt: new Date() },
+    });
+    const deleted = await createOrder();
+    expect(
+      (await prisma.catalogOrder.findUniqueOrThrow({ where: { id: deleted.id } })).customerId,
+    ).toBeNull();
+  });
+
+  it("cliente excluído depois do pedido não é selecionado no PDV", async () => {
+    await prisma.customer.update({
+      where: { id: store.customer.id },
+      data: { phone: CONTACT.phone },
+    });
+    const order = await createOrder();
+    await prisma.customer.update({
+      where: { id: store.customer.id },
+      data: { deletedAt: new Date() },
+    });
+
+    const loaded = await getCatalogOrderForPdv(order.id);
+    expect(loaded.ok && loaded.order.customer).toBeNull();
+    expect((await getCatalogOrderDetail(order.id))?.customer?.deleted).toBe(true);
+  });
+
+  it("recusa a mesma chave com outro contato", async () => {
+    const key = randomUUID();
+    await createOrder(orderToken(key));
+    const other = await registerCatalogOrderFromLink(
+      orderToken(key, undefined, { name: "Outra Pessoa", phone: "21988887777" }),
+    );
+    expect(other).toEqual({ success: false, error: expect.stringContaining("alterado") });
+    expect(await prisma.catalogOrder.count()).toBe(1);
   });
 });
 
