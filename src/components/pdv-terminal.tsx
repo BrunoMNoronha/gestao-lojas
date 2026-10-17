@@ -1462,8 +1462,8 @@ export function PdvTerminal({
             </CardContent>
           </Card>
 
-          {/* Keyboard Shortcuts Legend */}
-          <Card>
+          {/* Keyboard Shortcuts Legend (teclas F: sem teclado físico no celular, fica oculta) */}
+          <Card className="max-md:hidden">
             <CardContent className="space-y-2 p-4">
               <h3 className="text-muted-foreground flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase">
                 <Keyboard className="h-3.5 w-3.5" />

@@ -46,7 +46,8 @@ export function SidebarContent({
         <Brand storeName={storeName} />
       </div>
 
-      <CommandPaletteTrigger variant="sidebar" onClick={onNavigate} />
+      {/* Na gaveta (celular e tablet) a busca já está na barra superior */}
+      <CommandPaletteTrigger variant="sidebar" onClick={onNavigate} className="max-lg:hidden" />
 
       <nav aria-label="Menu principal" className="-mx-1 flex-1 space-y-1 overflow-y-auto px-1">
         {navItems.map((item) => {

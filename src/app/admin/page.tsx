@@ -35,6 +35,8 @@ export default async function AdminDashboardPage() {
             <span className="text-foreground font-semibold">{settings.tradeName}</span>
           </>
         }
+        // Configurações ficam no menu; no celular o atalho só ocupa espaço
+        actionsClassName="max-md:hidden"
         actions={
           can(user.role, "settings.manage") && (
             <Link href="/admin/configuracoes" className={buttonVariants({ variant: "outline" })}>
