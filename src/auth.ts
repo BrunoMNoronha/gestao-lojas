@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyRecaptcha } from "@/lib/recaptcha";
 import { LOGIN_ERROR_CODES, RECAPTCHA_LOGIN_ACTION } from "@/lib/recaptcha-shared";
 import bcrypt from "bcryptjs";
+import { authorizeQuickLogin } from "@/lib/quick-login";
 import { authConfig } from "./auth.config";
 
 // O `code` vai para a URL de resposta do Auth.js e permite à tela de login diferenciar a falha da
@@ -22,6 +23,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
   providers: [
+    Credentials({
+      id: "dev-quick-login",
+      name: "Acesso rápido de testes",
+      credentials: { userId: { type: "text" } },
+      authorize: (credentials) => authorizeQuickLogin(credentials?.userId),
+    }),
     Credentials({
       name: "Credentials",
       credentials: {

@@ -17,6 +17,7 @@ declare module "next-auth" {
 
 declare module "@auth/core/jwt" {
   interface JWT {
+    quickLoginContext?: string;
     id?: string;
     role?: AppRole;
   }

@@ -1,3 +1,4 @@
+import { quickLoginContext } from "@/lib/quick-login-policy";
 import type { NextAuthConfig } from "next-auth";
 import { isAppRole } from "@/lib/permissions";
 import { INVALID_SESSION_PARAM } from "@/lib/login-paths";
@@ -30,7 +31,19 @@ export const authConfig = {
       }
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
+      if (user) {
+        if (account?.provider === "dev-quick-login") {
+          const context = quickLoginContext();
+          if (!context) return null;
+          token.quickLoginContext = context;
+        } else {
+          delete token.quickLoginContext;
+        }
+      }
+      // Também executado na leitura da sessão e no proxy: nunca reaproveitar
+      // cookie de acesso rápido em produção ou depois de desabilitar o recurso.
+      if (token.quickLoginContext && token.quickLoginContext !== quickLoginContext()) return null;
       if (user) {
         token.id = user.id;
         token.role = user.role;
