@@ -4,6 +4,8 @@ import type { CatalogStore } from "@/lib/catalog";
 import {
   MAX_ORDER_ITEMS,
   formatQuantity,
+  mapsUrl,
+  parseGeoPoint,
   validQuantity,
   type CatalogUnit,
   type Fulfillment,
@@ -92,12 +94,21 @@ function parseRequest(body: unknown): ParsedRequest {
   if (fulfillment === "DELIVERY" && (address.length < 5 || address.length > MAX_ADDRESS)) {
     return { ok: false, error: "Informe o endereço de entrega (5 a 300 caracteres)." };
   }
+  // GPS é opcional e só faz sentido na entrega
+  const location = fulfillment === "DELIVERY" ? parseGeoPoint(raw.location) : null;
+  if (location === "invalid") return { ok: false, error: "Localização inválida." };
 
   return {
     ok: true,
     value: {
       items: parsedItems,
-      customer: { name, note: note || undefined, fulfillment, address: address || undefined },
+      customer: {
+        name,
+        note: note || undefined,
+        fulfillment,
+        address: address || undefined,
+        location: location ?? undefined,
+      },
     },
   };
 }
@@ -121,6 +132,11 @@ function buildMessage(
     `*Recebimento:* ${customer.fulfillment === "DELIVERY" ? "Entrega" : "Retirada na loja"}`,
   );
   if (customer.address) lines.push(`*Endereço:* ${customer.address}`);
+  if (customer.location) {
+    const { accuracy } = customer.location;
+    const precision = accuracy !== undefined ? ` (precisão ~${accuracy} m)` : "";
+    lines.push(`*Localização:* ${mapsUrl(customer.location)}${precision}`);
+  }
   if (customer.note) lines.push(`*Observação:* ${customer.note}`);
   lines.push("", "_Preços e disponibilidade sujeitos a confirmação._");
   return lines.join("\n");

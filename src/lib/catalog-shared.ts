@@ -135,9 +135,44 @@ export function catalogHref(
 // Contrato de POST /api/catalogo/pedido
 export type Fulfillment = "PICKUP" | "DELIVERY";
 
+// Localização do GPS do cliente para a entrega (accuracy em metros)
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+}
+
 export interface OrderRequest {
   items: { productId: string; quantity: number }[];
-  customer: { name: string; note?: string; fulfillment: Fulfillment; address?: string };
+  customer: {
+    name: string;
+    note?: string;
+    fulfillment: Fulfillment;
+    address?: string;
+    location?: GeoPoint;
+  };
+}
+
+const roundCoord = (value: number) => Math.round(value * 1e6) / 1e6;
+
+// Ausente → null; coordenadas fora da faixa → "invalid". A precisão é opcional e descartada se inválida.
+export function parseGeoPoint(value: unknown): GeoPoint | null | "invalid" {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object") return "invalid";
+  const { lat, lng, accuracy } = value as Record<string, unknown>;
+  if (typeof lat !== "number" || !Number.isFinite(lat) || lat < -90 || lat > 90) return "invalid";
+  if (typeof lng !== "number" || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+    return "invalid";
+  }
+  const point: GeoPoint = { lat: roundCoord(lat), lng: roundCoord(lng) };
+  if (typeof accuracy === "number" && Number.isFinite(accuracy) && accuracy >= 0) {
+    point.accuracy = Math.round(accuracy);
+  }
+  return point;
+}
+
+export function mapsUrl(point: GeoPoint): string {
+  return `https://www.google.com/maps?q=${point.lat},${point.lng}`;
 }
 
 export interface OrderLine {

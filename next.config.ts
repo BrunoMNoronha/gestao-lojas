@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
         source: "/serwist/sw.js",
         headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }],
       },
+      // GPS só para o próprio site (carrinho do catálogo, entrega); iframes de terceiros ficam sem
+      {
+        source: "/:path*",
+        headers: [{ key: "Permissions-Policy", value: "geolocation=(self)" }],
+      },
     ];
   },
 };

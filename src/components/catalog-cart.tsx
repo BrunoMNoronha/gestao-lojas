@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
+  LocateFixed,
+  MapPin,
   MessageCircle,
   Minus,
   Plus,
+  RefreshCw,
   ShoppingCart,
   Trash2,
+  X,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,11 +34,14 @@ import {
 } from "@/lib/catalog-cart";
 import {
   isFractionalUnit,
+  mapsUrl,
+  parseGeoPoint,
   parseQuantityInput,
   quantityInputText,
   quantityStep,
   validQuantity,
   type Fulfillment,
+  type GeoPoint,
   type OrderRequest,
   type OrderResponse,
 } from "@/lib/catalog-shared";
@@ -44,8 +51,16 @@ interface Customer {
   name: string;
   fulfillment: Fulfillment;
   address: string;
+  location: GeoPoint | null;
   note: string;
 }
+
+// "off": GPS do aparelho desligado (POSITION_UNAVAILABLE); "unsupported": navegador sem API ou página
+// fora de HTTPS (no celular, http://<IP-da-rede> não libera o GPS)
+type GeoStatus = "idle" | "locating" | "ok" | "denied" | "off" | "error" | "unsupported";
+
+// Acima disso a posição veio de Wi-Fi/antena e pode estar a quarteirões do endereço
+const LOW_ACCURACY_METERS = 100;
 
 interface Notices {
   removed: { name: string; reason: "unavailable" | "not_in_catalog" }[];
@@ -117,6 +132,140 @@ function QuantityControl({ line }: { line: CartLine }) {
   );
 }
 
+const touchButton = "h-11 w-full";
+
+function DeliveryLocation({
+  status,
+  location,
+  onRequest,
+  onRemove,
+}: {
+  status: GeoStatus;
+  location: GeoPoint | null;
+  onRequest: () => void;
+  onRemove: () => void;
+}) {
+  const lowAccuracy =
+    status === "ok" && location?.accuracy !== undefined && location.accuracy > LOW_ACCURACY_METERS;
+  const retry = (
+    <Button
+      type="button"
+      variant="outline"
+      className={cn(touchButton, "col-span-2")}
+      onClick={onRequest}
+    >
+      <RefreshCw /> Tentar de novo
+    </Button>
+  );
+
+  return (
+    <div className="space-y-3 rounded-lg border p-3 text-sm" aria-busy={status === "locating"}>
+      <div aria-live="polite" className="space-y-1">
+        {status === "idle" && (
+          <p className="flex gap-2">
+            <LocateFixed className="text-primary mt-0.5 size-4 shrink-0" aria-hidden />
+            Compartilhe sua localização para facilitar a entrega.
+          </p>
+        )}
+        {status === "locating" && (
+          <p className="flex gap-2">
+            <Loader2 className="text-primary mt-0.5 size-4 shrink-0 animate-spin" aria-hidden />
+            Obtendo sua localização…
+          </p>
+        )}
+        {status === "ok" && location && (
+          <>
+            <p className="flex gap-2 font-medium">
+              <MapPin className="text-primary mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>
+                Localização capturada
+                {location.accuracy !== undefined && (
+                  <span className="text-muted-foreground font-normal">
+                    {" "}
+                    (precisão ~{location.accuracy} m)
+                  </span>
+                )}
+              </span>
+            </p>
+            {lowAccuracy && (
+              <p className="text-warning pl-6 text-xs">
+                Precisão baixa. Vá para um lugar aberto e toque em Atualizar.
+              </p>
+            )}
+            <a
+              href={mapsUrl(location)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary ml-6 inline-flex min-h-11 items-center font-medium underline-offset-4 hover:underline"
+            >
+              Ver no mapa
+            </a>
+          </>
+        )}
+        {status === "denied" && (
+          <p className="flex gap-2">
+            <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              Permissão de localização negada. Dá para enviar só com o endereço. Para liberar: no
+              Android, toque no cadeado da barra de endereço → Permissões → Localização; no iPhone,
+              Ajustes → Privacidade → Serviços de Localização → Sites do Safari.
+            </span>
+          </p>
+        )}
+        {status === "off" && (
+          <p className="flex gap-2">
+            <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+            Ative a localização (GPS) do celular e toque em Tentar de novo.
+          </p>
+        )}
+        {status === "error" && (
+          <p className="flex gap-2">
+            <AlertTriangle className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+            Não foi possível obter sua localização a tempo.
+          </p>
+        )}
+        {status === "unsupported" && (
+          <p className="text-muted-foreground flex gap-2">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Seu navegador não permite compartilhar a localização nesta página. O endereço escrito
+            basta.
+          </p>
+        )}
+      </div>
+
+      {status !== "locating" && status !== "unsupported" && (
+        <div className="grid grid-cols-2 gap-2">
+          {status === "idle" && (
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(touchButton, "col-span-2")}
+              onClick={onRequest}
+            >
+              <LocateFixed /> Usar minha localização
+            </Button>
+          )}
+          {status === "ok" && (
+            <>
+              <Button type="button" variant="outline" className={touchButton} onClick={onRequest}>
+                <RefreshCw /> Atualizar
+              </Button>
+              <Button type="button" variant="outline" className={touchButton} onClick={onRemove}>
+                <X /> Remover
+              </Button>
+            </>
+          )}
+          {(status === "denied" || status === "off" || status === "error") && retry}
+        </div>
+      )}
+
+      <p className="text-muted-foreground text-xs">
+        Sua localização ajuda o entregador a achar o endereço e vai só na mensagem do WhatsApp.
+      </p>
+    </div>
+  );
+}
+
 export function CatalogCart({ canSend }: { canSend: boolean }) {
   const cart = useCart();
   const ready = useCartReady();
@@ -125,8 +274,12 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
     name: "",
     fulfillment: "PICKUP",
     address: "",
+    location: null,
     note: "",
   });
+  const [geo, setGeo] = useState<GeoStatus>("idle");
+  // Cada pedido de GPS ganha um número; respostas de pedidos anteriores são ignoradas
+  const geoRequest = useRef(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notices, setNotices] = useState<Notices | null>(null);
@@ -141,6 +294,77 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
     setCustomer((prev) => ({ ...prev, ...changes }));
     setError(null);
   };
+
+  const requestLocation = useCallback(() => {
+    if (!window.isSecureContext || !("geolocation" in navigator)) {
+      setGeo("unsupported");
+      return;
+    }
+    const id = ++geoRequest.current;
+    setGeo("locating");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (id !== geoRequest.current) return;
+        const { latitude, longitude, accuracy } = position.coords;
+        const point = parseGeoPoint({ lat: latitude, lng: longitude, accuracy });
+        if (!point || point === "invalid") {
+          setCustomer((prev) => ({ ...prev, location: null }));
+          setGeo("error");
+          return;
+        }
+        setCustomer((prev) => ({ ...prev, location: point }));
+        setGeo("ok");
+      },
+      (err) => {
+        if (id !== geoRequest.current) return;
+        // Não envia uma posição antiga se a atualização falhou
+        setCustomer((prev) => ({ ...prev, location: null }));
+        setGeo(
+          err.code === err.PERMISSION_DENIED
+            ? "denied"
+            : err.code === err.POSITION_UNAVAILABLE
+              ? "off"
+              : "error",
+        );
+      },
+      // GPS do aparelho (não só Wi-Fi/antena), com folga para o GPS "frio" do celular
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 },
+    );
+  }, []);
+
+  const removeLocation = () => {
+    geoRequest.current++;
+    setCustomer((prev) => ({ ...prev, location: null }));
+    setGeo("idle");
+  };
+
+  // No celular o cliente sai para os Ajustes, libera a localização (ou liga o GPS) e volta à aba:
+  // tenta de novo sozinho, sem esperar outro toque
+  useEffect(() => {
+    if (geo !== "denied" && geo !== "off") return;
+    let permission: PermissionStatus | null = null;
+    let cancelled = false;
+    const retryIfAllowed = () => {
+      if (document.visibilityState !== "visible") return;
+      if (geo === "off" || permission?.state === "granted") requestLocation();
+    };
+    if (geo === "denied" && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((status) => {
+          if (cancelled) return;
+          permission = status;
+          status.addEventListener("change", retryIfAllowed);
+        })
+        .catch(() => {});
+    }
+    document.addEventListener("visibilitychange", retryIfAllowed);
+    return () => {
+      cancelled = true;
+      permission?.removeEventListener("change", retryIfAllowed);
+      document.removeEventListener("visibilitychange", retryIfAllowed);
+    };
+  }, [geo, requestLocation]);
 
   const handleReview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,6 +387,8 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
         fulfillment: customer.fulfillment,
         note: customer.note.trim() || undefined,
         address: customer.fulfillment === "DELIVERY" ? customer.address.trim() : undefined,
+        location:
+          customer.fulfillment === "DELIVERY" ? (customer.location ?? undefined) : undefined,
       },
     };
 
@@ -393,7 +619,7 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
                 <label
                   key={value}
                   className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-sm",
+                    "flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border p-2.5 text-sm",
                     customer.fulfillment === value && "border-primary bg-primary/5",
                   )}
                 >
@@ -402,7 +628,13 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
                     name="fulfillment"
                     value={value}
                     checked={customer.fulfillment === value}
-                    onChange={() => updateCustomer({ fulfillment: value })}
+                    onChange={() => {
+                      updateCustomer({ fulfillment: value });
+                      // O toque em "Entrega" é o gesto que abre o pedido de permissão do GPS
+                      if (value === "DELIVERY" && geo !== "ok" && geo !== "locating") {
+                        requestLocation();
+                      }
+                    }}
                     className="accent-primary size-4"
                   />
                   {label}
@@ -426,6 +658,15 @@ export function CatalogCart({ canSend }: { canSend: boolean }) {
                 required
               />
             </div>
+          )}
+
+          {customer.fulfillment === "DELIVERY" && (
+            <DeliveryLocation
+              status={geo}
+              location={customer.location}
+              onRequest={requestLocation}
+              onRemove={removeLocation}
+            />
           )}
 
           <div className="space-y-1">
