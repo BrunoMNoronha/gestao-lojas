@@ -2,9 +2,11 @@ import { WifiOff } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { ReloadButton } from "@/components/offline-pdv/reload-button";
+import { NO_INDEX } from "@/lib/site-url";
 
 export const metadata = {
   title: "Sem conexão",
+  robots: NO_INDEX,
 };
 
 // Página estática guardada pelo Service Worker (issue #37): aparece no lugar de qualquer página do

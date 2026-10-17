@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Providers } from "@/components/providers";
+import { SITE_URL } from "@/lib/site-url";
 import { cn } from "@/lib/utils";
 import "./globals.css";
 
@@ -17,6 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "Gestão de Lojas",
     template: "%s | Gestão de Lojas",
@@ -28,6 +30,7 @@ export const metadata: Metadata = {
   // O manifest (src/app/manifest.ts) cobre Chrome e Edge.
   icons: { apple: "/icons/apple-touch-icon.png" },
   appleWebApp: { capable: true, title: "Gestão Lojas", statusBarStyle: "default" },
+  openGraph: { type: "website", locale: "pt_BR", siteName: "Gestão de Lojas" },
 };
 
 // Cor da barra do navegador e da janela do app instalado: a mesma do manifest no tema claro e o

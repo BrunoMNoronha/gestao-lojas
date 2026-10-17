@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AdminSidebar } from "@/components/admin-sidebar";
 import { AdminTopbar } from "@/components/admin-topbar";
@@ -8,6 +9,9 @@ import { isReceivablesVisible } from "@/lib/on-account";
 import { can } from "@/lib/permissions";
 import { OfflineUserGuard } from "@/components/offline-pdv/offline-user-guard";
 import { CommandPalette } from "@/components/command-palette";
+import { NO_INDEX } from "@/lib/site-url";
+
+export const metadata: Metadata = { robots: NO_INDEX };
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   // O proxy já barra quem não está logado; aqui a sessão define o menu exibido para o perfil

@@ -6,9 +6,10 @@ import { authConfig } from "./auth.config";
 export default NextAuth(authConfig).auth;
 
 export const config = {
-  // /serwist (Service Worker), manifest e ícones são arquivos públicos: o proxy não precisa rodar.
+  // /serwist (Service Worker), manifest, ícones, robots.txt e sitemap.xml são arquivos públicos: o
+  // proxy não precisa rodar.
   // Nem na landing "/" (`|$`), que é estática e pública: assim ela sai direto da CDN.
   matcher: [
-    "/((?!api|_next/static|_next/image|serwist/|catalogo(?:/|$)|icons/|vendor/|videos/|manifest.webmanifest|favicon.ico|icon.svg|$).*)",
+    "/((?!api|_next/static|_next/image|serwist/|catalogo(?:/|$)|icons/|vendor/|videos/|manifest.webmanifest|favicon.ico|icon.svg|robots.txt|sitemap.xml|$).*)",
   ],
 };

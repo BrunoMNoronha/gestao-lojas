@@ -14,15 +14,27 @@ const TITLE = "Gestão de Lojas — ERP e PDV para lojas físicas";
 const DESCRIPTION =
   "Frente de caixa que vende mesmo sem internet, caixa, estoque, fiado, relatórios e catálogo online com pedido pelo WhatsApp. Para mercados, agropecuárias, distribuidores e lojas físicas.";
 
+// URL relativa da captura; o metadataBase do layout raiz a torna absoluta em og:image/twitter:image
+const SHARE_IMAGE = { url: SCREENSHOTS.dashboard.src.src, alt: SCREENSHOTS.dashboard.alt };
+
 export const metadata: Metadata = {
   title: { absolute: TITLE },
   description: DESCRIPTION,
+  alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     locale: "pt_BR",
+    siteName: "Gestão de Lojas",
+    url: "/",
     title: TITLE,
     description: DESCRIPTION,
-    images: [{ url: SCREENSHOTS.dashboard.src.src, alt: SCREENSHOTS.dashboard.alt }],
+    images: [SHARE_IMAGE],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: [SHARE_IMAGE],
   },
 };
 
