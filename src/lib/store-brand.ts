@@ -13,3 +13,15 @@ export async function getStoreBrandName(): Promise<string> {
     return DEFAULT_BRAND_NAME;
   }
 }
+
+// Link do catálogo público na barra superior do painel: só com o catálogo ativo. Falha de banco
+// esconde o link em vez de quebrar o layout.
+export async function isCatalogEnabled(): Promise<boolean> {
+  try {
+    const settings = await readStoreSettings();
+    return settings?.catalogEnabled ?? false;
+  } catch (error) {
+    console.error("Erro ao verificar o catálogo da loja:", error);
+    return false;
+  }
+}

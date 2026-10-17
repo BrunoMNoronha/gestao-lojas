@@ -76,7 +76,7 @@ export function CommandPalette({ user, features }: CommandPaletteProps) {
   // primeiro item, então sem tela/ação correspondente o primeiro produto/cliente é destacado aqui
   const [selected, setSelected] = useState("");
 
-  const navItems = routesFor(user.role, features);
+  const navItems = routesFor(user.role, features, { includeTopbar: true });
   const canProducts = can(user.role, "catalog.view");
   const canCustomers = can(user.role, "customers.view");
   const q = query.trim();

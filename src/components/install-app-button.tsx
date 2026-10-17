@@ -21,23 +21,27 @@ import {
 } from "@/lib/pwa-install";
 import { cn } from "@/lib/utils";
 
-// Oferta de instalação do app (issue #61), no menu do painel e no cabeçalho do /pdv. Com a janela
-// do navegador disponível, o botão a abre; sem ela, o botão vira "Como instalar" e mostra a
-// orientação da plataforma, sem prometer uma janela que não existe. Some no app já instalado.
+// Oferta de instalação do app (issue #61), na barra superior do painel e no cabeçalho do /pdv.
+// Com a janela do navegador disponível, o botão a abre; sem ela, o botão vira "Como instalar" e
+// mostra a orientação da plataforma, sem prometer uma janela que não existe. Some no app já
+// instalado.
 // Instalar não prepara o PDV para uso sem internet nem garante o armazenamento (#59).
 
 interface InstallAppButtonProps {
-  // "menu": item do menu lateral; "pdv": botão pequeno do cabeçalho do /pdv
-  variant: "menu" | "pdv";
+  // "menu": item de menu largo; "topbar": botão da barra superior do painel; "pdv": botão
+  // pequeno do cabeçalho do /pdv
+  variant: "menu" | "topbar" | "pdv";
 }
 
-export function InstallAppButton({ variant }: InstallAppButtonProps) {
+/**
+ * Ação de instalar o app, para usar num botão ou num item de menu. `visible` é falso no app já
+ * instalado; `dialog` (orientação da plataforma) precisa ser renderizado junto.
+ */
+export function useInstallAppAction() {
   const state = useInstallState();
   const [helpOpen, setHelpOpen] = useState(false);
 
-  if (state.standalone || state.installed) return null;
-
-  const onClick = async () => {
+  const run = async () => {
     if (!state.canPrompt) {
       setHelpOpen(true);
       return;
@@ -52,34 +56,44 @@ export function InstallAppButton({ variant }: InstallAppButtonProps) {
     // "dismissed": o usuário fechou a janela; nada a fazer, e ela não abre de novo sozinha
   };
 
-  const label = state.canPrompt ? "Instalar app Gestão Lojas" : "Como instalar o app";
-  const Icon = state.canPrompt ? Download : Info;
+  return {
+    visible: !(state.standalone || state.installed),
+    label: state.canPrompt ? "Instalar app Gestão Lojas" : "Como instalar o app",
+    icon: state.canPrompt ? Download : Info,
+    busy: state.prompting,
+    run,
+    dialog: <InstallHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />,
+  };
+}
+
+export function InstallAppButton({ variant }: InstallAppButtonProps) {
+  const { visible, label, icon: Icon, busy, run, dialog } = useInstallAppAction();
+  if (!visible) return null;
 
   return (
     <>
-      {variant === "menu" ? (
+      {variant === "topbar" ? (
+        <Button variant="ghost" size="sm" className="gap-1.5" onClick={run} disabled={busy}>
+          <Icon />
+          {label}
+        </Button>
+      ) : variant === "menu" ? (
         <Button
           variant="ghost"
           className="text-muted-foreground w-full justify-start gap-3"
-          onClick={onClick}
-          disabled={state.prompting}
+          onClick={run}
+          disabled={busy}
         >
           <Icon />
           {label}
         </Button>
       ) : (
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={onClick}
-          disabled={state.prompting}
-        >
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={run} disabled={busy}>
           <Icon className="h-4 w-4" />
           {label}
         </Button>
       )}
-      <InstallHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      {dialog}
     </>
   );
 }

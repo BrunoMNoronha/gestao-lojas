@@ -39,11 +39,20 @@ async function offerInstall(page: Page, outcome: "accepted" | "dismissed") {
 const promptsOpened = (page: Page) =>
   page.evaluate(() => (window as unknown as { __prompts?: number }).__prompts ?? 0);
 
-/** No celular o menu fica no drawer; no computador, na barra lateral. */
-async function openMenu(page: Page) {
-  if (page.viewportSize()!.width < 1024) {
-    await page.getByRole("button", { name: "Abrir menu" }).click();
-  }
+// Painel: no computador a oferta é um botão da barra superior; no celular, um item do menu
+// "Mais opções" da mesma barra.
+const isMobile = (page: Page) => page.viewportSize()!.width < 1024;
+
+/** Oferta de instalação no painel ("Instalar app…" ou "Como instalar o app"). */
+async function panelOffer(page: Page, name: string) {
+  if (!isMobile(page)) return page.getByRole("button", { name });
+  await page.getByRole("button", { name: "Mais opções" }).click();
+  return page.getByRole("menuitem", { name });
+}
+
+/** Fecha o menu "Mais opções" aberto só para conferir a oferta (celular). */
+async function closePanelMenu(page: Page) {
+  if (isMobile(page)) await page.keyboard.press("Escape");
 }
 
 test("menu do painel: ajuda sem evento, janela uma vez por evento e some depois de instalado", async ({
@@ -52,11 +61,11 @@ test("menu do painel: ajuda sem evento, janela uma vez por evento e some depois 
 }) => {
   await login(context, store.manager.email);
   await page.goto("/admin");
-  await openMenu(page);
 
-  // Sem o evento do navegador, o botão não promete janela: abre a ajuda
-  await expect(installButton(page)).toHaveCount(0);
-  await helpButton(page).click();
+  // Sem o evento do navegador, a oferta não promete janela: abre a ajuda
+  await expect(await panelOffer(page, "Instalar app Gestão Lojas")).toHaveCount(0);
+  await closePanelMenu(page);
+  await (await panelOffer(page, "Como instalar o app")).click();
   await expect(helpDialog(page)).toBeVisible();
   await expect(helpDialog(page)).toContainText("Instalar não prepara o PDV");
   await expect(
@@ -64,25 +73,29 @@ test("menu do painel: ajuda sem evento, janela uma vez por evento e some depois 
   ).toBe(true);
   await helpDialog(page).getByRole("button", { name: "Entendi" }).click();
   await expect(helpDialog(page)).toBeHidden();
-  await expect(helpButton(page)).toBeFocused();
+  // No computador o foco volta ao botão; no celular o item ficava num menu já fechado
+  if (!isMobile(page)) await expect(helpButton(page)).toBeFocused();
 
   // Com o evento: o clique abre a janela uma vez; recusada, o evento usado é descartado
   await offerInstall(page, "dismissed");
-  await installButton(page).click();
-  await expect(helpButton(page)).toBeVisible();
+  await (await panelOffer(page, "Instalar app Gestão Lojas")).click();
+  await expect(await panelOffer(page, "Como instalar o app")).toBeVisible();
+  await closePanelMenu(page);
   expect(await promptsOpened(page)).toBe(1);
   await expect(helpDialog(page)).toBeHidden();
 
   // Novo evento, aceito: aviso de instalação iniciada, sem dizer que terminou
   await offerInstall(page, "accepted");
-  await installButton(page).click();
+  await (await panelOffer(page, "Instalar app Gestão Lojas")).click();
   await expect(page.getByText("Instalação iniciada pelo navegador")).toBeVisible();
   expect(await promptsOpened(page)).toBe(2);
 
   // Instalação confirmada pelo navegador: a oferta some
   await page.evaluate(() => window.dispatchEvent(new Event("appinstalled")));
-  await expect(helpButton(page)).toHaveCount(0);
-  await expect(installButton(page)).toHaveCount(0);
+  await expect(await panelOffer(page, "Como instalar o app")).toHaveCount(0);
+  await closePanelMenu(page);
+  await expect(await panelOffer(page, "Instalar app Gestão Lojas")).toHaveCount(0);
+  await closePanelMenu(page);
 });
 
 test("cabeçalho do /pdv: instalar não mexe no carrinho nem recarrega a página", async ({
@@ -125,9 +138,12 @@ test("app aberto como instalado: sem oferta no painel nem no /pdv", async ({ con
   });
   await login(context, store.manager.email);
   await page.goto("/admin");
-  await openMenu(page);
-  await expect(page.getByRole("button", { name: "Sair do sistema" })).toBeVisible();
-  await expect(helpButton(page)).toHaveCount(0);
+  // Barra superior: o menu do usuário tem "Sair do sistema"; a oferta de instalação não aparece
+  await page.getByRole("button", { name: /^Menu do usuário/ }).click();
+  await expect(page.getByRole("menuitem", { name: "Sair do sistema" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(await panelOffer(page, "Como instalar o app")).toHaveCount(0);
+  await closePanelMenu(page);
 
   // Cabeçalho do /pdv (o gerente não tem caixa aberto: basta a tela carregar)
   await page.goto("/pdv");
