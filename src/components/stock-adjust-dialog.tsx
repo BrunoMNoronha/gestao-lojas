@@ -44,7 +44,11 @@ export function StockAdjustDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const product = products.find((p) => p.id === productId) ?? null;
+  const [chosenProduct, setChosenProduct] = useState<ProductItem | null>(null);
+  const product =
+    chosenProduct?.id === productId
+      ? chosenProduct
+      : (products.find((p) => p.id === productId) ?? null);
   const countedValue = counted.trim() ? parseDecimal(counted) : Number.NaN;
   const delta =
     product && Number.isFinite(countedValue)
@@ -113,7 +117,12 @@ export function StockAdjustDialog({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <ProductPicker products={products} value={productId} onChange={setProductId} />
+          <ProductPicker
+            products={products}
+            value={productId}
+            onChange={setProductId}
+            onSelect={setChosenProduct}
+          />
 
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1">

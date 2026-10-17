@@ -36,7 +36,8 @@ import {
 // Route Handlers autenticados quando há conexão. Toda venda entra na fila do aparelho e é
 // enviada pelo POST /api/offline/operations (#38), com ou sem conexão no momento da venda.
 
-const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, "pt-BR");
+const collator = new Intl.Collator("pt-BR");
+const byName = (a: { name: string }, b: { name: string }) => collator.compare(a.name, b.name);
 
 // Com conexão, espera o envio por até 4 s para já mostrar o código oficial no recibo; depois
 // disso o recibo sai provisório e o envio continua em segundo plano
@@ -70,27 +71,36 @@ function LocalTerminal({
   onUnpackBusyChange: (busy: boolean) => void;
 }) {
   const db = userDb(userId);
-  const data = useLiveQuery(async () => {
-    const [products, customers, store, cashRegister, sync, operations, unpackPending] =
-      await Promise.all([
-        db.products.toArray(),
-        db.customers.toArray(),
-        readMeta(db, "store"),
-        readMeta(db, "cashRegister"),
-        readMeta(db, "sync"),
-        db.operations.toArray(),
-        readMeta(db, "unpackPending"),
-      ]);
-    return {
-      products,
-      customers,
-      store: store ?? null,
-      cashRegister: cashRegister ?? null,
-      watermark: sync?.watermark ?? null,
-      operations,
-      unpackPending: unpackPending ?? null,
-    };
-  }, [db]);
+  // A fila não invalida as consultas do catálogo; cada chave de meta tem sua assinatura.
+  const localProducts = useLiveQuery(() => db.products.toArray(), [db]);
+  const localCustomers = useLiveQuery(() => db.customers.toArray(), [db]);
+  const store = useLiveQuery(async () => (await readMeta(db, "store")) ?? null, [db]);
+  const cashRegister = useLiveQuery(async () => (await readMeta(db, "cashRegister")) ?? null, [db]);
+  const sync = useLiveQuery(async () => (await readMeta(db, "sync")) ?? null, [db]);
+  const operations = useLiveQuery(() => db.operations.toArray(), [db]);
+  const unpackPending = useLiveQuery(
+    async () => (await readMeta(db, "unpackPending")) ?? null,
+    [db],
+  );
+  const sortedProducts = useMemo(() => localProducts?.slice().sort(byName), [localProducts]);
+  const data =
+    localProducts &&
+    localCustomers &&
+    operations &&
+    store !== undefined &&
+    cashRegister !== undefined &&
+    sync !== undefined &&
+    unpackPending !== undefined
+      ? {
+          products: sortedProducts,
+          customers: localCustomers,
+          store,
+          cashRegister,
+          watermark: sync?.watermark ?? null,
+          operations,
+          unpackPending,
+        }
+      : undefined;
 
   // Saldo disponível = saldo da cópia menos as vendas da fila que ela ainda não mostra
   // (docs/OFFLINE.md seção 3.2): o terminal não deixa vender além disso
@@ -100,19 +110,17 @@ function LocalTerminal({
   );
   const products = useMemo<PdvProduct[]>(
     () =>
-      (data?.products ?? [])
-        .map((p) => ({
-          id: p.id,
-          name: p.name,
-          sku: p.sku,
-          barcode: p.barcode,
-          salePrice: Number(p.salePrice),
-          unit: p.unit,
-          currentStock: availableStock(p.currentStock, reserved.get(p.id)),
-          containedProductId: p.containedProductId ?? null,
-          unitsPerBox: p.unitsPerBox ?? null,
-        }))
-        .sort(byName),
+      (data?.products ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        barcode: p.barcode,
+        salePrice: Number(p.salePrice),
+        unit: p.unit,
+        currentStock: availableStock(p.currentStock, reserved.get(p.id)),
+        containedProductId: p.containedProductId ?? null,
+        unitsPerBox: p.unitsPerBox ?? null,
+      })),
     [data?.products, reserved],
   );
   const customers = useMemo<PdvCustomer[]>(

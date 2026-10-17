@@ -215,9 +215,11 @@ test("ADMIN remove pela tela só os dados gerados", async ({ context, page }) =>
   await section.getByRole("button", { name: "Remover dados gerados" }).click();
   await page.getByRole("button", { name: "Remover", exact: true }).click();
   await expect(
-    page.getByText(
-      "Removidos: 2 categorias, 4 produtos, 2 clientes, 1 fornecedor, 4 movimentações de estoque.",
-    ),
+    page
+      .getByRole("region", { name: "Notifications alt+T" })
+      .getByText(
+        "Removidos: 2 categorias, 4 produtos, 2 clientes, 1 fornecedor, 4 movimentações de estoque.",
+      ),
   ).toBeVisible();
   await expect(history(page).first()).toContainText("Remoção dos dados gerados");
   await expect(section.getByText("Nenhum registro gerado ativo.")).toBeVisible();

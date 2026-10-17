@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PersonTypeValue, StoreSettingsData, updateStoreSettings } from "@/actions/settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,7 +44,6 @@ interface Props {
 export function StoreSettingsForm({ initialSettings }: Props) {
   const [formData, setFormData] = useState<StoreSettingsData>(initialSettings);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -86,7 +84,6 @@ export function StoreSettingsForm({ initialSettings }: Props) {
       }));
       toast.success("Configurações da loja salvas com sucesso!");
       // Atualiza o nome da loja exibido na sidebar
-      router.refresh();
     } else {
       toast.error(res.error || "Erro ao salvar configurações.");
     }

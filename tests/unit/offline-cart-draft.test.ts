@@ -324,7 +324,7 @@ describe("rascunho no banco do operador", () => {
   });
 });
 
-describe("atualização da estrutura (versão 2 → 3)", () => {
+describe("atualização da estrutura (versão 2 → 4)", () => {
   it("cria a tabela do rascunho sem tocar na fila", async () => {
     const id = randomUUID();
     await recordSale(userId, sale(id));
@@ -349,7 +349,7 @@ describe("atualização da estrutura (versão 2 → 3)", () => {
 
     const reopened = new OfflineUserDb(userId);
     expect(await reopened.operations.toArray()).toEqual(before);
-    expect(reopened.verno).toBe(3);
+    expect(reopened.verno).toBe(4);
     expect(await reopened.drafts.count()).toBe(0);
     await reopened.drafts.put({ ...input(), id: CART_DRAFT_ID, updatedAt: Date.now() });
     expect(await reopened.drafts.count()).toBe(1);

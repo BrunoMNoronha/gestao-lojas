@@ -173,6 +173,7 @@ test("uma resposta perdida recupera a mesma abertura após recarregar", async ({
       !interrupted &&
       request.method() === "POST" &&
       request.headers()["next-action"] &&
+      request.postData()?.includes('"operationId"') &&
       request.postData()?.includes(beer.box.id)
     ) {
       interrupted = true;

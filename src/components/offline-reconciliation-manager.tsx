@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Ban,
@@ -123,7 +122,6 @@ export function OfflineReconciliationManager({
   issuesHasMore,
   devices,
 }: OfflineReconciliationManagerProps) {
-  const router = useRouter();
   const [askConfirm, confirmDialog] = useConfirm();
   const [tab, setTab] = useState<Tab>(
     conflicts.length > 0 ? "conflicts" : issues.length > 0 ? "issues" : "conflicts",
@@ -155,7 +153,6 @@ export function OfflineReconciliationManager({
     // O histórico carregado fica desatualizado: some até ser pedido de novo
     setResolvedConflicts(null);
     setAcknowledgedIssues(null);
-    router.refresh();
   };
 
   const revoke = async (device: OfflineDeviceItem) => {
@@ -170,7 +167,6 @@ export function OfflineReconciliationManager({
     const result = await revokeOfflineDevice(device.id);
     if (result.success) {
       toast.success("Aparelho revogado.");
-      router.refresh();
     } else {
       toast.error(result.error);
     }

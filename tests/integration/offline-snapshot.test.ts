@@ -446,3 +446,16 @@ describe("GET /api/offline/snapshot", () => {
     }
   });
 });
+
+it("carga completa omite exclusões antigas e entrega exclusões ocorridas entre páginas", async () => {
+  const deleted = await prisma.product.create({
+    data: { name: "Já excluído", costPrice: 1, salePrice: 2, deletedAt: new Date() },
+  });
+  const first = await readOfflineSnapshot(user, { limit: 1 });
+  expect(first.reset).toBe(true);
+  const seen = first.products.find((p) => !p.deleted)!;
+  await prisma.product.update({ where: { id: seen.id }, data: { deletedAt: new Date() } });
+  const rest = await readAll(first.cursor, 1);
+  expect([...first.products, ...rest.products].some((p) => p.id === deleted.id)).toBe(false);
+  expect(rest.products).toContainEqual({ id: seen.id, deleted: true });
+});

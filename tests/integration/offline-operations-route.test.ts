@@ -18,7 +18,11 @@ const { auth, revalidatePath } = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 vi.mock("@/auth", () => ({ auth }));
-vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("next/cache", () => ({
+  revalidatePath,
+  revalidateTag: vi.fn(),
+  unstable_cache: (fn: unknown) => fn,
+}));
 
 const { POST } = await import("@/app/api/offline/operations/route");
 

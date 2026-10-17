@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Wallet,
   ArrowDownToLine,
@@ -136,8 +135,6 @@ export function CashRegisterManager({
   operators,
   initialHistory,
 }: CashRegisterManagerProps) {
-  const router = useRouter();
-
   const [view, setView] = useState<"current" | "history">("current");
   const [filters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [history, setHistory] = useState(initialHistory);
@@ -190,7 +187,6 @@ export function CashRegisterManager({
   };
 
   const handleClosed = () => {
-    router.refresh();
     loadHistory(filters);
   };
 
@@ -257,7 +253,7 @@ export function CashRegisterManager({
             </CardContent>
           </Card>
         ) : (
-          <OpenCashRegisterCard onOpened={() => router.refresh()} />
+          <OpenCashRegisterCard onOpened={() => {}} />
         )
       ) : (
         <>
@@ -430,7 +426,7 @@ export function CashRegisterManager({
             onOpenChange={setMovementDialogOpen}
             type={movementType}
             expectedCash={current.summary.expectedCash}
-            onSuccess={() => router.refresh()}
+            onSuccess={() => {}}
           />
           <CashCloseDialog
             key={`close-${dialogKey}`}

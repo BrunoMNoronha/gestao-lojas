@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Truck, Plus, Search, Edit2, Trash2, Phone, Mail, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +27,6 @@ interface SuppliersManagerProps {
 }
 
 export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
-  const router = useRouter();
   const [askConfirm, confirmDialog] = useConfirm();
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -67,7 +65,6 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
     const res = await deleteSupplier(id);
     if (res.success) {
       toast.success("Fornecedor excluído.");
-      router.refresh();
     } else {
       toast.error(res.error || "Erro ao excluir fornecedor.");
     }
@@ -197,7 +194,7 @@ export function SuppliersManager({ initialSuppliers }: SuppliersManagerProps) {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         supplierToEdit={supplierToEdit}
-        onSuccess={() => router.refresh()}
+        onSuccess={() => {}}
       />
       {confirmDialog}
     </div>

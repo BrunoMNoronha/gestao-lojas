@@ -1,7 +1,9 @@
 "use server";
+import { readStoreSettings } from "@/lib/store-settings-read";
 
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import { normalizeWhatsappNumber } from "@/lib/catalog-shared";
 import { normalizeCep, normalizeDocument, normalizePhone } from "@/lib/masks";
@@ -75,9 +77,7 @@ export async function getStoreSettings(): Promise<StoreSettingsData> {
     const authz = await authorize();
     if (!authz.ok) return { companyName: "Minha Loja Distribuidora", tradeName: "Minha Loja" };
 
-    const settings = await prisma.storeSettings.findUnique({
-      where: { id: "default" },
-    });
+    const settings = await readStoreSettings();
 
     if (!settings) {
       return {
@@ -207,6 +207,7 @@ export async function updateStoreSettings(data: StoreSettingsData) {
     // Layout do painel: o menu "Contas a Receber" depende do fiado estar permitido
     revalidatePath("/admin", "layout");
     revalidatePath("/catalogo", "layout");
+    invalidateCatalog();
     return { success: true, data: toStoreSettingsData(updated) };
   } catch (error) {
     console.error("Erro ao atualizar configurações da loja:", error);

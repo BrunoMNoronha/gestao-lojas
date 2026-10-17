@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Edit2, KeyRound, Plus, Power, Search, UserCog, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +47,6 @@ const roleBadgeClass: Record<AppRole, string> = {
 };
 
 export function UsersManager({ initialUsers, currentUserId }: UsersManagerProps) {
-  const router = useRouter();
   const [users, setUsers] = useState(initialUsers);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [askConfirm, confirmDialog] = useConfirm();
@@ -77,7 +75,6 @@ export function UsersManager({ initialUsers, currentUserId }: UsersManagerProps)
   };
 
   const refresh = () => {
-    router.refresh();
     load(filters);
   };
 

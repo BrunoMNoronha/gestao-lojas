@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { authorize } from "@/lib/authz";
 import { can } from "@/lib/permissions";
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import { MovementType, Prisma, Unit } from "@prisma/client";
 import type { UnitType } from "@/actions/products";
@@ -89,6 +90,7 @@ function parseDate(value: string | null | undefined): Date | null {
 
 function revalidateStockPaths() {
   revalidatePath("/admin/estoque");
+  invalidateCatalog();
   revalidatePath("/admin/produtos");
   revalidatePath("/admin/pdv");
 }

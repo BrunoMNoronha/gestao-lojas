@@ -1,5 +1,6 @@
 "use server";
 
+import { invalidateCatalog } from "@/lib/catalog-cache";
 import { revalidatePath } from "next/cache";
 import {
   Prisma,
@@ -222,6 +223,7 @@ export async function approveOfflineConflict(operationId: string, note?: string)
     const result = await approveConflict(authz.user, operationId, note);
     if (result.success) {
       for (const path of OFFLINE_SALE_PATHS) revalidatePath(path);
+      invalidateCatalog();
       revalidatePath(RECONCILIATION_PATH);
     }
     return result;

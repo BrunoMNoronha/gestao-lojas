@@ -12,7 +12,11 @@ const { authorize, revalidatePath } = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 vi.mock("@/lib/authz", () => ({ authorize }));
-vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("next/cache", () => ({
+  revalidatePath,
+  revalidateTag: vi.fn(),
+  unstable_cache: (fn: unknown) => fn,
+}));
 const { openStockBoxes, openPdvBoxes } = await import("@/actions/unpack");
 const { createProduct, updateProduct, deleteProduct, getProducts, refreshUnpackProducts } =
   await import("@/actions/products");

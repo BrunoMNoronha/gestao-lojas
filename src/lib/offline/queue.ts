@@ -77,7 +77,7 @@ async function recordSaleUnlocked(userId: string, draft: PdvSaleDraft): Promise<
     readMeta(db, "cashRegister"),
     readMeta(db, "user"),
     readMeta(db, "unpackPending"),
-    db.products.toArray(),
+    db.products.bulkGet([...new Set(draft.items.map((item) => item.productId))]),
     db.operations.toArray(),
   ]);
   if (unpackPending) {
@@ -114,7 +114,7 @@ async function recordSaleUnlocked(userId: string, draft: PdvSaleDraft): Promise<
     quantitiesMilli.set(line.productId, (quantitiesMilli.get(line.productId) ?? 0) + quantityMilli);
   }
   for (const [productId, quantityMilli] of quantitiesMilli) {
-    const product = products.find((p) => p.id === productId);
+    const product = products.find((p) => p?.id === productId);
     if (!product)
       throw new SaleDraftError(
         "Um produto do carrinho não está mais disponível. Atualize os dados do PDV.",
@@ -132,15 +132,12 @@ async function recordSaleUnlocked(userId: string, draft: PdvSaleDraft): Promise<
     }
   }
   // Número de ordem e gravação na mesma transação: duas abas gravando juntas nunca repetem o
-  // número. A fila é pequena (finalizadas saem em 24 h), então ler todas não pesa. O rascunho do
+  // número. O índice busca apenas a última sequência, sem varrer a fila. O rascunho do
   // carrinho sai na mesma transação (#53): se a página cair depois, o carrinho vendido não volta;
   // se cair antes, nada foi gravado e o rascunho continua com a mesma chave
   await db.transaction("rw", [db.operations, db.drafts], async () => {
-    let last = 0;
-    await db.operations.each((row) => {
-      last = Math.max(last, row.seq ?? 0);
-    });
-    op.seq = last + 1;
+    const last = await db.operations.orderBy("seq").last();
+    op.seq = (last?.seq ?? 0) + 1;
     // add (e não put): a mesma chave nunca sobrescreve uma venda já gravada
     await db.operations.add(op);
     await db.drafts.delete(CART_DRAFT_ID);
@@ -277,9 +274,13 @@ async function markTransientFailure(userId: string, ops: LocalOperation[], messa
   });
 }
 
+export function batchTimeoutMs(size: number) {
+  return Math.min(180_000, REQUEST_TIMEOUT_MS + Math.max(0, size - 1) * 3_000);
+}
+
 async function postBatch(ops: LocalOperation[]): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), batchTimeoutMs(ops.length));
   try {
     return await fetch(OPERATIONS_URL, {
       method: "POST",

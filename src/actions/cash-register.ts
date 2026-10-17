@@ -137,6 +137,15 @@ function toHistoryItem(r: {
 
 // Sem try/catch de propósito: em falha do banco a página deve mostrar o fallback de erro,
 // e não o formulário de abertura como se não houvesse caixa aberto.
+export async function getOpenCashRegister() {
+  const authz = await authorize("cash.own");
+  if (!authz.ok) return null;
+  return prisma.cashRegister.findUnique({
+    where: { openUserId: authz.user.id },
+    select: { id: true },
+  });
+}
+
 export async function getCurrentCashRegister(): Promise<CurrentCashRegister | null> {
   const authz = await authorize("cash.own");
   if (!authz.ok) return null;
@@ -148,12 +157,13 @@ export async function getCurrentCashRegister(): Promise<CurrentCashRegister | nu
   });
   if (!register) return null;
 
-  const { summary } = await computeCashSummary(prisma, register.id);
-  // Só um aviso: sem ele (falha ao consultar), o fechamento continua possível
-  const offlinePending = await offlinePendingForCashRegister(register.id).catch((error) => {
-    console.error("Erro ao consultar as vendas offline pendentes do caixa:", error);
-    return [];
-  });
+  const [{ summary }, offlinePending] = await Promise.all([
+    computeCashSummary(prisma, register.id),
+    offlinePendingForCashRegister(register.id).catch((error) => {
+      console.error("Erro ao consultar as vendas offline pendentes do caixa:", error);
+      return [];
+    }),
+  ]);
   return {
     id: register.id,
     userName: register.user.name,
