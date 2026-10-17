@@ -7,7 +7,7 @@ export interface DateRange {
   to: Date;
 }
 
-interface CalendarDay {
+export interface CalendarDay {
   year: number;
   month: number; // 1-12
   day: number;
