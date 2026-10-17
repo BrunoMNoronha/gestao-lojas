@@ -153,3 +153,22 @@
 .grecaptcha-badge {
   visibility: hidden;
 }
+
+/* Landing (src/app/page.tsx): seções surgem ao entrar na tela, só como melhoria progressiva.
+   Sem suporte a animation-timeline ou com movimento reduzido, o conteúdo já aparece pronto. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: landing-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 55%;
+    }
+  }
+}
+
+@keyframes landing-reveal {
+  from {
+    opacity: 0;
+    translate: 0 2rem;
+  }
+}

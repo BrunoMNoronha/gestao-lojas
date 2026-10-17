@@ -163,7 +163,7 @@ test("manifest, ícones e Service Worker acessíveis sem login; metadados de ins
     name: "Gestão de Lojas",
     short_name: "Gestão Lojas",
     id: "/",
-    start_url: "/",
+    start_url: "/inicio",
     display: "standalone",
   });
 
