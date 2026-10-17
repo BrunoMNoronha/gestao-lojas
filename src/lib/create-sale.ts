@@ -384,28 +384,28 @@ async function persistSale(userId: string, sale: ParsedSale): Promise<string> {
   });
 }
 
-async function loadReceipt(saleId: string, amountPaidInput: Prisma.Decimal | null) {
-  const sale = await prisma.sale.findUniqueOrThrow({
-    where: { id: saleId },
-    include: {
-      user: { select: { name: true } },
-      customer: { select: { name: true, document: true } },
-      items: {
-        include: { product: { select: { name: true, unit: true } } },
-        orderBy: { id: "asc" },
-      },
-    },
-  });
+// O que o comprovante precisa da venda; o detalhe da venda (getSaleDetail) pede isto e mais
+export const SALE_RECEIPT_INCLUDE = {
+  user: { select: { name: true } },
+  customer: { select: { name: true, document: true } },
+  items: {
+    include: { product: { select: { name: true, unit: true } } },
+    orderBy: { id: "asc" },
+  },
+} satisfies Prisma.SaleInclude;
 
-  const amountPaid = amountPaidInput ?? sale.total;
-  const receipt: SaleReceipt = {
+type SaleWithReceiptData = Prisma.SaleGetPayload<{ include: typeof SALE_RECEIPT_INCLUDE }>;
+
+// Valor recebido e troco não são gravados na venda: só quem acabou de vender os conhece
+export function toSaleReceiptBase(
+  sale: SaleWithReceiptData,
+): Omit<SaleReceipt, "amountPaid" | "change"> {
+  return {
     id: sale.id,
     code: sale.code,
     total: sale.total.toNumber(),
     discount: sale.discount.toNumber(),
     paymentMethod: sale.paymentMethod,
-    amountPaid: amountPaid.toNumber(),
-    change: amountPaid.sub(sale.total).toNumber(),
     occurredAt: sale.occurredAt.toISOString(),
     createdAt: sale.createdAt.toISOString(),
     userName: sale.user?.name || "Vendedor",
@@ -420,6 +420,20 @@ async function loadReceipt(saleId: string, amountPaidInput: Prisma.Decimal | nul
       unitPrice: item.unitPrice.toNumber(),
       subtotal: item.subtotal.toNumber(),
     })),
+  };
+}
+
+async function loadReceipt(saleId: string, amountPaidInput: Prisma.Decimal | null) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    include: SALE_RECEIPT_INCLUDE,
+  });
+
+  const amountPaid = amountPaidInput ?? sale.total;
+  const receipt: SaleReceipt = {
+    ...toSaleReceiptBase(sale),
+    amountPaid: amountPaid.toNumber(),
+    change: amountPaid.sub(sale.total).toNumber(),
   };
   return receipt;
 }

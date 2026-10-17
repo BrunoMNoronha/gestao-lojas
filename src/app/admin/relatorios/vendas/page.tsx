@@ -1,5 +1,6 @@
 import { getSalesReport } from "@/actions/reports";
 import { getCashOperators } from "@/actions/cash-register";
+import { getStoreSettings } from "@/actions/settings";
 import { connection } from "next/server";
 import { currentMonthDayKeys } from "@/lib/store-time";
 import { SalesReportView } from "@/components/sales-report-view";
@@ -16,9 +17,11 @@ export default async function RelatorioVendasPage() {
   await requirePageAccess("reports.view");
 
   const initialFilters = currentMonthDayKeys();
-  const [operators, report] = await Promise.all([
+  const [operators, report, storeSettings] = await Promise.all([
     getCashOperators(),
     getSalesReport({ ...initialFilters, take: 50 }),
+    // Cabeçalho do comprovante reimpresso pelo detalhe da venda
+    getStoreSettings(),
   ]);
 
   if (!report.success || !report.data) {
@@ -35,6 +38,7 @@ export default async function RelatorioVendasPage() {
       operators={operators}
       initialFilters={initialFilters}
       initialReport={report.data}
+      storeSettings={storeSettings}
     />
   );
 }
