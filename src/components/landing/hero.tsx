@@ -8,7 +8,7 @@ import { SCREENSHOTS } from "./screenshots";
 import { PrimaryCta } from "./site-header";
 import { ThemeImage } from "./theme-image";
 
-export function Hero({ loggedIn }: { loggedIn: boolean }) {
+export function Hero() {
   return (
     <section aria-labelledby="hero-title" className="relative isolate overflow-hidden">
       {/* Fundo: brilho da cor da marca e grade suave, decorativos */}
@@ -39,7 +39,7 @@ export function Hero({ loggedIn }: { loggedIn: boolean }) {
           num só sistema que roda no computador e no celular.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <PrimaryCta loggedIn={loggedIn} size="xl" />
+          <PrimaryCta label="Acessar o sistema" size="xl" />
           <a
             href="#funcionalidades"
             className={cn(

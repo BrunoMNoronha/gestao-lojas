@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Brand, PrimaryCta } from "./site-header";
 
-export function FinalCta({ loggedIn }: { loggedIn: boolean }) {
+export function FinalCta() {
   return (
     <section aria-labelledby="cta-title" className="py-20 sm:py-28">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
@@ -21,7 +21,7 @@ export function FinalCta({ loggedIn }: { loggedIn: boolean }) {
           </p>
           <div className="mt-8 flex justify-center">
             <PrimaryCta
-              loggedIn={loggedIn}
+              label="Acessar o sistema"
               size="xl"
               className="bg-background text-foreground hover:bg-background/90"
             />
@@ -33,6 +33,7 @@ export function FinalCta({ loggedIn }: { loggedIn: boolean }) {
 }
 
 export function SiteFooter() {
+  // Página estática: o ano é fixado no build (cada deploy refaz o build)
   const year = new Date().getFullYear();
   return (
     <footer className="border-t">

@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { unstable_rethrow } from "next/navigation";
-import { auth } from "@/auth";
 import { FeatureShowcase } from "@/components/landing/feature-showcase";
 import { FaqSection } from "@/components/landing/faq";
 import { Hero } from "@/components/landing/hero";
@@ -28,18 +26,11 @@ export const metadata: Metadata = {
   },
 };
 
-// Landing pública de apresentação (todos a veem; o proxy libera "/"). A página inicial por perfil
-// fica em /inicio. Só o cookie da sessão é lido (sem banco): se falhar, a página sai como visitante.
-export default async function LandingPage() {
-  let loggedIn = false;
-  try {
-    loggedIn = !!(await auth())?.user;
-  } catch (error) {
-    // Sinais internos do Next (ex.: renderização dinâmica no build) seguem adiante
-    unstable_rethrow(error);
-    console.error("Erro ao ler a sessão na página inicial:", error);
-  }
+// Landing pública de apresentação, estática: gerada no build e servida da CDN, sem sessão nem
+// banco (o proxy nem roda em "/", src/proxy.ts). A página inicial por perfil fica em /inicio.
+export const dynamic = "force-static";
 
+export default function LandingPage() {
   return (
     <>
       <a
@@ -48,9 +39,9 @@ export default async function LandingPage() {
       >
         Pular para o conteúdo
       </a>
-      <SiteHeader loggedIn={loggedIn} />
+      <SiteHeader />
       <main id="conteudo" tabIndex={-1} className="flex-1 outline-none">
-        <Hero loggedIn={loggedIn} />
+        <Hero />
         <VideoSection />
         <FeatureShowcase />
         <OfflineSection />
@@ -58,7 +49,7 @@ export default async function LandingPage() {
         <RolesSection />
         <MoreFeatures />
         <FaqSection />
-        <FinalCta loggedIn={loggedIn} />
+        <FinalCta />
       </main>
       <SiteFooter />
     </>

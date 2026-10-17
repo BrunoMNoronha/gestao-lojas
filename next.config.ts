@@ -11,6 +11,11 @@ const nextConfig: NextConfig = {
         source: "/serwist/sw.js",
         headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }],
       },
+      // Vídeo da landing: nome versionado (-vN), então pode ficar em cache por 1 ano
+      {
+        source: "/videos/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
       // GPS só para o próprio site (carrinho do catálogo, entrega); iframes de terceiros ficam sem
       {
         source: "/:path*",
