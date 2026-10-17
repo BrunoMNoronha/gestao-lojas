@@ -46,6 +46,7 @@ services:
             - .next/
             - prisma/
             - docker/
+            - .claude/
             - package.json
             - pnpm-lock.yaml
             - pnpm-workspace.yaml
