@@ -43,6 +43,7 @@ import { StockEntryDialog } from "@/components/stock-entry-dialog";
 import { StockAdjustDialog } from "@/components/stock-adjust-dialog";
 import { StockUnpackDialog, usePendingStockUnpack } from "@/components/stock-unpack-dialog";
 import { OptionSelect } from "@/components/option-select";
+import { DateRangePicker } from "@/components/date-range-picker";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
 
@@ -566,7 +567,7 @@ export function StockManager({
         <>
           {/* Filters */}
           <Card>
-            <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+            <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_2fr_auto]">
               <div className="space-y-1">
                 <Label
                   htmlFor="stock-manager-produto"
@@ -606,32 +607,18 @@ export function StockManager({
               </div>
               <div className="space-y-1">
                 <Label
-                  htmlFor="stock-manager-de"
+                  htmlFor="stock-manager-periodo"
                   className="text-muted-foreground text-xs font-medium"
                 >
-                  De
+                  Período
                 </Label>
-                <Input
-                  id="stock-manager-de"
-                  type="date"
-                  value={filters.from}
-                  max={filters.to || undefined}
-                  onChange={(e) => updateFilters({ from: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label
-                  htmlFor="stock-manager-ate"
-                  className="text-muted-foreground text-xs font-medium"
-                >
-                  Até
-                </Label>
-                <Input
-                  id="stock-manager-ate"
-                  type="date"
-                  value={filters.to}
-                  min={filters.from || undefined}
-                  onChange={(e) => updateFilters({ to: e.target.value })}
+                <DateRangePicker
+                  id="stock-manager-periodo"
+                  from={filters.from}
+                  to={filters.to}
+                  onChange={(range) => updateFilters(range)}
+                  placeholder="Qualquer data"
+                  clearable
                 />
               </div>
               <Button

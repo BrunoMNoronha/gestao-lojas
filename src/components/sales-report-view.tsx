@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { BarChart3, CalendarDays, Loader2, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -22,6 +21,7 @@ import { PAYMENT_METHOD_LABELS, PaymentMethodValue } from "@/lib/payments";
 import { formatDayKeyBR, formatStoreDateTime } from "@/lib/store-time";
 import { formatCurrency } from "@/lib/utils";
 import { OptionSelect } from "@/components/option-select";
+import { DateRangePicker } from "@/components/date-range-picker";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
 
@@ -116,35 +116,19 @@ export function SalesReportView({
 
       {/* Filters */}
       <Card>
-        <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1">
+        <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr]">
+          <div className="space-y-1 sm:col-span-2 lg:col-span-1">
             <Label
-              htmlFor="sales-report-view-de"
+              htmlFor="sales-report-view-periodo"
               className="text-muted-foreground text-xs font-medium"
             >
-              De
+              Período
             </Label>
-            <Input
-              id="sales-report-view-de"
-              type="date"
-              value={filters.from}
-              max={filters.to || undefined}
-              onChange={(e) => updateFilters({ from: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label
-              htmlFor="sales-report-view-ate"
-              className="text-muted-foreground text-xs font-medium"
-            >
-              Até
-            </Label>
-            <Input
-              id="sales-report-view-ate"
-              type="date"
-              value={filters.to}
-              min={filters.from || undefined}
-              onChange={(e) => updateFilters({ to: e.target.value })}
+            <DateRangePicker
+              id="sales-report-view-periodo"
+              from={filters.from}
+              to={filters.to}
+              onChange={(range) => updateFilters(range)}
             />
           </div>
           <div className="space-y-1">

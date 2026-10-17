@@ -12,7 +12,6 @@ import {
   Unlock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/money-input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -41,6 +40,7 @@ import {
 import { dayBoundary, formatDateTime } from "@/lib/dates";
 import { formatCurrency } from "@/lib/utils";
 import { OptionSelect } from "@/components/option-select";
+import { DateRangePicker } from "@/components/date-range-picker";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
 
@@ -259,7 +259,7 @@ export function CashRegisterManager({
         <>
           {/* Filters */}
           <Card>
-            <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto]">
+            <CardContent className="grid grid-cols-1 items-end gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[2fr_2fr_auto]">
               <div className="space-y-1">
                 <Label
                   htmlFor="cash-register-manager-operador"
@@ -279,32 +279,18 @@ export function CashRegisterManager({
               </div>
               <div className="space-y-1">
                 <Label
-                  htmlFor="cash-register-manager-fechado-de"
+                  htmlFor="cash-register-manager-fechado-em"
                   className="text-muted-foreground text-xs font-medium"
                 >
-                  Fechado de
+                  Fechado em
                 </Label>
-                <Input
-                  id="cash-register-manager-fechado-de"
-                  type="date"
-                  value={filters.from}
-                  max={filters.to || undefined}
-                  onChange={(e) => updateFilters({ from: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label
-                  htmlFor="cash-register-manager-ate"
-                  className="text-muted-foreground text-xs font-medium"
-                >
-                  Até
-                </Label>
-                <Input
-                  id="cash-register-manager-ate"
-                  type="date"
-                  value={filters.to}
-                  min={filters.from || undefined}
-                  onChange={(e) => updateFilters({ to: e.target.value })}
+                <DateRangePicker
+                  id="cash-register-manager-fechado-em"
+                  from={filters.from}
+                  to={filters.to}
+                  onChange={(range) => updateFilters(range)}
+                  placeholder="Qualquer data"
+                  clearable
                 />
               </div>
               <Button
