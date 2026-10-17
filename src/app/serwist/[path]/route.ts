@@ -20,6 +20,8 @@ export const { dynamic, dynamicParams, revalidate, generateStaticParams, GET } =
       ".next/static/**/*.{js,css,html,ico,png,svg,webp,json,webmanifest,woff,woff2}",
       "public/**/*",
     ],
+    // Vídeo da landing page: pesado e inútil para o PDV, não vai para o precache dos aparelhos
+    globIgnores: ["public/videos/**"],
     manifestTransforms: [
       async (entries) => {
         const revision =
