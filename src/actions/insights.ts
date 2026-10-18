@@ -295,3 +295,62 @@ export async function askInsightQuestion(input: {
     return { success: false, error: "Falha ao responder a pergunta. Tente novamente." };
   }
 }
+
+export interface DashboardInsight {
+  configured: boolean;
+  // Relatório mais recente, com as listas já ordenadas pelo que mais importa
+  latest: {
+    id: string;
+    periodFrom: string;
+    periodTo: string;
+    createdAt: string;
+    resumo: string;
+    alertas: InsightReport["alertas"];
+    acoes: InsightReport["acoesSugeridas"];
+  } | null;
+}
+
+const SEVERITY_ORDER = { alta: 0, media: 1, baixa: 2 } as const;
+const DASHBOARD_ALERTS = 3;
+const DASHBOARD_ACTIONS = 2;
+
+/** Insights mais relevantes para o Dashboard: lê o último relatório salvo, sem chamar o Claude. */
+export async function getDashboardInsight(): Promise<DashboardInsight | null> {
+  try {
+    const authz = await authorize("insights.view");
+    if (!authz.ok) return null;
+
+    const [settings, row] = await Promise.all([
+      prisma.storeSettings.findUnique({
+        where: { id: "default" },
+        select: { anthropicApiKeyEnc: true },
+      }),
+      prisma.businessInsight.findFirst({
+        where: { kind: BusinessInsightKind.REPORT },
+        select: insightSelect,
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    const configured = Boolean(settings?.anthropicApiKeyEnc);
+    const report = row ? toRecord(row).report : null;
+    if (!row || !report) return { configured, latest: null };
+
+    return {
+      configured,
+      latest: {
+        id: row.id,
+        periodFrom: row.periodFrom,
+        periodTo: row.periodTo,
+        createdAt: row.createdAt.toISOString(),
+        resumo: report.resumo,
+        alertas: [...report.alertas]
+          .sort((a, b) => SEVERITY_ORDER[a.gravidade] - SEVERITY_ORDER[b.gravidade])
+          .slice(0, DASHBOARD_ALERTS),
+        acoes: report.acoesSugeridas.slice(0, DASHBOARD_ACTIONS),
+      },
+    };
+  } catch (error) {
+    console.error("Erro ao carregar os insights do Dashboard:", error);
+    return null;
+  }
+}
