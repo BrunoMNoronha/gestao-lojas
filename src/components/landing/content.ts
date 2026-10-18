@@ -11,6 +11,7 @@ import {
   ScanBarcode,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   Truck,
   Users,
   type LucideIcon,
@@ -123,6 +124,21 @@ export const FEATURES: Feature[] = [
     shot: SCREENSHOTS.relatorios,
   },
   {
+    id: "insights",
+    icon: Sparkles,
+    eyebrow: "Insights com IA",
+    title: "Uma análise do mês escrita pelo Claude",
+    description:
+      "Escolha o período e o Claude lê os números da loja: compara com o período anterior e aponta o que vai bem, o que merece atenção e o que fazer a seguir.",
+    bullets: [
+      "Resumo, alertas por gravidade, destaques, oportunidades e ações sugeridas",
+      "Perguntas livres sobre o período, como “o que mais vendeu no fim de semana?”",
+      "Os insights mais importantes aparecem no Dashboard",
+      "Usa a chave da API da própria loja, com custo estimado e histórico sem nova cobrança",
+    ],
+    shot: SCREENSHOTS.insights,
+  },
+  {
     id: "fiado",
     icon: HandCoins,
     eyebrow: "Contas a receber",
@@ -187,7 +203,7 @@ export const ROLES = [
     icon: BarChart3,
     description: "Cuida da operação do dia a dia.",
     can: [
-      "Painel, relatórios e estorno de vendas",
+      "Painel, relatórios, insights e estorno de vendas",
       "Produtos, estoque e fornecedores",
       "Caixas dos operadores e conciliação offline",
     ],
@@ -257,6 +273,11 @@ export const FAQ = [
     question: "Como o cliente faz um pedido pelo catálogo?",
     answer:
       "Ele abre o catálogo público da loja, escolhe os produtos e envia o pedido pelo WhatsApp da loja. O link do pedido abre no painel, onde a equipe registra o pedido e o converte em venda no PDV.",
+  },
+  {
+    question: "Como funcionam os insights com IA?",
+    answer:
+      "O administrador cadastra a chave da API da Anthropic da loja nas configurações. Gerentes e administradores geram análises de qualquer período ou fazem perguntas; o Claude recebe só números agregados e nomes de produtos, nunca dados de clientes, e cada análise mostra o custo estimado. Reabrir uma análise do histórico não gera nova cobrança.",
   },
   {
     question: "Que tipo de loja pode usar?",
