@@ -90,6 +90,30 @@ test("demais telas do painel", async ({ context, page }) => {
   }
 });
 
+test("insights do Claude", async ({ context, page }) => {
+  desktopOnly();
+  await useTheme(context, page, "light");
+  await login(context, ADMIN_EMAIL);
+  await page.goto("/admin/insights");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // Reabre o relatório gravado no seed (nenhuma chamada ao Claude)
+  await page
+    .getByRole("button", { name: /^Análise/ })
+    .first()
+    .click();
+  const summary = page.getByText("Resumo do período", { exact: true });
+  await expect(summary).toBeVisible();
+  // Resumo, alertas e ações no quadro, logo abaixo da barra superior
+  await page.evaluate(() => {
+    const el = [...document.querySelectorAll("*")].find(
+      (node) => node.textContent === "Resumo do período" && node.children.length > 0,
+    );
+    const card = el?.closest("[data-slot=card]") ?? el;
+    if (card) window.scrollBy(0, card.getBoundingClientRect().top - 100);
+  });
+  await shoot(page, "insights");
+});
+
 test("PDV sem internet", async ({ context, page }) => {
   desktopOnly();
   await useTheme(context, page, "light");

@@ -631,6 +631,142 @@ export async function seedShowcase() {
       },
     });
   }
+
+  await seedInsightReport(admin.id);
 }
 
-/** Tema fixo antes de qualquer script da página (next-themes lê o localStorage). */
+const brl = (value: number) =>
+  value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const pct = (value: number) =>
+  `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+
+/** Dia da loja ("YYYY-MM-DD") no fuso de São Paulo. */
+const dayKey = (date: Date) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(date);
+
+/**
+ * Relatório de insights (issue #113) do mês atual, como o Claude grava em BusinessInsight. Os
+ * números saem do próprio seed; a chave da API é fictícia (só marca a loja como configurada, nenhuma
+ * chamada é feita).
+ */
+async function seedInsightReport(userId: string) {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const span = now.getTime() - monthStart.getTime();
+  const previousStart = new Date(monthStart.getTime() - span);
+  const sum = async (from: Date, to: Date) =>
+    Number(
+      (
+        await db.sale.aggregate({
+          where: { occurredAt: { gte: from, lt: to }, reversedAt: null },
+          _sum: { total: true },
+          _count: true,
+        })
+      )._sum.total ?? 0,
+    );
+  const [current, previous] = await Promise.all([
+    sum(monthStart, now),
+    sum(previousStart, monthStart),
+  ]);
+  const growth = previous > 0 ? ((current - previous) / previous) * 100 : 0;
+
+  const top = await db.saleItem.groupBy({
+    by: ["productId"],
+    where: { sale: { occurredAt: { gte: monthStart }, reversedAt: null } },
+    _sum: { subtotal: true },
+    orderBy: { _sum: { subtotal: "desc" } },
+    take: 1,
+  });
+  const topProduct = await db.product.findUniqueOrThrow({ where: { id: top[0].productId } });
+  const topShare = (Number(top[0]._sum.subtotal) / current) * 100;
+
+  const products = await db.product.findMany({ where: { deletedAt: null } });
+  const low = products.filter((p) => Number(p.currentStock) < Number(p.minStock));
+  const openReceivables = await db.receivable.findMany({
+    where: { status: { in: ["OPEN", "PARTIAL"] } },
+  });
+  const openAmount = openReceivables.reduce(
+    (total, r) => total + Number(r.amount) - Number(r.paidAmount),
+    0,
+  );
+
+  const content = {
+    resumo: `O mês soma ${brl(current)} em vendas, ${pct(growth)} sobre o mesmo número de dias do período anterior. A ração e os insumos agrícolas puxam o faturamento, enquanto mercearia e limpeza garantem o movimento do dia a dia. O ponto de atenção é o estoque: ${low.length} produtos estão abaixo do mínimo, alguns entre os mais vendidos.`,
+    destaques: [
+      {
+        titulo: `${topProduct.name} lidera o faturamento`,
+        explicacao:
+          "É o item que mais gera receita no mês, com ticket alto e saída constante, inclusive nos pedidos do catálogo.",
+        indicador: `${pct(topShare).replace("+", "")} do faturamento`,
+      },
+      {
+        titulo: "Fim de semana concentra as vendas",
+        explicacao:
+          "Sábados e domingos vendem bem mais que os dias úteis; vale reforçar a equipe e o troco nesses dias.",
+        indicador: "≈ 1,7× mais vendas",
+      },
+    ],
+    alertas: [
+      {
+        titulo: "Produtos abaixo do estoque mínimo",
+        explicacao: `${low
+          .map((p) => p.name)
+          .slice(0, 3)
+          .join(", ")} estão abaixo do mínimo e podem faltar antes da próxima entrada.`,
+        indicador: `${low.length} produtos`,
+        gravidade: "alta" as const,
+      },
+      {
+        titulo: "Fiado em aberto",
+        explicacao:
+          "Parte das vendas no fiado segue sem pagamento; títulos antigos merecem um contato com o cliente.",
+        indicador: brl(openAmount),
+        gravidade: "media" as const,
+      },
+    ],
+    oportunidades: [
+      {
+        titulo: "Combo agro para os sítios",
+        explicacao:
+          "Milho, adubo e arame aparecem juntos nas compras de clientes rurais; um combo com desconto pode aumentar o ticket.",
+        indicador: "3 itens recorrentes",
+      },
+    ],
+    acoesSugeridas: [
+      {
+        titulo: "Repor os itens críticos esta semana",
+        explicacao:
+          "Registre a entrada dos produtos abaixo do mínimo antes do próximo fim de semana.",
+        indicador: `${low.length} produtos`,
+      },
+      {
+        titulo: "Cobrar os títulos vencidos do fiado",
+        explicacao: "Use a tela de Contas a Receber para priorizar os clientes com maior saldo.",
+        indicador: brl(openAmount),
+      },
+    ],
+  };
+
+  await db.storeSettings.update({
+    where: { id: "default" },
+    data: {
+      anthropicApiKeyEnc: "demo-chave-ficticia",
+      anthropicApiKeyHint: "demo",
+      anthropicApiKeyUpdatedAt: now,
+    },
+  });
+  await db.businessInsight.create({
+    data: {
+      kind: "REPORT",
+      periodFrom: dayKey(monthStart),
+      periodTo: dayKey(now),
+      content,
+      model: "claude-haiku-5-5",
+      inputTokens: 6200,
+      outputTokens: 1100,
+      costEstimate: new Prisma.Decimal("0.0117"),
+      userId,
+      createdAt: new Date(now.getTime() - 25 * 60_000),
+    },
+  });
+}

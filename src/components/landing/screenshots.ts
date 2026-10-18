@@ -12,6 +12,7 @@ import pdvOffline from "./screenshots/pdv-offline.png";
 import pdv from "./screenshots/pdv.png";
 import pedidos from "./screenshots/pedidos.png";
 import produtos from "./screenshots/produtos.png";
+import insights from "./screenshots/insights.png";
 import relatorios from "./screenshots/relatorios.png";
 
 // Capturas reais do sistema com uma loja fictícia, geradas por `pnpm screenshots`
@@ -51,6 +52,10 @@ export const SCREENSHOTS = {
   relatorios: {
     src: relatorios,
     alt: "Relatório de vendas filtrado por período e operador, com totais por forma de pagamento",
+  },
+  insights: {
+    src: insights,
+    alt: "Insights do Claude com resumo do mês, alertas de estoque e fiado, destaques, oportunidades e ações sugeridas",
   },
   contasAReceber: {
     src: contasAReceber,
