@@ -5,6 +5,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { DatabaseZap, LayoutDashboard, Settings } from "lucide-react";
 import { connection } from "next/server";
 import { DashboardView } from "@/components/dashboard-view";
+import { DashboardInsightsCard } from "@/components/dashboard-insights-card";
+import { getDashboardInsight } from "@/actions/insights";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { requirePageAccess } from "@/lib/authz";
@@ -19,7 +21,12 @@ export default async function AdminDashboardPage() {
   await connection();
   const user = await requirePageAccess("dashboard.view");
 
-  const [settings, metrics] = await Promise.all([getStoreSettings(), getDashboardMetrics()]);
+  const [settings, metrics, insight] = await Promise.all([
+    getStoreSettings(),
+    getDashboardMetrics(),
+    // Último relatório do Claude (issue #113): só para quem vê os insights
+    can(user.role, "insights.view") ? getDashboardInsight() : null,
+  ]);
   // Card "Fiado em aberto": some com o fiado desligado e nenhum título a receber
   const showReceivables =
     settings.onAccountEnabled !== false || (metrics?.receivables.openCount ?? 0) > 0;
@@ -46,6 +53,11 @@ export default async function AdminDashboardPage() {
           )
         }
       />
+
+      {/* Aparece com chave salva ou com análise já gerada (o histórico continua sem a chave) */}
+      {insight && (insight.configured || insight.latest) && (
+        <DashboardInsightsCard insight={insight} />
+      )}
 
       {metrics ? (
         <DashboardView metrics={metrics} showReceivables={showReceivables} />
