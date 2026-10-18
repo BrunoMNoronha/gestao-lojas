@@ -110,6 +110,12 @@ enum ReceivableStatus {
   CANCELED // Venda estornada; não conta como dívida
 }
 
+// Análise gerada pelo Claude na página de insights (issue #113)
+enum BusinessInsightKind {
+  REPORT // Relatório estruturado do período
+  QUESTION // Resposta a uma pergunta livre sobre o período
+}
+
 // Pedido recebido pelo catálogo público (issue #81). Não reserva estoque nem gera receita.
 enum CatalogOrderStatus {
   OPEN // Disponível para carregar no PDV ou cancelar
@@ -145,6 +151,7 @@ model User {
   createdCatalogOrders   CatalogOrder[]        @relation("CatalogOrderCreatedBy")
   canceledCatalogOrders  CatalogOrder[]        @relation("CatalogOrderCanceledBy")
   convertedCatalogOrders CatalogOrder[]        @relation("CatalogOrderConvertedBy")
+  businessInsights       BusinessInsight[]
 }
 
 // Exclusão lógica (deletedAt) e versão de sincronização (syncVersion) em Category, Product e
@@ -404,35 +411,40 @@ model UnpackConversion {
 }
 
 model StoreSettings {
-  id                    String     @id @default("default")
-  personType            PersonType @default(COMPANY)
-  companyName           String // Razão Social (PJ) ou Nome completo (PF)
-  tradeName             String // Nome Fantasia / Nome da loja
-  document              String? // CNPJ (PJ) ou CPF (PF), sem pontuação (opcional)
-  stateRegistration     String? // Inscrição Estadual (opcional)
-  phone                 String? // Telefone / WhatsApp, só dígitos com DDD
-  email                 String? // E-mail de Contato
-  zipCode               String? // CEP, só dígitos
-  address               String? // Logradouro (Rua, Av...)
-  number                String? // Número
-  neighborhood          String? // Bairro
-  city                  String? // Cidade
-  state                 String? // Estado / UF
-  instagram             String? // @usuario ou URL
-  facebook              String? // URL do Facebook
-  website               String? // URL do site
-  receiptFooterNote     String? // Mensagem no rodapé do recibo
-  whatsappNumber        String? // WhatsApp do catálogo, só dígitos com DDI (ex.: 5511999998888)
-  catalogEnabled        Boolean    @default(false) // Catálogo público (/catalogo) ativo
+  id                       String     @id @default("default")
+  personType               PersonType @default(COMPANY)
+  companyName              String // Razão Social (PJ) ou Nome completo (PF)
+  tradeName                String // Nome Fantasia / Nome da loja
+  document                 String? // CNPJ (PJ) ou CPF (PF), sem pontuação (opcional)
+  stateRegistration        String? // Inscrição Estadual (opcional)
+  phone                    String? // Telefone / WhatsApp, só dígitos com DDD
+  email                    String? // E-mail de Contato
+  zipCode                  String? // CEP, só dígitos
+  address                  String? // Logradouro (Rua, Av...)
+  number                   String? // Número
+  neighborhood             String? // Bairro
+  city                     String? // Cidade
+  state                    String? // Estado / UF
+  instagram                String? // @usuario ou URL
+  facebook                 String? // URL do Facebook
+  website                  String? // URL do site
+  receiptFooterNote        String? // Mensagem no rodapé do recibo
+  whatsappNumber           String? // WhatsApp do catálogo, só dígitos com DDI (ex.: 5511999998888)
+  catalogEnabled           Boolean    @default(false) // Catálogo público (/catalogo) ativo
   // Venda no Fiado (issue #29): os padrões mantêm o comportamento anterior (permitido, sem regras)
-  onAccountEnabled      Boolean    @default(true) // Desligado: o PDV e o servidor recusam o Fiado
-  onAccountDueDays      Int? // Prazo do título em dias corridos; nulo = sem vencimento
-  onAccountCreditLimit  Decimal?   @db.Decimal(10, 2) // Saldo em aberto + venda, por cliente; nulo = sem limite
-  onAccountBlockOverdue Boolean    @default(false) // Bloqueia o Fiado de cliente com título vencido
+  onAccountEnabled         Boolean    @default(true) // Desligado: o PDV e o servidor recusam o Fiado
+  onAccountDueDays         Int? // Prazo do título em dias corridos; nulo = sem vencimento
+  onAccountCreditLimit     Decimal?   @db.Decimal(10, 2) // Saldo em aberto + venda, por cliente; nulo = sem limite
+  onAccountBlockOverdue    Boolean    @default(false) // Bloqueia o Fiado de cliente com título vencido
   // Margem sobre o custo (%) para sugerir o preço de venda de produto novo; nulo = sem sugestão
-  defaultProfitMargin   Decimal?   @db.Decimal(6, 2)
-  createdAt             DateTime   @default(now())
-  updatedAt             DateTime   @updatedAt
+  defaultProfitMargin      Decimal?   @db.Decimal(6, 2)
+  // Chave da API Anthropic para os insights (issue #113): só o valor cifrado (src/lib/secret-box.ts)
+  // e os últimos caracteres para exibição. Nunca sai do servidor nem entra em StoreSettingsData.
+  anthropicApiKeyEnc       String?
+  anthropicApiKeyHint      String?
+  anthropicApiKeyUpdatedAt DateTime?
+  createdAt                DateTime   @default(now())
+  updatedAt                DateTime   @updatedAt
 }
 
 model Supplier {
@@ -665,4 +677,25 @@ model LoginAttempt {
   @@index([email, createdAt])
   @@index([ip, createdAt])
   @@index([createdAt])
+}
+
+// Análises do negócio geradas pelo Claude (issue #113). Guardadas para reabrir sem novo custo; o
+// conteúdo é o JSON validado devolvido pelo modelo e o custo é estimado pela tabela de preços.
+model BusinessInsight {
+  id           String              @id @default(cuid())
+  kind         BusinessInsightKind
+  periodFrom   String // Dia da loja, "YYYY-MM-DD"
+  periodTo     String
+  question     String?
+  content      Json
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  costEstimate Decimal             @db.Decimal(10, 6) // US$
+  userId       String
+  user         User                @relation(fields: [userId], references: [id])
+  createdAt    DateTime            @default(now())
+
+  @@index([createdAt])
+  @@index([kind, periodFrom, periodTo, createdAt])
 }

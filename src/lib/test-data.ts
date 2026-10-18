@@ -48,6 +48,8 @@ export const TEST_TOOLS_DISABLED =
 
 /** Tabelas apagadas pela restauração, na ordem do TRUNCATE. */
 export const RESET_TABLES = [
+  // Análises do Claude (issue #113) falam dos dados apagados: saem junto com eles
+  "BusinessInsight",
   "ReconciliationIssue",
   "CatalogOrderItem",
   "CatalogOrder",

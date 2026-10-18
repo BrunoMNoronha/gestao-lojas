@@ -5,7 +5,6 @@ import { authorize } from "@/lib/authz";
 import { PaymentMethod, Prisma } from "@prisma/client";
 import { getReceivablesSummary, type ReceivablesSummary } from "@/actions/receivables";
 import type { PaymentMethodValue } from "@/lib/payments";
-import type { UnitType } from "@/actions/products";
 import {
   DateRange,
   STORE_TIME_ZONE,
@@ -14,29 +13,22 @@ import {
   parseDayKey,
   storeDayRange,
 } from "@/lib/store-time";
+import {
+  MAX_REPORT_DAYS,
+  type MethodBreakdown,
+  type PeriodTotals,
+  type TopProduct,
+  salesByMethod,
+  salesTotals,
+  toNumber,
+  topProducts,
+} from "@/lib/sales-metrics";
 
 // Faturamento = soma de Sale.total (líquido de desconto) pela data da venda, incluindo vendas
-// no Fiado: é a visão de vendas. O dinheiro efetivamente recebido fica no módulo Caixa.
+// no Fiado: é a visão de vendas. O dinheiro efetivamente recebido fica no módulo Caixa. Os
+// cálculos ficam em src/lib/sales-metrics.ts, compartilhados com os insights (issue #113).
 
-export interface PeriodTotals {
-  total: number;
-  count: number;
-  averageTicket: number;
-}
-
-export interface MethodBreakdown {
-  method: PaymentMethodValue;
-  total: number;
-  count: number;
-}
-
-export interface TopProduct {
-  productId: string;
-  name: string;
-  unit: UnitType;
-  quantity: number;
-  revenue: number;
-}
+export type { MethodBreakdown, PeriodTotals, TopProduct } from "@/lib/sales-metrics";
 
 export interface DashboardMetrics {
   today: PeriodTotals;
@@ -78,83 +70,9 @@ export interface SalesReport {
   salesTotal: number;
 }
 
-const MAX_REPORT_DAYS = 366;
 const TOP_PRODUCTS_LIMIT = 10;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
-
-const toNumber = (value: Prisma.Decimal | number | bigint | null | undefined) =>
-  value === null || value === undefined ? 0 : Number(value.toString());
-
-function periodTotals(total: Prisma.Decimal | null, count: number): PeriodTotals {
-  const sum = total ?? new Prisma.Decimal(0);
-  return {
-    total: sum.toNumber(),
-    count,
-    averageTicket: count > 0 ? sum.div(count).toDecimalPlaces(2).toNumber() : 0,
-  };
-}
-
-// Vendas estornadas ficam fora de todos os totais (src/lib/reverse-sale.ts)
-const notReversed = { reversedAt: null } satisfies Prisma.SaleWhereInput;
-
-async function salesTotals(where: Prisma.SaleWhereInput) {
-  const result = await prisma.sale.aggregate({
-    where: { ...where, ...notReversed },
-    _sum: { total: true, discount: true },
-    _count: { _all: true },
-  });
-  return {
-    ...periodTotals(result._sum.total, result._count._all),
-    discount: toNumber(result._sum.discount),
-  };
-}
-
-async function salesByMethod(where: Prisma.SaleWhereInput): Promise<MethodBreakdown[]> {
-  const groups = await prisma.sale.groupBy({
-    by: ["paymentMethod"],
-    where: { ...where, ...notReversed },
-    _sum: { total: true },
-    _count: { _all: true },
-  });
-  return groups
-    .map((g) => ({
-      method: g.paymentMethod as PaymentMethodValue,
-      total: toNumber(g._sum.total),
-      count: g._count._all,
-    }))
-    .sort((a, b) => b.total - a.total);
-}
-
-async function topProducts(range: DateRange): Promise<TopProduct[]> {
-  const rows = await prisma.$queryRaw<
-    {
-      productId: string;
-      name: string;
-      unit: string;
-      quantity: Prisma.Decimal;
-      revenue: Prisma.Decimal;
-    }[]
-  >(Prisma.sql`
-    SELECT si."productId" AS "productId", p.name AS name, p.unit::text AS unit,
-           SUM(si.quantity) AS quantity, SUM(si.subtotal) AS revenue
-    FROM "SaleItem" si
-    JOIN "Sale" s ON s.id = si."saleId"
-    JOIN "Product" p ON p.id = si."productId"
-    WHERE s."occurredAt" >= ${range.from} AND s."occurredAt" <= ${range.to}
-      AND s."reversedAt" IS NULL
-    GROUP BY si."productId", p.name, p.unit
-    ORDER BY revenue DESC, p.name ASC
-    LIMIT ${TOP_PRODUCTS_LIMIT}
-  `);
-  return rows.map((r) => ({
-    productId: r.productId,
-    name: r.name,
-    unit: r.unit as UnitType,
-    quantity: toNumber(r.quantity),
-    revenue: toNumber(r.revenue),
-  }));
-}
 
 export async function getDashboardMetrics(): Promise<DashboardMetrics | null> {
   try {
@@ -171,7 +89,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics | null> {
       salesTotals(inRange(periods.week)),
       salesTotals(inRange(periods.month)),
       salesByMethod(inRange(periods.month)),
-      topProducts(periods.month),
+      topProducts(periods.month, TOP_PRODUCTS_LIMIT),
       getReceivablesSummary(),
       // Mesma regra de getLowStockProducts / isStockLow: saldo atual <= estoque mínimo
       prisma.product.count({

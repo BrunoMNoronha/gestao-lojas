@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/authz";
 import { INVALID_SESSION_LOGIN } from "@/lib/login-paths";
 import { getStoreBrandName, isCatalogEnabled } from "@/lib/store-brand";
 import { isReceivablesVisible } from "@/lib/on-account";
+import { isAiInsightsConfigured } from "@/lib/ai-key";
 import { can } from "@/lib/permissions";
 import { OfflineUserGuard } from "@/components/offline-pdv/offline-user-guard";
 import { CommandPalette } from "@/components/command-palette";
@@ -18,17 +19,19 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const user = await getSessionUser();
   if (!user) redirect(INVALID_SESSION_LOGIN);
 
-  const [storeName, catalogEnabled, showReceivables] = await Promise.all([
+  const [storeName, catalogEnabled, showReceivables, showInsights] = await Promise.all([
     getStoreBrandName(),
     // Mesma leitura de StoreSettings da marca (cache da requisição): sem consulta extra
     isCatalogEnabled(),
     // Só consulta o banco para quem vê o item no menu
     can(user.role, "receivables.view") ? isReceivablesVisible() : true,
+    // Insights só aparece com a chave da API salva (mesma leitura de StoreSettings)
+    can(user.role, "insights.view") ? isAiInsightsConfigured() : false,
   ]);
   const navProps = {
     user: { name: user.name, role: user.role },
     storeName,
-    features: { onAccount: showReceivables, catalog: catalogEnabled },
+    features: { onAccount: showReceivables, catalog: catalogEnabled, aiInsights: showInsights },
   };
 
   return (
