@@ -27,3 +27,16 @@ describe("rotas da barra superior", () => {
     expect(permissionForPath("/pdv")).toBe("pdv.use");
   });
 });
+
+describe("menu Insights (issue #113)", () => {
+  it("aparece para gestão só com a chave da API salva", () => {
+    expect(hrefs(routesFor("ADMIN", { aiInsights: true }))).toContain("/admin/insights");
+    expect(hrefs(routesFor("MANAGER", { aiInsights: true }))).toContain("/admin/insights");
+    expect(hrefs(routesFor("MANAGER", { aiInsights: false }))).not.toContain("/admin/insights");
+  });
+
+  it("não aparece para o vendedor, e a página exige insights.view", () => {
+    expect(hrefs(routesFor("SELLER", { aiInsights: true }))).not.toContain("/admin/insights");
+    expect(permissionForPath("/admin/insights")).toBe("insights.view");
+  });
+});

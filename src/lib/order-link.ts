@@ -1,11 +1,12 @@
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import { openText, sealText } from "@/lib/secret-box";
 import { MAX_ITEM_QUANTITY, MAX_ORDER_ITEMS } from "@/lib/catalog-shared";
 import { normalizePhone } from "@/lib/masks";
 
 // Link do pedido do catálogo (issue #81), usado só no servidor. Vai na mensagem do WhatsApp com
 // os itens, a chave da solicitação e o contato (nome e telefone), criptografados com AES-256-GCM:
 // quem vê a URL não lê o contato nem consegue alterar nada (o tag do GCM recusa o token mexido).
-// A chave é derivada do AUTH_SECRET; trocá-lo invalida os links ainda não abertos.
+// A chave é derivada do AUTH_SECRET (src/lib/secret-box.ts); trocá-lo invalida os links ainda não
+// abertos.
 
 export interface OrderLinkData {
   key: string;
@@ -13,57 +14,27 @@ export interface OrderLinkData {
   contact: { name: string; phone: string };
 }
 
-const VERSION = 2;
-const IV_BYTES = 12;
-const TAG_BYTES = 16;
+const LINK_BOX = { info: "catalog-order-link-v2", version: 2 };
 const MAX_TOKEN_LENGTH = 12 * 1024;
 const MAX_NAME = 80;
 const KEY_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
-let cachedKey: { secret: string; key: Buffer } | null = null;
-
-function linkKey(): Buffer {
-  const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
-  if (!secret) throw new Error("AUTH_SECRET ausente: não é possível montar o link do pedido.");
-  if (cachedKey?.secret !== secret) {
-    const key = Buffer.from(
-      hkdfSync("sha256", secret, "gestao-lojas", "catalog-order-link-v2", 32),
-    );
-    cachedKey = { secret, key };
-  }
-  return cachedKey.key;
-}
-
 export function encodeOrderLink({ key, items, contact }: OrderLinkData): string {
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv("aes-256-gcm", linkKey(), iv);
   const plain = JSON.stringify({
     k: key,
     i: items.map((item) => [item.productId, item.quantity]),
     c: { n: contact.name, p: contact.phone },
   });
-  const encrypted = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
-  return Buffer.concat([Buffer.from([VERSION]), iv, cipher.getAuthTag(), encrypted]).toString(
-    "base64url",
-  );
+  return sealText(plain, LINK_BOX);
 }
 
 function decrypt(token: string): unknown {
-  const data = Buffer.from(token, "base64url");
-  if (data.length <= 1 + IV_BYTES + TAG_BYTES || data[0] !== VERSION) return null;
-  const iv = data.subarray(1, 1 + IV_BYTES);
-  const tag = data.subarray(1 + IV_BYTES, 1 + IV_BYTES + TAG_BYTES);
-  const decipher = createDecipheriv("aes-256-gcm", linkKey(), iv);
-  decipher.setAuthTag(tag);
+  const plain = openText(token, LINK_BOX);
+  if (plain === null) return null;
   try {
-    const plain = Buffer.concat([
-      decipher.update(data.subarray(1 + IV_BYTES + TAG_BYTES)),
-      decipher.final(),
-    ]).toString("utf8");
     return JSON.parse(plain);
   } catch {
-    // Token adulterado, de outra chave ou corrompido
     return null;
   }
 }

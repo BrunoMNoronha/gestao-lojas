@@ -28,6 +28,9 @@ export const PERMISSIONS = {
   "suppliers.manage": MANAGEMENT,
   // Conflitos e pendências das vendas offline: aprovar, descartar e dar ciência (issue #38)
   "offline.reconcile": MANAGEMENT,
+  // Insights do negócio com o Claude: gerar e consultar análises (issue #113). A chave da API é
+  // configurada só pelo ADMIN (settings.manage)
+  "insights.view": MANAGEMENT,
   "settings.manage": ["ADMIN"],
   "users.manage": ["ADMIN"],
   // Página "Minha conta" (dados próprios e troca de senha)

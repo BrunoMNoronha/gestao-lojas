@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Settings,
   ShoppingCart,
+  Sparkles,
   Truck,
   UserCog,
   UserRound,
@@ -36,7 +37,8 @@ export interface AppRoute {
 
 // "onAccount": Contas a Receber, oculto com o fiado desligado e sem títulos a receber (issue #29)
 // "catalog": link do catálogo público na barra superior, só com o catálogo ativo
-export type NavFeature = "onAccount" | "catalog";
+// "aiInsights": Insights, só com a chave da API Anthropic salva em Configurações (issue #113)
+export type NavFeature = "onAccount" | "catalog" | "aiInsights";
 
 /** Recursos visíveis no menu; ausente ou true = exibido. */
 export type NavFeatures = Partial<Record<NavFeature, boolean>>;
@@ -80,6 +82,14 @@ export const APP_ROUTES: AppRoute[] = [
     label: "Relatórios",
     icon: BarChart3,
     permission: "reports.view",
+  },
+  // Análises do negócio geradas pelo Claude com a chave da loja (issue #113)
+  {
+    href: "/admin/insights",
+    label: "Insights",
+    icon: Sparkles,
+    permission: "insights.view",
+    feature: "aiInsights",
   },
   { href: "/admin/produtos", label: "Produtos", icon: Package, permission: "catalog.view" },
   { href: "/admin/estoque", label: "Estoque", icon: Boxes, permission: "stock.view" },
