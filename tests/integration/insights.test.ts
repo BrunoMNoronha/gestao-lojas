@@ -19,8 +19,13 @@ vi.mock("next/cache", () => ({
 vi.mock("@/lib/insights/claude", () => claude);
 
 const { buildInsightSnapshot } = await import("@/lib/insights/snapshot");
-const { askInsightQuestion, generateInsightReport, getInsight, getInsightsOverview } =
-  await import("@/actions/insights");
+const {
+  askInsightQuestion,
+  generateInsightReport,
+  getDashboardInsight,
+  getInsight,
+  getInsightsOverview,
+} = await import("@/actions/insights");
 const { getAiKeyStatus, removeAnthropicApiKey, saveAnthropicApiKey, testAnthropicApiKey } =
   await import("@/actions/ai-settings");
 const { getStoreSettings } = await import("@/actions/settings");
@@ -353,5 +358,53 @@ describe("actions da página", () => {
       error: expect.stringContaining("Limite de 30"),
     });
     expect(claude.answerQuestion).not.toHaveBeenCalled();
+  });
+});
+
+describe("insights no Dashboard", () => {
+  it("mostra os alertas mais graves e as primeiras ações do último relatório, sem chamar o Claude", async () => {
+    await admin();
+    await saveAnthropicApiKey(API_KEY);
+    const manager = await createUser("Gerente");
+    loginAs(manager.id, "MANAGER");
+    expect(await getDashboardInsight()).toEqual({ configured: true, latest: null });
+
+    const a = (titulo: string, gravidade: "alta" | "media" | "baixa") => ({
+      titulo,
+      explicacao: "x",
+      indicador: "y",
+      gravidade,
+    });
+    claude.generateReport.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        ...report,
+        alertas: [
+          a("Baixa", "baixa"),
+          a("Média", "media"),
+          a("Alta", "alta"),
+          a("Outra alta", "alta"),
+        ],
+        acoesSugeridas: [1, 2, 3].map((n) => ({
+          titulo: `Ação ${n}`,
+          explicacao: "x",
+          indicador: "y",
+        })),
+      },
+      usage,
+      model: "claude-haiku-5-5",
+    });
+    await generateInsightReport({ from: "2026-10-01", to: "2026-10-31" });
+    await askInsightQuestion({ from: "2026-10-01", to: "2026-10-31", question: "Como foi?" });
+    const calls = claude.generateReport.mock.calls.length;
+
+    const insight = await getDashboardInsight();
+    expect(insight?.latest?.alertas.map((x) => x.titulo)).toEqual(["Alta", "Outra alta", "Média"]);
+    expect(insight?.latest?.acoes.map((x) => x.titulo)).toEqual(["Ação 1", "Ação 2"]);
+    expect(claude.generateReport).toHaveBeenCalledTimes(calls);
+
+    const seller = await createUser("Vendedor");
+    loginAs(seller.id, "SELLER");
+    expect(await getDashboardInsight()).toBeNull();
   });
 });
