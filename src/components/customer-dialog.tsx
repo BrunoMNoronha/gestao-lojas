@@ -1,0 +1,211 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { User, Loader2 } from "lucide-react";
+import { CustomerItem, CustomerInput, createCustomer, updateCustomer } from "@/actions/customers";
+import { Label } from "@/components/ui/label";
+import { formatCpfOrCnpj, formatPhone, onlyAlphanumeric, onlyDigits } from "@/lib/masks";
+
+interface CustomerDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  customerToEdit?: CustomerItem | null;
+  onSuccess: () => void;
+}
+
+function toFormData(customer?: CustomerItem | null): CustomerInput {
+  if (!customer) {
+    return { name: "", document: "", phone: "", email: "", address: "" };
+  }
+  return {
+    id: customer.id,
+    name: customer.name,
+    document: customer.document || "",
+    phone: customer.phone || "",
+    email: customer.email || "",
+    address: customer.address || "",
+  };
+}
+
+export function CustomerDialog({
+  open,
+  onOpenChange,
+  customerToEdit,
+  onSuccess,
+}: CustomerDialogProps) {
+  const [formData, setFormData] = useState<CustomerInput>(() => toFormData(customerToEdit));
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reinicia o formulário ao abrir ou trocar o cliente editado (ajuste durante o render, sem efeito)
+  const [syncedWith, setSyncedWith] = useState({ customerToEdit, open });
+  if (syncedWith.customerToEdit !== customerToEdit || syncedWith.open !== open) {
+    setSyncedWith({ customerToEdit, open });
+    setFormData(toFormData(customerToEdit));
+    setError(null);
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name?.trim()) {
+      setError("O nome do cliente é obrigatório.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const res = customerToEdit?.id
+      ? await updateCustomer(customerToEdit.id, formData)
+      : await createCustomer(formData);
+
+    setLoading(false);
+
+    if (res.success) {
+      onOpenChange(false);
+      onSuccess();
+    } else {
+      setError(res.error || "Erro ao salvar cliente.");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <div className="flex items-center gap-2">
+            <User className="text-primary h-5 w-5" />
+            <DialogTitle>{customerToEdit ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
+          </div>
+          <DialogDescription>
+            {customerToEdit
+              ? "Atualize as informações do cliente."
+              : "Preencha os campos para cadastrar um novo cliente."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && (
+          <div className="text-destructive bg-destructive/10 border-destructive/20 rounded-md border p-2.5 text-xs">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <Label
+              htmlFor="customer-nome-completo-razao-social"
+              className="text-foreground text-xs font-medium"
+            >
+              Nome Completo / Razão Social <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="customer-nome-completo-razao-social"
+              placeholder="Ex: João da Silva"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label
+                htmlFor="customer-documento-cpf-ou-cnpj"
+                className="text-foreground text-xs font-medium"
+              >
+                Documento (CPF ou CNPJ)
+              </Label>
+              <Input
+                id="customer-documento-cpf-ou-cnpj"
+                placeholder="000.000.000-00"
+                autoComplete="off"
+                value={formatCpfOrCnpj(formData.document)}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    document: onlyAlphanumeric(e.target.value).slice(0, 14),
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label
+                htmlFor="customer-telefone-whatsapp"
+                className="text-foreground text-xs font-medium"
+              >
+                Telefone / WhatsApp
+              </Label>
+              <Input
+                id="customer-telefone-whatsapp"
+                placeholder="(00) 90000-0000"
+                type="tel"
+                inputMode="tel"
+                autoComplete="off"
+                value={formatPhone(formData.phone)}
+                onChange={(e) =>
+                  setFormData({ ...formData, phone: onlyDigits(e.target.value).slice(0, 11) })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="customer-e-mail" className="text-foreground text-xs font-medium">
+              E-mail
+            </Label>
+            <Input
+              id="customer-e-mail"
+              type="email"
+              placeholder="cliente@exemplo.com"
+              value={formData.email || ""}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label
+              htmlFor="customer-endereco-completo"
+              className="text-foreground text-xs font-medium"
+            >
+              Endereço Completo
+            </Label>
+            <Input
+              id="customer-endereco-completo"
+              placeholder="Rua, Número, Bairro, Cidade - UF"
+              value={formData.address || ""}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            />
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...
+                </>
+              ) : customerToEdit ? (
+                "Atualizar Cliente"
+              ) : (
+                "Cadastrar Cliente"
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

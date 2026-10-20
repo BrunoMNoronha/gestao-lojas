@@ -1,0 +1,59 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { AdminSidebar } from "@/components/admin-sidebar";
+import { AdminTopbar } from "@/components/admin-topbar";
+import { getSessionUser } from "@/lib/authz";
+import { INVALID_SESSION_LOGIN } from "@/lib/login-paths";
+import { getStoreBrandName, isCatalogEnabled } from "@/lib/store-brand";
+import { isReceivablesVisible } from "@/lib/on-account";
+import { isAiInsightsConfigured } from "@/lib/ai-key";
+import { can } from "@/lib/permissions";
+import { OfflineUserGuard } from "@/components/offline-pdv/offline-user-guard";
+import { CommandPalette } from "@/components/command-palette";
+import { NO_INDEX } from "@/lib/site-url";
+
+export const metadata: Metadata = { robots: NO_INDEX };
+
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  // O proxy já barra quem não está logado; aqui a sessão define o menu exibido para o perfil
+  const user = await getSessionUser();
+  if (!user) redirect(INVALID_SESSION_LOGIN);
+
+  const [storeName, catalogEnabled, showReceivables, showInsights] = await Promise.all([
+    getStoreBrandName(),
+    // Mesma leitura de StoreSettings da marca (cache da requisição): sem consulta extra
+    isCatalogEnabled(),
+    // Só consulta o banco para quem vê o item no menu
+    can(user.role, "receivables.view") ? isReceivablesVisible() : true,
+    // Insights só aparece com a chave da API salva (mesma leitura de StoreSettings)
+    can(user.role, "insights.view") ? isAiInsightsConfigured() : false,
+  ]);
+  const navProps = {
+    user: { name: user.name, role: user.role },
+    storeName,
+    features: { onAccount: showReceivables, catalog: catalogEnabled, aiInsights: showInsights },
+  };
+
+  return (
+    <div className="bg-background flex min-h-screen">
+      <a
+        href="#conteudo"
+        className="focus:bg-primary focus:text-primary-foreground sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:px-3 focus:py-2 focus:text-sm"
+      >
+        Pular para o conteúdo
+      </a>
+      {/* Outro usuário entrou no aparelho: apaga a cópia local do PDV do anterior (#37) */}
+      <OfflineUserGuard userId={user.id} />
+      {/* Ctrl/Cmd+K: telas, ações e busca de produtos e clientes */}
+      <CommandPalette user={navProps.user} features={navProps.features} />
+      <AdminSidebar {...navProps} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <AdminTopbar {...navProps} />
+        {/* min-w-0 permite que tabelas largas rolem dentro do próprio contêiner */}
+        <main id="conteudo" className="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

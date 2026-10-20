@@ -1,0 +1,183 @@
+# 🏗️ Arquitetura do Sistema - Gestão de Lojas (ERP / PDV)
+
+Este documento descreve a arquitetura técnica, modelo de dados e padrões de desenvolvimento adotados para guiar agentes de IA e desenvolvedores.
+
+---
+
+## 🧭 Visão Geral da Arquitetura
+
+O sistema é construído como uma aplicação monolítica moderna utilizando **Next.js App Router**, combinando Server-Side Rendering (SSR), Server Components e Server Actions.
+
+```mermaid
+flowchart TD
+    Client["Client Interface (Browser / PDV)"]
+    AppRouter["Next.js App Router (SSR & Server Actions)"]
+    Prisma["Prisma ORM Client Singleton"]
+    Postgres[(Database PostgreSQL)]
+
+    Client <--> AppRouter
+    AppRouter <--> Prisma
+    Prisma <--> Postgres
+```
+
+---
+
+## 🗄️ Modelo de Dados (Prisma Schema)
+
+O schema do banco de dados abrange as entidades fundamentais do sistema de gestão:
+
+```mermaid
+erDiagram
+    User ||--o{ Sale : "registra"
+    Customer ||--o{ Sale : "realiza"
+    Category ||--o{ Product : "possui"
+    Product ||--o{ SaleItem : "pertence"
+    Sale ||--|{ SaleItem : "contém"
+    Sale ||--o| SyncOperation : "chave de idempotência"
+    CatalogOrder ||--|{ CatalogOrderItem : "contém"
+    CatalogOrder |o--o| Sale : "concluído por"
+    Product ||--o{ StockMovement : "possui"
+
+    User {
+        string id PK
+        string name
+        string email UK
+        enum role "ADMIN | MANAGER | SELLER"
+    }
+
+    Product {
+        string id PK
+        string name
+        string sku UK
+        string barcode UK
+        decimal costPrice
+        decimal salePrice
+        enum unit "UN | KG | LT | CX | M"
+        decimal currentStock
+        decimal minStock
+        boolean showInCatalog
+        string description
+        string imageUrl
+    }
+
+    StoreSettings {
+        string id PK "default"
+        string companyName
+        string tradeName
+        string document
+        string phone
+        string email
+        string address
+        string receiptFooterNote
+        string whatsappNumber "só dígitos, com DDI"
+        boolean catalogEnabled
+        boolean onAccountEnabled "fiado permitido (padrão true)"
+        int onAccountDueDays "prazo do título; nulo = sem vencimento"
+        decimal onAccountCreditLimit "limite por cliente; nulo = sem limite"
+        boolean onAccountBlockOverdue
+    }
+
+    Sale {
+        string id PK
+        int code
+        decimal total
+        decimal discount
+        enum paymentMethod "MONEY | PIX | CREDIT_CARD | DEBIT_CARD | ON_ACCOUNT"
+        datetime occurredAt "quando aconteceu (relatórios e vencimento)"
+        datetime createdAt "quando o servidor recebeu"
+    }
+
+    SyncOperation {
+        uuid id PK "operationId gerado no cliente"
+        enum kind "SALE_CREATE"
+        string payloadHash "SHA-256 do payload canônico"
+        string userId FK
+        string cashRegisterId FK
+        string saleId UK
+    }
+```
+
+---
+
+## 🧱 Padrões de Projeto (Design Patterns)
+
+### 1. Singleton do Prisma Client (`src/lib/prisma.ts`)
+Para evitar múltiplas conexões em ambiente de desenvolvimento durante o Hot Module Replacement (HMR) do Next.js.
+
+### 2. Server Actions para Manipulação de Dados (`src/actions/`)
+Toda a lógica de negócios e persistência deve ser encapsulada em Server Actions (`"use server"`), retornando objetos tipados padronizados:
+```typescript
+{ success: boolean; data?: T; error?: string }
+```
+
+### 3. Componentes da Interface (`src/components/`)
+- **`src/components/ui/`**: Componentes puramente visuais e reutilizáveis do Shadcn UI.
+- **`src/components/`**: Componentes de domínio (formulários, tabelas e visões específicas).
+- **Navegação do painel:** `admin-sidebar.tsx` (menu lateral; gaveta no celular) e `admin-topbar.tsx` (barra superior fixa com os atalhos "PDV sem internet", "Sincronização offline" e catálogo público, a instalação do app e o menu do usuário com Minha conta, tema e sair). Rotas com `placement: "topbar"` em `APP_ROUTES` saem do menu lateral e continuam na paleta de comandos; o link do catálogo só aparece com o catálogo ativo.
+
+### 4. Catálogo público (`/catalogo`, issue #17)
+Única área sem login além de `/login`. Liberada explicitamente em `src/auth.config.ts`.
+- **Leitura pública:** funções de servidor em `src/lib/catalog.ts` (não são Server Actions). Os `select` trazem só campos de vitrine; o saldo vira apenas "Disponível"/"Indisponível" e custo e estoque mínimo nunca são lidos.
+- **Pedido:** `POST /api/catalogo/pedido` (`src/lib/catalog-order.ts`) valida o carrinho, recalcula preços com `Prisma.Decimal`, exclui itens ocultos ou sem estoque e devolve a mensagem e a URL `wa.me`. Não grava nada no banco. O carrinho exige nome e telefone com DDD. A mensagem leva o **link do pedido** (`/catalogo/pedido?p=`, issue #81): itens, chave UUID, nome e telefone criptografados com AES-256-GCM (`src/lib/order-link.ts`, só no servidor), com chave derivada do `AUTH_SECRET` por HKDF. Quem vê a URL não lê o contato e um token alterado é recusado; trocar o `AUTH_SECRET` invalida os links ainda não abertos.
+- **Link do pedido:** aberto por um usuário logado com `pdv.use`, gera o `CatalogOrder` pela Server Action `registerCatalogOrderFromLink` (POST, nunca na renderização), com o nome e o telefone do cliente. Se exatamente um cliente ativo tiver o mesmo telefone, o pedido é vinculado a ele e o PDV já abre com esse cliente selecionado. A chave do link é única no banco: abrir o mesmo link de novo, inclusive ao mesmo tempo, devolve o mesmo pedido; a mesma chave com outros itens ou outro contato é recusada. Aberto por um visitante, só refaz o carrinho. Gerar o pedido não reserva estoque nem mexe em caixa, fiado ou faturamento.
+- **Cadastro do cliente pelo pedido:** sem cadastro vinculado, o detalhe do pedido oferece "Cadastrar cliente" com o nome (editável) e o telefone do pedido (`registerCatalogOrderCustomer`, `customers.manage`). Mesmo telefone em cliente ativo bloqueia e oferece vincular ao existente (`linkCatalogOrderCustomer`); nome igual só avisa e pede confirmação. Uma trava por telefone (`pg_advisory_xact_lock`) impede dois cadastros simultâneos do mesmo número. Vale em qualquer situação do pedido e não altera a venda já concluída.
+- **Pedidos no painel:** `/admin/pedidos` (`pdv.use`, `src/actions/catalog-orders.ts`) lista, detalha, cancela e carrega no PDV (`/admin/pdv?pedido=`), revalidando preço, exclusão e estoque e mostrando as diferenças antes da venda. A venda (`createSale` com `catalogOrderId`) troca o pedido de `OPEN` para `CONVERTED` com `updateMany` condicional na mesma transação da baixa de estoque: duas conclusões ou uma conclusão e um cancelamento simultâneos deixam só uma valer, e uma falha da venda devolve o pedido a disponível. Abandonar o carrinho mantém o pedido disponível. O PDV sem internet não conclui pedidos.
+- **Carrinho:** `src/lib/catalog-cart.ts`, no `localStorage` do navegador; regras de unidade e quantidade compartilhadas em `src/lib/catalog-shared.ts`.
+- **Painel:** produtos entram no catálogo por opt-in (`catalog.manage`); WhatsApp e liga/desliga ficam nas Configurações (`settings.manage`).
+
+### 5. Venda no Fiado (issue #29)
+Parâmetros em `StoreSettings`, editados nas Configurações (`settings.manage`) e lidos no servidor por `src/lib/on-account.ts`.
+- **Venda:** a transação da venda (`registerSale`, em `src/lib/create-sale.ts`) aplica as regras: fiado desligado recusa `ON_ACCOUNT`; com bloqueio de vencidos ou limite, trava a linha do cliente e recusa se houver título vencido não quitado ou se *saldo em aberto + venda* passar do limite. O prazo preenche `Receivable.dueDate` com 00:00 (fuso da loja) do dia da venda + N; o título fica vencido a partir do dia seguinte (`src/lib/store-time.ts`).
+- **Data:** o vencimento parte de `Sale.occurredAt` (dia em que a venda aconteceu), a mesma data usada nos relatórios e no dashboard.
+- **Menu:** `AppRoute.feature = "onAccount"` esconde "Contas a Receber" (e o card do Dashboard) só quando o fiado está desligado **e** não há títulos a receber. É só exibição: a página continua protegida por `receivables.view` e, pela URL, mostra um estado vazio informativo.
+
+### 6. Idempotência da venda (issue #35)
+`createSale` (`src/actions/sales.ts`) só autoriza (`pdv.use`) e revalida as telas; as regras ficam em `registerSale` (`src/lib/create-sale.ts`); a sincronização offline (#38) tem regras próprias em `src/lib/offline-sale.ts`, com a mesma chave de idempotência.
+- **Chave:** o PDV gera um `operationId` (UUID, `src/lib/operation-id.ts`) por tentativa de finalização e o reaproveita enquanto o carrinho, o cliente e o pagamento não mudam.
+- **Mesma transação:** a `SyncOperation` é gravada logo após travar o caixa e antes de qualquer efeito, junto com a venda, os itens, o estoque e o título. Mesma chave e mesmo hash devolvem a venda gravada; hash, operador ou tipo diferentes são recusados; rollback não deixa registro. A garantia é o índice único da chave (violação P2002 → devolve o resultado gravado), inclusive com chamadas simultâneas.
+- **Caixa original:** a venda leva o id do caixa aberto quando o PDV carregou e trava esse caixa (`lockOwnOpenCashRegisterById`). Se ele foi fechado, a venda é recusada, nunca vai para o caixa aberto depois.
+- **Datas:** `Sale.occurredAt` é quando a venda aconteceu e vale para relatórios, dashboard e vencimento do Fiado; `createdAt` é quando o servidor a recebeu. Na venda online as duas são iguais.
+
+### 7. PDV que abre sem internet (issue #37)
+Detalhes e decisões em `docs/OFFLINE.md` (seções 5, 6 e 7).
+- **Service Worker:** Serwist (`src/service-worker/sw.ts`, servido em `/serwist/sw.js` pela rota `src/app/serwist/[path]/route.ts`). Guarda só os arquivos da versão (`_next/static`, `public/`) e as páginas estáticas `/pdv` e `/offline`; as demais navegações vão à rede e, sem conexão, mostram `/offline`. A versão nova espera o "Atualizar o app".
+- **Tela:** `/pdv` (`src/app/pdv/page.tsx`) é estática e fora do `/admin`; o app (`src/components/offline-pdv/`) roda só no navegador e reaproveita o `PdvTerminal`. O `/admin/pdv` continua sendo o PDV online.
+- **Dados no navegador:** Dexie (`src/lib/offline/db.ts`), um banco por operador e um banco comum com o aparelho. A comunicação usa os Route Handlers `GET /api/offline/ping`, `POST /api/offline/prepare` e `GET /api/offline/snapshot` (`src/lib/offline/sync.ts`).
+- **Servidor:** `OfflineDevice` e `OfflineGrant` (autorização de 12 h vinculada ao caixa aberto), em `src/lib/offline-device.ts`.
+- **Saída:** `signOutClearingOfflineData` (`src/lib/offline/sign-out.ts`) apaga a cópia local antes de encerrar a sessão; `OfflineUserGuard`, no layout do painel, apaga a cópia de outro operador.
+
+### 8. Sincronização das vendas offline (issue #38, parte 1: servidor)
+Detalhes, conflitos e pendências em `docs/OFFLINE.md` (seções 3 a 5).
+- **Envio:** `POST /api/offline/operations` (`src/app/api/offline/operations/route.ts`, `authorize("pdv.use")`), lote de até 50 operações com resultado por operação. Regras em `syncOfflineOperation` (`src/lib/offline-sale.ts`), separadas do `registerSale` online: preço praticado conferido no histórico `ProductPrice`, estoque pode ficar negativo, caixa original travado pelo id mesmo fechado (`lockCashRegisterById`), data limitada ao período da autorização, Fiado recusado.
+- **Idempotência:** a mesma `SyncOperation` da #35, agora com `status` (APPLIED, CONFLICT, APPROVED, DISCARDED), o payload normalizado e `appliedTxid`. Conflito grava só a operação, sem efeito.
+- **Pendências:** `ReconciliationIssue` (estoque negativo, venda pós-fechamento, preço divergente, data ajustada, cliente excluído), gravadas na transação da venda.
+- **Conciliação:** Server Actions em `src/actions/offline-reconciliation.ts` com `authorize("offline.reconcile")` (ADMIN e MANAGER): listar, aprovar (autoria e caixa originais), descartar com motivo e dar ciência.
+
+### 9. Fila de vendas no navegador (issue #38, parte 2)
+Estados e regras em `docs/OFFLINE.md` (seções 3.2, 3.3, 4 e 6.2).
+- **Venda no `/pdv`:** o `PdvTerminal` recebe `submitSale`; a venda vira operação `sale.create` (`src/lib/offline/sale-operation.ts`, valores em inteiros e enviados como texto) e é gravada na fila do Dexie (versão 2 do banco, `src/lib/offline/db.ts`) antes de o recibo aparecer. Sem `submitSale` (`/admin/pdv`), o terminal segue com o `createSale`.
+- **Envio:** `sendQueue` (`src/lib/offline/queue.ts`) manda lotes de até 50 ao `POST /api/offline/operations`, com uma aba por vez (Web Locks), logo depois da venda, a cada checagem de conexão e no botão "Sincronizar". Roda em qualquer tela do `/pdv` com conexão, inclusive com caixa fechado ou autorização vencida.
+- **Saldo reservado:** o terminal desconta do saldo da cópia as vendas que ela ainda não mostra; uma venda sincronizada deixa de reservar quando o `appliedTxid` dela fica abaixo do `watermark` da cópia.
+- **Telas:** lista "Vendas deste aparelho" no cabeçalho do `/pdv` (situação e recibo, provisório ou oficial) e bloqueio do "Fechar Caixa" com vendas do caixa ainda não enviadas por este navegador.
+- **Consulta de estoque (#54):** botão "Estoque" no cabeçalho do `/pdv` (`offline-stock-panel.tsx`), só leitura, com e sem conexão: saldo da cópia menos as vendas da fila ainda não refletidas (`availableStock`, o mesmo limite do terminal), estoque baixo pelo `isStockLow` e filtros (`src/lib/offline/stock-view.ts`). Abre por cima do terminal, sem rota nova. A cópia leva o `minStock` (`docs/OFFLINE.md` 3.8).
+
+### 10. Conciliação e aparelhos (issue #38, parte 3)
+Detalhes em `docs/OFFLINE.md` (seções 3.3, 3.5 e 4). Migration `0010_offline_reconciliation`.
+- **Tela:** `/admin/sincronizacao` (`requirePageAccess("offline.reconcile")`, `src/components/offline-reconciliation-manager.tsx`): conflitos (aprovar ou descartar com motivo), pendências (ciência) e aparelhos (`listOfflineDevices`, `revokeOfflineDevice` em `src/actions/offline-reconciliation.ts`).
+- **Envio assistido:** `syncOfflineOperation` aceita a operação de outro operador só de quem tem `offline.reconcile` e a grava sempre como conflito (`ASSISTED_SUBMISSION` ou o motivo encontrado), com `SyncOperation.submittedById`. No `/pdv`, `AssistedQueuePanel` lista as filas de outros operadores guardadas no navegador.
+- **Aviso do fechamento:** `POST /api/offline/report` grava `OfflineGrant.pendingCount`/`pendingReportedAt` (`src/lib/offline-pending.ts`); `getCurrentCashRegister` devolve `offlinePending` (aparelhos que nunca informaram, com vendas ou sem contato há mais de 10 min).
+- **Caixa e estoque:** `computeCashSummary` deixa de fora as vendas com pendência `POST_CLOSING_SALE`; o detalhe do caixa as mostra como ajuste pós-fechamento. A tela de estoque destaca saldos negativos.
+
+---
+
+## 🧪 Boas Práticas & Validações
+
+- **Execução do Build:** Sempre valide alterações executando `pnpm build`.
+- **Testes de integração:** `pnpm test:integration` (vitest, `tests/integration/`) roda contra um PostgreSQL real e descartável em `TEST_DATABASE_URL`; ver o README.
+- **Testes unitários:** `pnpm test:unit` (vitest, `tests/unit/`), sem banco; a fila do PDV usa o IndexedDB simulado (`fake-indexeddb`).
+- **Testes de navegador:** `pnpm test:e2e` (Playwright, `tests/e2e/`) contra o build de produção na porta 3200, com o banco de `TEST_DATABASE_URL` e o `siteverify` do reCAPTCHA simulado no servidor; ver o README.
+- **Sessão recusada:** com o cookie ainda válido de um usuário desativado, o servidor manda para `/login?sessao=invalida` (`src/lib/login-paths.ts`), que o proxy não devolve para `/`; sem isso, `/` e `/login` se alternariam sem fim.
+- **Regeneração de Tipos:** Execute `pnpm prisma generate` após qualquer modificação em `prisma/schema.prisma`.
+- **Migrations:** Toda mudança de schema gera uma migration versionada em `prisma/migrations/` (`pnpm db:migrate --name <descricao>`). Em produção as migrations são aplicadas por passo explícito (`pnpm db:deploy`, conexão direta via `DIRECT_URL`), nunca no build. Ver `docs/DEPLOY.md`.
+- **Primeiro administrador:** Criado por `src/lib/bootstrap-admin.ts` apenas quando o banco não tem usuários, a partir de `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Não há credenciais fixas em produção.
+- **Formatação de Código:** O projeto utiliza Prettier integrado ao Tailwind CSS para ordenação de classes.

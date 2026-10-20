@@ -1,0 +1,48 @@
+{
+  "viewport": "Pixel 7",
+  "results": [
+    {
+      "path": "/admin/pdv",
+      "htmlBytes": 20963218,
+      "responseMs": 7432,
+      "rows": 0,
+      "databaseCalls": 14
+    },
+    {
+      "path": "/admin/produtos",
+      "htmlBytes": 78581412,
+      "responseMs": 27916,
+      "rows": 10001,
+      "databaseCalls": 6
+    },
+    {
+      "path": "/admin/clientes",
+      "htmlBytes": 266637398,
+      "responseMs": 138277,
+      "rows": 50001,
+      "databaseCalls": 8
+    },
+    {
+      "path": "/admin/estoque",
+      "htmlBytes": 8635769,
+      "responseMs": 9808,
+      "rows": 0,
+      "databaseCalls": 13
+    },
+    {
+      "path": "/catalogo",
+      "htmlBytes": 167739,
+      "responseMs": 2107,
+      "rows": 0,
+      "databaseCalls": 4
+    },
+    {
+      "path": "/catalogo",
+      "htmlBytes": 167739,
+      "responseMs": 1275,
+      "rows": 0,
+      "databaseCalls": 5
+    }
+  ],
+  "customerButtons": 50002
+}

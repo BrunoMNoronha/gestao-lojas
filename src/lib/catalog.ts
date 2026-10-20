@@ -1,0 +1,240 @@
+import { unstable_cache } from "next/cache";
+import { CATALOG_CACHE_OPTIONS } from "@/lib/catalog-cache";
+import { cache } from "react";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { CATALOG_PAGE_SIZE, type CatalogFilters, type CatalogUnit } from "@/lib/catalog-shared";
+
+// Leitura pública do catálogo (issue #17), sem sessão. Não são Server Actions: são funções de
+// servidor chamadas pelas páginas de /catalogo e pela rota do pedido. Os `select` trazem só campos
+// de vitrine; o saldo é lido apenas para virar "Disponível"/"Indisponível" e nunca sai daqui.
+// Custo e estoque mínimo nunca são consultados.
+
+export interface CatalogStore {
+  enabled: boolean;
+  name: string;
+  whatsappNumber: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  instagram: string | null;
+}
+
+export interface CatalogProduct {
+  id: string;
+  name: string;
+  description: string | null;
+  imageUrl: string | null;
+  categoryName: string | null;
+  price: number;
+  unit: CatalogUnit;
+  available: boolean;
+}
+
+export interface CatalogPage {
+  products: CatalogProduct[];
+  total: number;
+  page: number;
+  pageCount: number;
+}
+
+const productSelect = {
+  id: true,
+  name: true,
+  description: true,
+  imageUrl: true,
+  salePrice: true,
+  unit: true,
+  currentStock: true,
+  category: { select: { name: true } },
+} satisfies Prisma.ProductSelect;
+
+type ProductRow = Prisma.ProductGetPayload<{ select: typeof productSelect }>;
+
+function toCatalogProduct(row: ProductRow): CatalogProduct {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    imageUrl: row.imageUrl,
+    categoryName: row.category?.name ?? null,
+    price: Number(row.salePrice),
+    unit: row.unit as CatalogUnit,
+    available: row.currentStock.gt(0),
+  };
+}
+
+function joinAddress(parts: {
+  address: string | null;
+  number: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
+}): string | null {
+  const street = [parts.address, parts.number].filter(Boolean).join(", ");
+  const city = [parts.city, parts.state].filter(Boolean).join("/");
+  const line = [street, parts.neighborhood, city].filter(Boolean).join(" – ");
+  return line || null;
+}
+
+/** Dados públicos da loja; null se o banco falhar (a página mostra "indisponível"). */
+const readCatalogStore = unstable_cache(
+  async (): Promise<CatalogStore | null> => {
+    try {
+      const settings = await prisma.storeSettings.findUnique({
+        where: { id: "default" },
+        select: {
+          catalogEnabled: true,
+          tradeName: true,
+          whatsappNumber: true,
+          phone: true,
+          email: true,
+          address: true,
+          number: true,
+          neighborhood: true,
+          city: true,
+          state: true,
+          instagram: true,
+        },
+      });
+      if (!settings) {
+        return {
+          enabled: false,
+          name: "Catálogo",
+          whatsappNumber: null,
+          phone: null,
+          email: null,
+          address: null,
+          instagram: null,
+        };
+      }
+      return {
+        enabled: settings.catalogEnabled,
+        name: settings.tradeName.trim() || "Catálogo",
+        whatsappNumber: settings.whatsappNumber || null,
+        phone: settings.phone || null,
+        email: settings.email || null,
+        address: joinAddress(settings),
+        instagram: settings.instagram || null,
+      };
+    } catch (error) {
+      console.error("Erro ao carregar os dados públicos da loja:", error);
+      throw error;
+    }
+  },
+  ["catalog-store-v1"],
+  CATALOG_CACHE_OPTIONS,
+);
+
+/** Página de produtos visíveis com busca, categoria, "somente disponíveis" e ordenação. */
+const readCatalogProducts = unstable_cache(
+  async (filters: CatalogFilters): Promise<CatalogPage | null> => {
+    try {
+      const where: Prisma.ProductWhereInput = { showInCatalog: true, deletedAt: null };
+      if (filters.q) {
+        where.OR = [
+          { name: { contains: filters.q, mode: "insensitive" } },
+          { sku: { contains: filters.q, mode: "insensitive" } },
+          { barcode: { contains: filters.q, mode: "insensitive" } },
+        ];
+      }
+      if (filters.category) where.categoryId = filters.category;
+      if (filters.available) where.currentStock = { gt: 0 };
+
+      const orderBy: Prisma.ProductOrderByWithRelationInput[] =
+        filters.sort === "menor-preco"
+          ? [{ salePrice: "asc" }, { name: "asc" }, { id: "asc" }]
+          : filters.sort === "maior-preco"
+            ? [{ salePrice: "desc" }, { name: "asc" }, { id: "asc" }]
+            : [{ name: "asc" }, { id: "asc" }];
+
+      const requested = Math.max(1, filters.page);
+      const query = (page: number) =>
+        prisma.product.findMany({
+          where,
+          select: productSelect,
+          orderBy,
+          skip: (page - 1) * CATALOG_PAGE_SIZE,
+          take: CATALOG_PAGE_SIZE,
+        });
+      const [total, firstRows] = await Promise.all([
+        prisma.product.count({ where }),
+        query(requested),
+      ]);
+      const pageCount = Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE));
+      const page = Math.min(requested, pageCount);
+      const rows = page === requested ? firstRows : await query(page);
+
+      return { products: rows.map(toCatalogProduct), total, page, pageCount };
+    } catch (error) {
+      console.error("Erro ao carregar os produtos do catálogo:", error);
+      throw error;
+    }
+  },
+  ["catalog-products-v1"],
+  CATALOG_CACHE_OPTIONS,
+);
+
+/** Categorias com ao menos um produto visível no catálogo. */
+const readCatalogCategories = unstable_cache(
+  async (): Promise<{ id: string; name: string }[]> => {
+    try {
+      return await prisma.category.findMany({
+        where: { deletedAt: null, products: { some: { showInCatalog: true, deletedAt: null } } },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      });
+    } catch (error) {
+      console.error("Erro ao carregar as categorias do catálogo:", error);
+      throw error;
+    }
+  },
+  ["catalog-categories-v1"],
+  CATALOG_CACHE_OPTIONS,
+);
+
+/** Produto visível no catálogo ou null (inexistente, oculto ou falha de banco). */
+const readCatalogProduct = unstable_cache(
+  async (id: string): Promise<CatalogProduct | null> => {
+    try {
+      const row = await prisma.product.findFirst({
+        where: { id, showInCatalog: true, deletedAt: null },
+        select: productSelect,
+      });
+      return row ? toCatalogProduct(row) : null;
+    } catch (error) {
+      console.error("Erro ao carregar o produto do catálogo:", error);
+      throw error;
+    }
+  },
+  ["catalog-product-v1"],
+  CATALOG_CACHE_OPTIONS,
+);
+
+/** Produtos visíveis no catálogo para o sitemap.xml (só id e data da última alteração). */
+const readCatalogSitemapEntries = unstable_cache(
+  async (): Promise<{ id: string; updatedAt: string }[]> => {
+    try {
+      const rows = await prisma.product.findMany({
+        where: { showInCatalog: true, deletedAt: null },
+        select: { id: true, updatedAt: true },
+        orderBy: { updatedAt: "desc" },
+      });
+      // ISO em vez de Date: o unstable_cache serializa o retorno em JSON
+      return rows.map((row) => ({ id: row.id, updatedAt: row.updatedAt.toISOString() }));
+    } catch (error) {
+      console.error("Erro ao listar os produtos do catálogo para o sitemap:", error);
+      throw error;
+    }
+  },
+  ["catalog-sitemap-v1"],
+  CATALOG_CACHE_OPTIONS,
+);
+
+// Falhas ficam fora do cache: uma indisponibilidade transitória não vira vitrine vazia por 60 s.
+export const getCatalogStore = cache(() => readCatalogStore().catch(() => null));
+export const getCatalogProduct = cache((id: string) => readCatalogProduct(id).catch(() => null));
+export const getCatalogProducts = (filters: CatalogFilters) =>
+  readCatalogProducts(filters).catch(() => null);
+export const getCatalogCategories = () => readCatalogCategories().catch(() => []);
+export const getCatalogSitemapEntries = () => readCatalogSitemapEntries().catch(() => []);

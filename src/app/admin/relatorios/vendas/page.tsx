@@ -1,0 +1,44 @@
+import { getSalesReport } from "@/actions/reports";
+import { getCashOperators } from "@/actions/cash-register";
+import { getStoreSettings } from "@/actions/settings";
+import { connection } from "next/server";
+import { currentMonthDayKeys } from "@/lib/store-time";
+import { SalesReportView } from "@/components/sales-report-view";
+import { requirePageAccess } from "@/lib/authz";
+import { UnavailableState } from "@/components/empty-state";
+
+export const metadata = {
+  title: "Relatório de Vendas",
+};
+
+export default async function RelatorioVendasPage() {
+  // Período padrão depende da data atual e as vendas mudam a cada minuto
+  await connection();
+  await requirePageAccess("reports.view");
+
+  const initialFilters = currentMonthDayKeys();
+  const [operators, report, storeSettings] = await Promise.all([
+    getCashOperators(),
+    getSalesReport({ ...initialFilters, take: 50 }),
+    // Cabeçalho do comprovante reimpresso pelo detalhe da venda
+    getStoreSettings(),
+  ]);
+
+  if (!report.success || !report.data) {
+    return (
+      <UnavailableState
+        title="Relatório indisponível"
+        description={report.error ?? "Não foi possível gerar o relatório. Verifique a conexão com o banco de dados."}
+      />
+    );
+  }
+
+  return (
+    <SalesReportView
+      operators={operators}
+      initialFilters={initialFilters}
+      initialReport={report.data}
+      storeSettings={storeSettings}
+    />
+  );
+}

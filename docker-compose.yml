@@ -1,0 +1,76 @@
+# Ambiente de DESENVOLVIMENTO: um único container com PostgreSQL 17 + next dev (hot reload).
+# Uso: docker compose up --build --watch   →   http://localhost:3000
+# Produção não usa este arquivo (Vercel + Neon, ver docs/DEPLOY.md).
+name: gestao-lojas
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/dev/Dockerfile
+    image: gestao-lojas-dev
+    container_name: gestao-lojas-dev
+    ports:
+      # Portas no host trocáveis por APP_PORT / DB_PORT (ex.: se outro projeto já usa a 3000)
+      - "${APP_PORT:-3000}:3000"
+      # Postgres acessível só pelo host (Prisma Studio, DBeaver)
+      - "127.0.0.1:${DB_PORT:-5434}:5432"
+    volumes:
+      # prisma/ montado direto: `prisma migrate dev` no container grava as migrations no projeto
+      - ./prisma:/app/prisma
+      - pgdata:/var/lib/postgresql/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Valores fixos do container: sobrescrevem o .env
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gestao_lojas
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/gestao_lojas?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@127.0.0.1:5432/gestao_lojas?schema=public
+      NODE_ENV: development
+      AUTH_TRUST_HOST: "true"
+      AUTH_SECRET: ${AUTH_SECRET:-dev-only-secret-troque-em-producao}
+      ENABLE_STORE_TEST_TOOLS: "true"
+    # Hot reload: um bind mount do Windows/macOS não repassa eventos de arquivo ao container e o
+    # Turbopack não recompila. O `--watch` observa no host e copia as mudanças para dentro.
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          initial_sync: true
+          ignore:
+            - node_modules/
+            - .next/
+            - prisma/
+            - docker/
+            - .claude/
+            - package.json
+            - pnpm-lock.yaml
+            - pnpm-workspace.yaml
+            - next.config.ts
+        - action: sync+restart
+          path: next.config.ts
+          target: /app/next.config.ts
+        - action: rebuild
+          path: package.json
+        - action: rebuild
+          path: pnpm-lock.yaml
+        - action: rebuild
+          path: pnpm-workspace.yaml
+        - action: rebuild
+          path: docker/dev
+    # Só abre conexão TCP na porta do Next: uma requisição HTTP renderizaria o /login e
+    # apareceria no log a cada intervalo.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -h 127.0.0.1 -U postgres && node -e \"require('net').connect(3000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  pgdata:

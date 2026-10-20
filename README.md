@@ -1,36 +1,146 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gestão de Lojas — ERP / PDV
 
-## Getting Started
+Sistema de gestão comercial e frente de caixa (PDV) para lojas físicas, distribuidores,
+agropecuárias e mercados.
 
-First, run the development server:
+**Módulos:** autenticação · produtos e categorias · clientes e fornecedores · PDV · estoque e
+movimentações · caixa (abertura, sangrias, fechamento) · contas a receber (fiado) · dashboard e
+relatório de vendas.
+
+**Stack:** Next.js 16 (App Router) · TypeScript · Prisma 6 + PostgreSQL · Auth.js v5 ·
+Tailwind CSS v4 + Shadcn UI · pnpm.
+
+## Rodando localmente
+
+### Com Docker (recomendado)
+
+Pré-requisito: Docker com Compose 2.22+. Um único container sobe o PostgreSQL 17 e o `next dev`
+com hot reload, e as migrations são aplicadas a cada início.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up --build --watch   # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Hot reload:** o `--watch` copia para o container cada arquivo editado na sua pasta. Sem ele o
+  app roda com o código da última build e não atualiza. No Windows/macOS um volume simples não
+  serve, porque o Turbopack não recebe os eventos de arquivo. Mudar `package.json` ou
+  `pnpm-lock.yaml` refaz a imagem sozinho; `next.config.ts` reinicia o Next.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Login: no primeiro acesso é criado o admin local `admin@gestaolojas.com` / `admin123` (ou o de
+  `ADMIN_EMAIL` / `ADMIN_PASSWORD`, se houver `.env`). O `.env` é opcional: banco, `AUTH_SECRET` de
+  desenvolvimento e `ENABLE_STORE_TEST_TOOLS` já vêm do `docker-compose.yml`.
+- Portas ocupadas por outro projeto? Use `APP_PORT` e `DB_PORT` (no `.env` ou na linha de comando).
+  O PostgreSQL fica no host em `127.0.0.1:5434` (usuário/senha `postgres`, banco `gestao_lojas`).
+- Comandos dentro do container: `docker compose exec app pnpm db:migrate --name <nome>`,
+  `docker compose exec app pnpm lint`, `docker compose exec app pnpm check:actions`. A pasta
+  `prisma/` é montada direto, então migrations criadas no container aparecem no projeto.
+- `docker compose down` para; `docker compose down -v` apaga também o banco.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Este compose é só para desenvolvimento; produção roda na Vercel + Neon
+([`docs/DEPLOY.md`](docs/DEPLOY.md)).
 
-## Learn More
+### Sem Docker
 
-To learn more about Next.js, take a look at the following resources:
+Pré-requisitos: Node.js 20+, pnpm e um PostgreSQL.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm install
+cp .env.example .env        # ajuste DATABASE_URL / DIRECT_URL e AUTH_SECRET
+pnpm db:migrate             # aplica as migrations no banco local
+pnpm dev                    # http://localhost:3000
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+No primeiro login, se o banco não tiver usuários, o administrador é criado a partir de
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` (em desenvolvimento, sem essas variáveis, é criado o admin local
+descrito em `.env.example`).
 
-## Deploy on Vercel
+## Comandos
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Comando                         | Uso                                           |
+| ------------------------------- | --------------------------------------------- |
+| `pnpm dev`                      | Servidor de desenvolvimento                   |
+| `pnpm build`                    | Build de produção e checagem de tipos         |
+| `pnpm db:migrate --name <nome>` | Cria e aplica uma migration (desenvolvimento) |
+| `pnpm db:deploy`                | Aplica migrations pendentes (produção)        |
+| `pnpm test:integration`         | Testes de integração com PostgreSQL real      |
+| `pnpm test:unit`                | Testes unitários (fila do PDV, sem banco)     |
+| `pnpm test:e2e`                 | Build + testes de navegador (Playwright)      |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Testes
+
+Os testes de integração (`tests/integration/`) usam um PostgreSQL real e **descartável**: o
+`TEST_DATABASE_URL` precisa apontar para um banco local com `test` no nome (outros são recusados),
+porque as tabelas são apagadas entre os testes. As migrations são aplicadas automaticamente.
+
+```bash
+docker run --rm -d --name gestao-lojas-test -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=gestao_lojas_test -p 127.0.0.1:55432:5432 postgres:17-alpine
+TEST_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55432/gestao_lojas_test" pnpm test:integration
+docker stop gestao-lojas-test
+```
+
+No PowerShell, defina antes `$env:TEST_DATABASE_URL = "postgresql://..."` e rode
+`pnpm test:integration`.
+
+Os testes unitários (`tests/unit/`, `pnpm test:unit`) não usam banco: cobrem a fila de vendas do
+PDV sem internet com o IndexedDB simulado pelo `fake-indexeddb` e o saldo da consulta de estoque.
+
+### Testes de navegador
+
+Os cenários offline de ponta a ponta (`tests/e2e/`, Playwright) rodam contra o **build de
+produção** (`next start` na porta 3200), porque o Service Worker só existe nele, com o mesmo banco
+descartável dos testes de integração (`TEST_DATABASE_URL`). O login usa o reCAPTCHA de produção com
+o `siteverify` do Google simulado no servidor (`tests/e2e/support/mock-siteverify.mjs`); nenhuma
+chave real é necessária.
+
+```bash
+pnpm exec playwright install chromium
+TEST_DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:55432/gestao_lojas_test" pnpm test:e2e
+```
+
+`pnpm test:e2e` faz o build e roda tudo; `pnpm test:e2e:run` roda sem refazer o build. O relatório
+fica em `playwright-report/` e os rastros das falhas em `test-results/`.
+
+Cada cenário roda em três navegadores: `chromium`, `msedge` (o Edge instalado na máquina) e
+`android` (Chrome no Android emulado). Para rodar só um, use `--project`, por exemplo
+`pnpm test:e2e:run --project=chromium`. A câmera do leitor de código de barras é simulada com um
+vídeo gerado no início da suíte. O que cada camada de teste comprova, e o que fica para a
+homologação, está em `docs/OFFLINE.md`, seção 9.1.
+
+## PDV sem internet
+
+O app é instalável (manifest e Service Worker com Serwist). Em `/pdv`, o operador com o caixa aberto
+prepara o aparelho uma vez com internet; depois o PDV abre e consulta produtos e clientes sem
+conexão por até 12 horas, com os dados da última sincronização. Toda venda do `/pdv` é gravada
+no aparelho e enviada ao servidor na hora, se houver conexão, ou quando ela voltar; o recibo sai
+provisório até a venda ser sincronizada. O carrinho em montagem também fica no aparelho: recarregar
+ou reabrir o `/pdv` traz o carrinho de volta. Conflitos, pendências e aparelhos ficam em
+**Sincronização offline** (`/admin/sincronizacao`, ADMIN e MANAGER). O Service Worker só é
+registrado no build de produção
+(`pnpm build` / `pnpm start`); em `pnpm dev` ele fica desligado. Detalhes em
+[`docs/OFFLINE.md`](docs/OFFLINE.md).
+
+**Instalar o app:** use "Instalar app Gestão Lojas" na barra superior do painel (no celular, em "⋯ Mais
+opções") ou no cabeçalho do `/pdv`
+(Chrome e Edge abrem a janela de instalação). Quando o navegador não oferece a janela, o botão vira
+"Como instalar o app", com o passo a passo da plataforma (no iPhone/iPad: Compartilhar → Adicionar à
+Tela de Início). Instalar não prepara o PDV para uso sem internet: a preparação continua no `/pdv`,
+com conexão. Detalhes em [`docs/OFFLINE.md`](docs/OFFLINE.md), seção 6.1.1.
+
+## Caixas e unidades avulsas
+
+Produtos CX podem ser vinculados a um produto UN com um fator de conversão. A abertura física
+da caixa registra saída e entrada juntas, com preços independentes e histórico próprio. A abertura
+exige conexão; o PDV sugere o mínimo necessário e pede confirmação. Veja
+[`docs/CAIXAS-AVULSAS.md`](docs/CAIXAS-AVULSAS.md).
+
+## Documentação
+
+- [`AGENTS.md`](AGENTS.md) — convenções para agentes de IA e desenvolvedores
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — arquitetura e modelo de dados
+- [`docs/DEPLOY.md`](docs/DEPLOY.md) — deploy em produção (Vercel + Neon)
+- [`docs/OFFLINE.md`](docs/OFFLINE.md) — decisões e arquitetura da operação offline (#33)
+
+## Acesso rápido para testes
+
+A tela de login permite escolher um usuário em ambientes não produtivos explicitamente habilitados.
+Veja [ativação e bloqueio de produção](docs/ACESSO-RAPIDO.md). O recurso vem desligado por padrão.

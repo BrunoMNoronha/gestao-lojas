@@ -1,0 +1,289 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { SerwistProvider } from "@serwist/turbopack/react";
+import { Loader2 } from "lucide-react";
+import { PdvTerminal, type PdvCustomer, type PdvProduct } from "@/components/pdv-terminal";
+import { loadCartDraft, readMeta, saveCartDraft, userDb } from "@/lib/offline/db";
+import {
+  restoreCartDraft,
+  type CartDraftInput,
+  type RestoreResult,
+} from "@/lib/offline/cart-draft";
+import { prepareLocalUnpack, confirmLocalUnpack, refreshLocalUnpack } from "@/lib/offline/unpack";
+import { recordSale } from "@/lib/offline/queue";
+import {
+  availableStock,
+  reservedQuantities,
+  SaleDraftError,
+  toCompletedSale,
+  type PdvPaymentMethod,
+  type PdvSaleDraft,
+  type SubmitSaleResult,
+} from "@/lib/offline/sale-operation";
+import { useOfflinePdv } from "@/components/offline-pdv/use-offline-pdv";
+import { OfflinePdvHeader } from "@/components/offline-pdv/offline-pdv-header";
+import { toStoreSettings } from "@/components/offline-pdv/store-settings";
+import {
+  BlockedState,
+  ForbiddenState,
+  PrepareState,
+} from "@/components/offline-pdv/offline-pdv-states";
+
+// PDV que abre sem rede (issue #37, docs/OFFLINE.md seção 6.2). Renderizado só no navegador: a
+// página /pdv é estática e não leva dados do usuário; tudo vem do IndexedDB, atualizado pelos
+// Route Handlers autenticados quando há conexão. Toda venda entra na fila do aparelho e é
+// enviada pelo POST /api/offline/operations (#38), com ou sem conexão no momento da venda.
+
+const collator = new Intl.Collator("pt-BR");
+const byName = (a: { name: string }, b: { name: string }) => collator.compare(a.name, b.name);
+
+// Com conexão, espera o envio por até 4 s para já mostrar o código oficial no recibo; depois
+// disso o recibo sai provisório e o envio continua em segundo plano
+const SEND_WAIT_MS = 4_000;
+const wait = (ms: number) => new Promise<null>((resolve) => setTimeout(() => resolve(null), ms));
+
+// Formas de pagamento do /pdv: o Fiado não é oferecido sem internet (docs/OFFLINE.md seção 3.4)
+const PAYMENT_METHODS: PdvPaymentMethod[] = ["MONEY", "PIX", "CREDIT_CARD", "DEBIT_CARD"];
+
+function saleErrorMessage(error: unknown): string {
+  if (error instanceof SaleDraftError) return `${error.message} O carrinho foi mantido.`;
+  const names = [
+    (error as { name?: string })?.name,
+    (error as { inner?: { name?: string } })?.inner?.name,
+  ];
+  if (names.includes("QuotaExceededError")) {
+    return "Sem espaço no aparelho para guardar a venda. Libere espaço e tente de novo: o carrinho foi mantido e a venda não foi registrada.";
+  }
+  return "Não foi possível guardar a venda neste aparelho. O carrinho foi mantido e a venda não foi registrada.";
+}
+
+function LocalTerminal({
+  userId,
+  online,
+  sendAfterSale,
+  onUnpackBusyChange,
+}: {
+  userId: string;
+  online: boolean;
+  sendAfterSale: (userId: string) => Promise<unknown>;
+  onUnpackBusyChange: (busy: boolean) => void;
+}) {
+  const db = userDb(userId);
+  // A fila não invalida as consultas do catálogo; cada chave de meta tem sua assinatura.
+  const localProducts = useLiveQuery(() => db.products.toArray(), [db]);
+  const localCustomers = useLiveQuery(() => db.customers.toArray(), [db]);
+  const store = useLiveQuery(async () => (await readMeta(db, "store")) ?? null, [db]);
+  const cashRegister = useLiveQuery(async () => (await readMeta(db, "cashRegister")) ?? null, [db]);
+  const sync = useLiveQuery(async () => (await readMeta(db, "sync")) ?? null, [db]);
+  const operations = useLiveQuery(() => db.operations.toArray(), [db]);
+  const unpackPending = useLiveQuery(
+    async () => (await readMeta(db, "unpackPending")) ?? null,
+    [db],
+  );
+  const sortedProducts = useMemo(() => localProducts?.slice().sort(byName), [localProducts]);
+  const data =
+    localProducts &&
+    localCustomers &&
+    operations &&
+    store !== undefined &&
+    cashRegister !== undefined &&
+    sync !== undefined &&
+    unpackPending !== undefined
+      ? {
+          products: sortedProducts,
+          customers: localCustomers,
+          store,
+          cashRegister,
+          watermark: sync?.watermark ?? null,
+          operations,
+          unpackPending,
+        }
+      : undefined;
+
+  // Saldo disponível = saldo da cópia menos as vendas da fila que ela ainda não mostra
+  // (docs/OFFLINE.md seção 3.2): o terminal não deixa vender além disso
+  const reserved = useMemo(
+    () => reservedQuantities(data?.operations ?? [], data?.watermark),
+    [data?.operations, data?.watermark],
+  );
+  const products = useMemo<PdvProduct[]>(
+    () =>
+      (data?.products ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku,
+        barcode: p.barcode,
+        salePrice: Number(p.salePrice),
+        unit: p.unit,
+        currentStock: availableStock(p.currentStock, reserved.get(p.id)),
+        containedProductId: p.containedProductId ?? null,
+        unitsPerBox: p.unitsPerBox ?? null,
+      })),
+    [data?.products, reserved],
+  );
+  const customers = useMemo<PdvCustomer[]>(
+    () =>
+      (data?.customers ?? [])
+        .map((c) => ({ id: c.id, name: c.name, document: c.document, phone: null }))
+        .sort(byName),
+    [data?.customers],
+  );
+  const storeSettings = useMemo(() => toStoreSettings(data?.store), [data?.store]);
+
+  // Carrinho em montagem guardado no aparelho (#53): lido uma vez, quando a cópia local abre, e
+  // conferido com ela (produto excluído, preço mudado, quantidade inválida, saldo)
+  const [restore, setRestore] = useState<RestoreResult | null>(null);
+  const restoreStarted = useRef(false);
+  const loaded = !!data;
+  useEffect(() => {
+    if (!loaded || restoreStarted.current) return;
+    restoreStarted.current = true;
+    loadCartDraft(userId)
+      .catch((error) => {
+        console.error("Não foi possível ler o carrinho guardado:", error);
+        return null;
+      })
+      .then((draft) =>
+        setRestore(
+          restoreCartDraft(draft, {
+            products,
+            customers,
+            paymentMethods: PAYMENT_METHODS,
+            now: Date.now(),
+          }),
+        ),
+      );
+  }, [loaded, userId, products, customers]);
+  const saveDraft = useCallback(
+    (draft: CartDraftInput | null) => saveCartDraft(userId, draft),
+    [userId],
+  );
+  const cartDraft = useMemo(
+    () =>
+      restore ? { restored: restore.cart, notices: restore.notices, save: saveDraft } : undefined,
+    [restore, saveDraft],
+  );
+
+  const submitSale = useCallback(
+    async (draft: PdvSaleDraft): Promise<SubmitSaleResult> => {
+      let id: string;
+      try {
+        id = (await recordSale(userId, draft)).id;
+      } catch (error) {
+        console.error("Falha ao guardar a venda no aparelho:", error);
+        return { success: false, error: saleErrorMessage(error) };
+      }
+      // A venda já está guardada: daqui em diante nada desfaz a confirmação
+      try {
+        await Promise.race([sendAfterSale(userId), wait(SEND_WAIT_MS)]);
+      } catch (error) {
+        console.error("Falha ao enviar a venda:", error);
+      }
+      const op = await db.operations.get(id);
+      if (!op) return { success: false, error: "A venda não foi encontrada no aparelho." };
+      return { success: true, sale: toCompletedSale(op) };
+    },
+    [db, sendAfterSale, userId],
+  );
+
+  const unpack = useMemo(
+    () => ({
+      prepare: () => prepareLocalUnpack(userId),
+      confirm: (input: Parameters<typeof confirmLocalUnpack>[1]) =>
+        confirmLocalUnpack(userId, input),
+      refresh: (result: Parameters<typeof refreshLocalUnpack>[1]) =>
+        refreshLocalUnpack(userId, result),
+      pending: data?.unpackPending,
+    }),
+    [userId, data?.unpackPending],
+  );
+
+  if (!data || !data.cashRegister || !cartDraft) return <LoadingState />;
+  return (
+    <PdvTerminal
+      products={products}
+      customers={customers}
+      storeSettings={storeSettings}
+      cashRegisterId={data.cashRegister.id}
+      offline={!online}
+      submitSale={submitSale}
+      cartDraft={cartDraft}
+      unpackScope={`pdv:${userId}`}
+      unpack={unpack}
+      onUnpackBusyChange={onUnpackBusyChange}
+      className="lg:h-[calc(100svh-8.5rem)]"
+    />
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="text-muted-foreground flex min-h-[60vh] items-center justify-center gap-2 text-sm">
+      <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+      Carregando o PDV...
+    </div>
+  );
+}
+
+function OfflinePdv() {
+  const pdv = useOfflinePdv();
+  const [unpackBusy, setUnpackBusy] = useState(false);
+  const { view } = pdv;
+  const userId = view.kind === "ready" ? view.userId : null;
+
+  return (
+    <div className="bg-background flex min-h-screen flex-col">
+      <div inert={unpackBusy}>
+        <OfflinePdvHeader
+          userId={userId}
+          queueUserId={pdv.queueUserId}
+          sessionUser={pdv.sessionUser}
+          online={pdv.online}
+          syncing={pdv.syncing}
+          syncError={pdv.syncError}
+          onSync={pdv.syncNow}
+          onSignOut={pdv.signOut}
+          onEndLocalSession={pdv.endLocalSession}
+        />
+      </div>
+      <main id="conteudo" className="min-w-0 flex-1 p-4 sm:p-6">
+        {view.kind === "loading" && <LoadingState />}
+        {view.kind === "forbidden" && <ForbiddenState />}
+        {view.kind === "prepare" && (
+          <PrepareState
+            reason={view.reason}
+            error={view.error}
+            onPrepare={() => pdv.prepare(view.user)}
+          />
+        )}
+        {view.kind === "blocked" && <BlockedState reason={view.reason} onRetry={pdv.retry} />}
+        {view.kind === "ready" && (
+          <LocalTerminal
+            key={view.userId}
+            userId={view.userId}
+            online={pdv.online}
+            sendAfterSale={pdv.sendAfterSale}
+            onUnpackBusyChange={setUnpackBusy}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default function PdvOfflineApp() {
+  return (
+    // Registra o Service Worker (escopo "/"). Em desenvolvimento fica desligado, para não guardar
+    // arquivos do servidor de desenvolvimento. Nada de cache por navegação nem recarga automática.
+    <SerwistProvider
+      swUrl="/serwist/sw.js"
+      disable={process.env.NODE_ENV === "development"}
+      cacheOnNavigation={false}
+      reloadOnOnline={false}
+    >
+      <OfflinePdv />
+    </SerwistProvider>
+  );
+}

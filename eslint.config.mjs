@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Relatórios gerados pelo pnpm test:e2e (também fora do Git)
+    "playwright-report/**",
+    "test-results/**",
   ]),
 ]);
 

@@ -11,6 +11,9 @@
 !.yarn/versions
 
 # testing
+/test-results/
+/playwright-report/
+/playwright/.cache/
 /coverage
 
 # next.js
@@ -32,6 +35,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
 
 # vercel
 .vercel
@@ -39,3 +44,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# binário do leitor ZXing, copiado de node_modules no postinstall (scripts/copy-zxing-wasm.mjs)
+/public/vendor/zxing/
